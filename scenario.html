@@ -1207,7 +1207,7 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
 <script src="cpg_packages_combined.js"></script>
 <script src="category_data.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://1984tpearson.github.io/AV/ecg_engine.js"></script>
+<script src="https://1984tpearson.github.io/dash/ecg_engine.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 /* ── Live ECG strip on assessor side ── */
@@ -3768,7 +3768,7 @@ function updateFavouriteButton(scenarioId) {
 // ECG RHYTHM → WIKIMEDIA IMAGE MAP
 // ============================================================
 // ECG image library — hosted at GitHub Pages /ecg/ folder
-const ECG_BASE = 'https://1984tpearson.github.io/AV/ecg/';
+const ECG_BASE = 'https://1984tpearson.github.io/dash/ecg/';
 const ECG_IMAGES = {
   // Key: lowercase substring matched against vitals.Rhythm
   // Value: { url, label }
@@ -6777,7 +6777,7 @@ async function openPatientSessionModal() {
     });
 
     document.getElementById('psm-code').textContent = code;
-    const patientUrl = `https://1984tpearson.github.io/AV/monitor.html?session=${code}`;
+    const patientUrl = `https://1984tpearson.github.io/dash/monitor.html?session=${code}`;
     const qrDiv = document.getElementById('psm-qr');
     qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(patientUrl)}" width="180" height="180" alt="QR Code">`;
 
