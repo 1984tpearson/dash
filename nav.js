@@ -44,26 +44,96 @@
   var _adminUsersScenarios = {};
   var _avatarPickerTarget = null; // null = editing own avatar; else a user id (admin editing someone else)
 
-  var AV_ROLES = [
-    ['', 'Select role…'],
-    ['CI', 'Clinical Instructor (CI)'],
-    ['PE', 'Paramedic Educator (PE)'],
-    ['GAP', 'Graduate Ambulance Paramedic (GAP)'],
-    ['CSO', 'Clinical Support Officer (CSO)'],
-    ['OnRoad', 'On Road'],
-    ['UniStudent', 'University Student'],
-    ['NonAV', 'Non-AV'],
-    ['Other', 'Other']
-  ];
+  // ------------------------------------------------------------------
+  // Service packs — swappable role/level taxonomy + attribution text.
+  // The base app ships "none": generic, tied to no real-world service.
+  // Loading a pack (currently just "av") swaps the Settings/Edit-User
+  // role & level dropdowns to that service's own taxonomy and shows its
+  // attribution text at the bottom of the sidebar. Nothing else in the
+  // app hardcodes a specific service's role/level terminology — the
+  // stored profile fields (av_role/level) are just opaque strings to
+  // every other page, so adding a second pack later is only ever a new
+  // entry here, no other file needs touching. Active pack persists
+  // per-browser in localStorage (av_service), same mechanism as
+  // av_theme — see setServicePack()/activeServicePack() below.
+  // ------------------------------------------------------------------
+  var DEFAULT_SERVICE_ID = 'none';
+  var SERVICE_PACKS = {
+    none: {
+      label: 'None (generic)',
+      roles: [
+        ['', 'Select role…'],
+        ['Instructor', 'Instructor'],
+        ['Student', 'Student'],
+        ['Other', 'Other']
+      ],
+      levels: [
+        ['', 'Select level…'],
+        ['Basic', 'Basic'],
+        ['Advanced', 'Advanced'],
+        ['NA', 'Other/NA']
+      ],
+      copyrightHtml: ''
+    },
+    av: {
+      label: 'Ambulance Victoria',
+      roles: [
+        ['', 'Select role…'],
+        ['CI', 'Clinical Instructor (CI)'],
+        ['PE', 'Paramedic Educator (PE)'],
+        ['GAP', 'Graduate Ambulance Paramedic (GAP)'],
+        ['CSO', 'Clinical Support Officer (CSO)'],
+        ['OnRoad', 'On Road'],
+        ['UniStudent', 'University Student'],
+        ['NonAV', 'Non-AV'],
+        ['Other', 'Other']
+      ],
+      levels: [
+        ['', 'Select level…'],
+        ['MICA', 'MICA'],
+        ['ALS', 'ALS'],
+        ['ACO', 'ACO'],
+        ['CERT', 'CERT'],
+        ['NA', 'Other/NA']
+      ],
+      copyrightHtml: 'Role, level, and clinical-guideline terminology in this pack are modelled on Ambulance Victoria classifications, for training purposes only. Not affiliated with or endorsed by Ambulance Victoria.'
+    }
+  };
 
-  var AV_LEVELS = [
-    ['', 'Select level…'],
-    ['MICA', 'MICA'],
-    ['ALS', 'ALS'],
-    ['ACO', 'ACO'],
-    ['CERT', 'CERT'],
-    ['NA', 'Other/NA']
-  ];
+  function activeServicePackId() {
+    var id = localStorage.getItem('av_service') || DEFAULT_SERVICE_ID;
+    return SERVICE_PACKS[id] ? id : DEFAULT_SERVICE_ID;
+  }
+  function activeServicePack() {
+    return SERVICE_PACKS[activeServicePackId()];
+  }
+  function servicePackOptionsHtml() {
+    var activeId = activeServicePackId();
+    return Object.keys(SERVICE_PACKS).map(function (id) {
+      return '<option value="' + id + '"' + (id === activeId ? ' selected' : '') + '>' + escapeHtml(SERVICE_PACKS[id].label) + '</option>';
+    }).join('');
+  }
+  function renderCopyrightFooter() {
+    var el = document.getElementById('avnav-copyright');
+    if (!el) return;
+    var html = activeServicePack().copyrightHtml;
+    el.style.display = html ? 'block' : 'none';
+    el.innerHTML = html;
+  }
+  // Swaps which service pack is active. Rebuilds any role/level dropdown
+  // currently in the DOM in place (rather than requiring a reload) so
+  // switching pack while Settings is open reflects immediately.
+  function setServicePack(id) {
+    if (!SERVICE_PACKS[id]) return;
+    localStorage.setItem('av_service', id);
+    var roleSel = document.getElementById('avnav-settings-role');
+    var levelSel = document.getElementById('avnav-settings-level');
+    if (roleSel) roleSel.innerHTML = optionsHtml(activeServicePack().roles, roleSel.value);
+    if (levelSel) levelSel.innerHTML = optionsHtml(activeServicePack().levels, levelSel.value);
+    var serviceSel = document.getElementById('avnav-service-select');
+    if (serviceSel) serviceSel.value = activeServicePackId();
+    renderCopyrightFooter();
+  }
 
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -334,7 +404,9 @@
           '<a class="avnav-link" id="avnav-cpg-link" href="cpg_editor.html" style="display:none"><span class="avnav-icon">📖</span> CPG Editor</a>' +
           '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none"><span class="avnav-icon">🛠</span> Sim Config</a>' +
         '</div>' +
-        '<div class="avnav-bottom"><button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">⎋ Sign out</button></div>' +
+        '<div class="avnav-bottom"><button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">⎋ Sign out</button>' +
+          '<div id="avnav-copyright" style="display:none;font-size:10px;color:var(--grey);line-height:1.4;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"></div>' +
+        '</div>' +
       '</div>' +
       '<div class="avnav-modal-overlay" id="avnav-settings-modal">' +
         '<div class="avnav-modal">' +
@@ -352,10 +424,11 @@
             '<div class="avnav-form-group"><label>Email</label><div id="avnav-settings-email" class="avnav-readonly"></div></div>' +
             '<div class="avnav-form-group"><label>Display Name</label><input type="text" id="avnav-settings-name" maxlength="60"></div>' +
             '<div class="avnav-form-group"><label>Service Number</label><input type="text" id="avnav-settings-svcnum" maxlength="20"></div>' +
-            '<div class="avnav-form-group"><label>Role *</label><select id="avnav-settings-role">' + optionsHtml(AV_ROLES, '') + '</select></div>' +
-            '<div class="avnav-form-group"><label>Level *</label><select id="avnav-settings-level">' + optionsHtml(AV_LEVELS, '') + '</select></div>' +
+            '<div class="avnav-form-group"><label>Role *</label><select id="avnav-settings-role">' + optionsHtml(activeServicePack().roles, '') + '</select></div>' +
+            '<div class="avnav-form-group"><label>Level *</label><select id="avnav-settings-level">' + optionsHtml(activeServicePack().levels, '') + '</select></div>' +
             '<div class="avnav-form-group"><label>Branch / Location</label><input type="text" id="avnav-settings-branch" maxlength="60"></div>' +
             '<div class="avnav-form-group"><label>🎨 Theme</label><div class="avnav-theme-swatches" id="avnav-theme-swatches">' + swatchesHtml() + '</div></div>' +
+            '<div class="avnav-form-group" id="avnav-service-group" style="display:none"><label>🏥 Service Pack (admin — affects role/level options for everyone using this browser)</label><select id="avnav-service-select" onchange="AVNav.setServicePack(this.value)">' + servicePackOptionsHtml() + '</select></div>' +
             '<button class="avnav-submit-btn" onclick="AVNav.saveSettings()">💾 Save Changes</button>' +
           '</div>' +
         '</div>' +
@@ -445,6 +518,7 @@
     } else {
       renderAvatarInto('avnav-avatar', id);
     }
+    renderCopyrightFooter();
   }
 
   function openSettings() {
@@ -452,11 +526,15 @@
     document.getElementById('avnav-settings-email').textContent = (_session && _session.user.email) || '';
     document.getElementById('avnav-settings-name').value = (_profile && _profile.display_name) || '';
     document.getElementById('avnav-settings-svcnum').value = id.svcNum;
-    document.getElementById('avnav-settings-role').value = id.avRole;
-    document.getElementById('avnav-settings-level').value = id.level;
+    document.getElementById('avnav-settings-role').innerHTML = optionsHtml(activeServicePack().roles, id.avRole);
+    document.getElementById('avnav-settings-level').innerHTML = optionsHtml(activeServicePack().levels, id.level);
     document.getElementById('avnav-settings-branch').value = id.branch;
     renderAvatarInto('avnav-settings-avatar-preview', id);
     updateThemeSwatches();
+    var serviceGroup = document.getElementById('avnav-service-group');
+    if (serviceGroup) serviceGroup.style.display = isAdmin() ? 'block' : 'none';
+    var serviceSel = document.getElementById('avnav-service-select');
+    if (serviceSel) serviceSel.value = activeServicePackId();
     close();
     document.getElementById('avnav-settings-modal').classList.add('open');
   }
@@ -895,8 +973,8 @@
       '</div>' +
       '<div class="avnav-form-group"><label>Display Name</label><input type="text" id="avnav-edit-user-name" maxlength="60" value="' + escapeHtml(p.display_name || '') + '"></div>' +
       '<div class="avnav-form-group"><label>Service Number</label><input type="text" id="avnav-edit-user-svcnum" maxlength="20" value="' + escapeHtml(p.svc_num || '') + '"></div>' +
-      '<div class="avnav-form-group"><label>Role</label><select id="avnav-edit-user-role">' + optionsHtml(AV_ROLES, p.av_role) + '</select></div>' +
-      '<div class="avnav-form-group"><label>Level</label><select id="avnav-edit-user-level">' + optionsHtml(AV_LEVELS, p.level) + '</select></div>' +
+      '<div class="avnav-form-group"><label>Role</label><select id="avnav-edit-user-role">' + optionsHtml(activeServicePack().roles, p.av_role) + '</select></div>' +
+      '<div class="avnav-form-group"><label>Level</label><select id="avnav-edit-user-level">' + optionsHtml(activeServicePack().levels, p.level) + '</select></div>' +
       '<div class="avnav-form-group"><label>Branch / Location</label><input type="text" id="avnav-edit-user-branch" maxlength="60" value="' + escapeHtml(p.branch || '') + '"></div>' +
       '<button class="avnav-submit-btn" onclick="AVNav.saveEditUser(\'' + p.id + '\')">💾 Save Changes</button>';
     modal.classList.add('open');
@@ -1035,6 +1113,7 @@
     signOut: signOut,
     refreshProfile: refreshProfile,
     applyTheme: applyTheme,
+    setServicePack: setServicePack,
     isAdmin: isAdmin,
     isGuest: isGuest
   };
