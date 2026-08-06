@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Sim — Combo (Control + Patient)</title>
+<style>
+  html, body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; background: linear-gradient(135deg, #2C4F7C 0%, #4E7FAE 55%, #6FA0CC 100%); color: #1e2a36; font-family: 'Courier New', monospace; }
+  body { display: flex; flex-direction: column; }
+
+  #combo-topbar { flex-shrink: 0; position: relative; z-index: 50; background: #1c2f45; box-shadow: 0 2px 8px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; }
+  .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  #combo-topbar .title { font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #fff; text-transform: uppercase; white-space: nowrap; }
+
+  #combo-tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.08); border-radius: 8px; padding: 3px; }
+  #combo-tabs button { border: none; background: transparent; color: rgba(255,255,255,0.65); font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  #combo-tabs button.active { background: #4E7FAE; color: #fff; }
+  #combo-tabs button:not(.active):hover { color: #fff; }
+  #combo-tabs button[data-mode="split"] { display: none; } /* shown only above the width breakpoint, see media query */
+
+  #pair-status { font-size: 10px; color: rgba(255,255,255,0.75); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #pair-status .dot { width: 7px; height: 7px; border-radius: 50%; background: #6b7a8c; flex-shrink: 0; }
+  #pair-status.linked .dot { background: #27833A; }
+  #pair-status button { font-family: inherit; font-size: 10px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+  #pair-status button:hover { background: rgba(255,255,255,0.25); }
+
+  /* --- Proxied controls row ------------------------------------------
+     Real controls (mode switch, AI status, join button, pause/instant-
+     mode status, display mode, voice toggles, timer) live inside the two
+     iframed pages' own hidden topbars (see body.embed in each file).
+     These elements mirror their state (synced ~1x/sec, see syncProxyState)
+     and forward user actions straight to the iframe's own global
+     functions — same functions its own onclick/onchange handlers already
+     call — rather than reimplementing any of that logic here. */
+  #proxy-row { display: none; }
+  #proxy-row.has-content { display: flex; }
+  .proxy-group { display: none; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 10px; color: rgba(255,255,255,0.85); }
+  .proxy-group.visible { display: flex; }
+  .proxy-group label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+  .proxy-group select { font-size: 10px; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 2px 4px; }
+  .proxy-badge { display: none; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; }
+  .proxy-badge.on { display: flex; }
+  #proxy-ai-thinking.on { color: #fff; background: var(--purple, #7D3C98); padding: 3px 8px; border-radius: 10px; }
+  #proxy-pause-indicator.on { color: #fbbf24; }
+  #proxy-instant-indicator.on { color: rgba(255,255,255,0.85); font-weight: 400; }
+  #proxy-scenario-timer { font-weight: 700; color: #4ade80; }
+  #proxy-hq-voice-status { font-size: 9px; font-style: italic; color: rgba(255,255,255,0.6); max-width: 110px; }
+  #proxy-hq-voice-status.hq-voice-status-ready { color: #4ade80; font-style: normal; }
+  #proxy-hq-voice-status.hq-voice-status-error { color: #f87171; font-style: normal; cursor: pointer; text-decoration: underline dotted; }
+  #proxy-join-btn { display: none; font-family: inherit; font-size: 10px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; padding: 3px 8px; cursor: pointer; align-items: center; gap: 5px; }
+  #proxy-join-btn.on { display: inline-flex; }
+  #proxy-join-dot { width: 7px; height: 7px; border-radius: 50%; background: #b45309; flex-shrink: 0; }
+  #proxy-mode-switch-wrap { display: none; align-items: center; gap: 6px; }
+  #proxy-mode-switch-wrap.on { display: flex; }
+  #proxy-mode-switch-wrap span { font-weight: 700; letter-spacing: 0.5px; color: rgba(255,255,255,0.5); }
+  #proxy-mode-switch-wrap span.active { color: #ffffff; }
+  .mode-switch { position: relative; width: 32px; height: 17px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.15); cursor: pointer; padding: 0; flex-shrink: 0; }
+  .mode-switch .mode-switch-thumb { position: absolute; top: 1px; left: 1px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: left 0.15s ease; }
+  .mode-switch.on { background: #27833A; border-color: #27833A; }
+  .mode-switch.on .mode-switch-thumb { left: 16px; }
+
+  #combo-body { flex: 1; min-height: 0; display: flex; }
+  .pane { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+  .pane iframe { flex: 1; width: 100%; height: 100%; border: none; background: #14243a; }
+  .pane-label { display: none; } /* only shown in split mode */
+
+  /* single-pane modes: only one pane occupies space, the other is 0-width
+     but stays mounted (not display:none) so its timers/animation loops and
+     any in-progress voice interaction keep running underneath — a known
+     tradeoff, see chat: convenience now, at the cost of a hidden pane
+     still spending CPU. */
+  body.mode-control .pane.patient-pane,
+  body.mode-patient .pane.control-pane { flex: 0 0 0; width: 0; overflow: hidden; }
+
+  body.mode-split .pane-label { display: block; flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: rgba(255,255,255,0.7); background: #14243a; padding: 3px 10px; }
+  body.mode-split #combo-body { gap: 2px; }
+
+  @media (min-width: 900px) {
+    #combo-tabs button[data-mode="split"] { display: inline-block; }
+  }
+  @media (max-width: 899px) {
+    body.mode-split .pane.patient-pane { display: none; } /* split isn't reachable below the breakpoint anyway, this is just a safety fallback */
+  }
+</style>
+</head>
+<body class="mode-control">
+
+<div id="combo-topbar">
+  <div class="topbar-row">
+    <div class="title">Sim — Combo</div>
+    <div id="combo-tabs">
+      <button data-mode="control" class="active" onclick="setComboMode('control')">Control</button>
+      <button data-mode="patient" onclick="setComboMode('patient')">Patient</button>
+      <button data-mode="split" onclick="setComboMode('split')">Split</button>
+    </div>
+    <div id="pair-status">
+      <span class="dot"></span>
+      <span id="pair-status-text">No session yet — create one on the Control tab</span>
+      <button id="pair-manual-btn" onclick="promptManualCode()" title="Type a pairing code into the Patient pane by hand, e.g. if auto-pairing didn't fire">Enter code manually</button>
+    </div>
+  </div>
+  <div class="topbar-row" id="proxy-row">
+    <div id="proxy-control-group" class="proxy-group">
+      <div id="proxy-mode-switch-wrap" title="Basic: just Management/Controls + Scenario Info. Advanced: the full dashboard with the editable graph and log feed.">
+        <span id="proxy-mode-label-basic">BASIC</span>
+        <button type="button" class="mode-switch on" id="proxy-mode-switch" onclick="proxyToggleMode()" aria-label="Toggle basic/advanced view"><span class="mode-switch-thumb"></span></button>
+        <span id="proxy-mode-label-advanced" class="active">ADVANCED</span>
+      </div>
+      <span id="proxy-ai-thinking" class="proxy-badge">● AI THINKING…</span>
+      <span id="proxy-ai-cost" title="Running Anthropic API cost this session">$0.0000</span>
+      <button id="proxy-join-btn" onclick="proxyOpenJoinModal()"><span id="proxy-join-dot"></span>Join Info</button>
+    </div>
+    <div id="proxy-patient-group" class="proxy-group">
+      <span id="proxy-pause-indicator" class="proxy-badge">&#9208; PAUSED</span>
+      <span id="proxy-instant-indicator" class="proxy-badge">Instant Mode: ON</span>
+      <select id="proxy-display-mode-select" onchange="proxySetDisplayMode(this.value)" title="What the Patient pane shows">
+        <option value="standard">🖥️ Standard</option>
+        <option value="monitor">📈 Monitor Only</option>
+        <option value="avatar">🧑 Avatar Only</option>
+      </select>
+      <label title="Higher-quality patient voice"><input type="checkbox" id="proxy-hq-voice" onchange="proxySetHqVoice(this.checked)">HQ Voice</label>
+      <span id="proxy-hq-voice-status"></span>
+      <label title="Experimental low-latency voice conversation"><input type="checkbox" id="proxy-rt-voice" onchange="proxySetRtVoice(this.checked)">&#9889; RT Voice</label>
+      <span id="proxy-rt-voice-status"></span>
+      <div id="proxy-scenario-timer">00:00</div>
+    </div>
+  </div>
+</div>
+
+<div id="combo-body">
+  <div class="pane control-pane">
+    <div class="pane-label">Control (assessor)</div>
+    <iframe id="control-frame" title="Sim Control"></iframe>
+  </div>
+  <div class="pane patient-pane">
+    <div class="pane-label">Patient (student)</div>
+    <iframe id="patient-frame" title="Sim Patient" allow="microphone; autoplay"></iframe>
+  </div>
+</div>
+
+<script>
+// Cache-buster: reloading THIS page force-revalidates its own document
+// with the server, but the iframes it loads are just subresources —
+// browsers fetch those via normal HTTP caching, not that same forced
+// revalidation, so an iframe can keep serving a stale cached copy of
+// sim_control.html/sim_patient.html well after a push to main, even
+// though visiting either page directly (as its own top-level
+// navigation) picks up the change immediately on reload. A fresh
+// timestamp per page load busts that every time. This is an
+// instructor/admin tool, not high-traffic, so trading away the iframe
+// document's own caching for "always current" is the right call here.
+// Scripts/assets those documents load via their own absolute
+// <script src> URLs (sim_engine.js, ecg_engine.js, nav.js, etc.) are
+// untouched by this — only the two main HTML documents lose caching.
+const CACHE_BUST = Date.now();
+document.getElementById('control-frame').src = 'sim_control.html?embed=1&v=' + CACHE_BUST;
+document.getElementById('patient-frame').src = 'sim_patient.html?embed=1&v=' + CACHE_BUST;
+
+// Declared up top, ahead of restoreMode()'s IIFE call below (which reads
+// it via refreshProxyRowVisibility) — as a `let` it's in the temporal
+// dead zone until this line runs, so it has to execute before anything
+// else references it, not just be hoisted like a `var` would be.
+let _lastPairedCode = null;
+
+// ---------------------------------------------------------------------
+// Tab switching. Both iframes stay mounted at all times (see CSS) rather
+// than swapping `src` in and out — that would tear down and reload
+// whichever side isn't showing, killing its Supabase subscription, any
+// mid-flight voice interaction, and the avatar's animation loop every
+// time the assessor glances at the graph and back. The cost is that the
+// hidden pane keeps running its own timers.
+// ---------------------------------------------------------------------
+function setComboMode(mode) {
+  document.body.classList.remove('mode-control', 'mode-patient', 'mode-split');
+  document.body.classList.add('mode-' + mode);
+  document.querySelectorAll('#combo-tabs button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.getElementById('proxy-control-group').classList.toggle('visible', mode === 'control' || mode === 'split');
+  document.getElementById('proxy-patient-group').classList.toggle('visible', mode === 'patient' || mode === 'split');
+  refreshProxyRowVisibility();
+  try { localStorage.setItem('av_combo_mode', mode); } catch (e) {}
+}
+function refreshProxyRowVisibility() {
+  // Collapse the whole second topbar row to nothing until there's an
+  // actual session — before that, the Patient pane is just showing its
+  // pairing-code gate and none of these proxied controls apply to
+  // anything yet, so there's no point reserving a bar of empty padding
+  // for them. _lastPairedCode is the same signal pollForSessionCode()
+  // uses to know a session exists.
+  document.getElementById('proxy-row').classList.toggle('has-content', !!_lastPairedCode);
+}
+(function restoreMode() {
+  let saved = null;
+  try { saved = localStorage.getItem('av_combo_mode'); } catch (e) {}
+  if (saved === 'split' && window.innerWidth < 900) saved = 'control'; // split tab is hidden below the breakpoint, don't strand the user on it
+  setComboMode(saved || 'control');
+})();
+
+// ---------------------------------------------------------------------
+// Auto-pairing: once the Control pane creates a session, its pairing
+// code lands in its own #code-display element (unaffected by the
+// embed=1 topbar hiding — that panel isn't part of #topbar). Both
+// iframes are same-origin, so contentDocument access needs no
+// postMessage plumbing — just poll the one element. When a fresh
+// 6-digit code shows up, hand it straight to the Patient pane's own
+// connectSession(), the same function its manual "Connect" button
+// calls, instead of reloading the iframe (a reload would also throw
+// away any display-mode choice — monitor-only / avatar-only — already
+// made there).
+// ---------------------------------------------------------------------
+function pollForSessionCode() {
+  try {
+    const ctrlDoc = document.getElementById('control-frame').contentDocument;
+    const el = ctrlDoc && ctrlDoc.getElementById('code-display');
+    const text = el && el.textContent.trim();
+    if (text && /^\d{6}$/.test(text) && text !== _lastPairedCode) {
+      _lastPairedCode = text;
+      pairPatientFrame(text);
+    }
+  } catch (e) {
+    // cross-origin or not-yet-loaded — ignore, just retry next tick
+  }
+}
+
+function pairPatientFrame(code) {
+  const frame = document.getElementById('patient-frame');
+  const win = frame.contentWindow;
+  try {
+    if (win && typeof win.connectSession === 'function') {
+      win.connectSession(code);
+    } else {
+      // patient page hasn't finished loading its script yet — fall back
+      // to a src navigation with ?code=, which sim_patient.html's own
+      // startup already knows how to consume. Keep embed=1 (or the
+      // reloaded page would come back up with its own topbar showing)
+      // and the same cache-buster this frame was already loaded with.
+      frame.src = 'sim_patient.html?embed=1&v=' + CACHE_BUST + '&code=' + encodeURIComponent(code);
+    }
+    setPairStatus(true, 'Paired — code ' + code);
+  } catch (e) {
+    setPairStatus(false, 'Could not auto-pair (' + e.message + ') — use "Enter code manually"');
+  }
+}
+
+function setPairStatus(linked, text) {
+  const wrap = document.getElementById('pair-status');
+  wrap.classList.toggle('linked', !!linked);
+  document.getElementById('pair-status-text').textContent = text;
+}
+
+function promptManualCode() {
+  const code = prompt('6-digit pairing code (from the Control tab):');
+  if (code && /^\d{6}$/.test(code.trim())) {
+    _lastPairedCode = code.trim();
+    pairPatientFrame(code.trim());
+  } else if (code) {
+    alert('That doesn\'t look like a 6-digit code.');
+  }
+}
+
+// ---------------------------------------------------------------------
+// Proxy actions: forwarded straight onto the iframe's own already-global
+// functions. Wrapped in try/catch for the same not-loaded-yet reason as
+// pollForSessionCode above.
+// ---------------------------------------------------------------------
+function ctrlWin() { return document.getElementById('control-frame').contentWindow; }
+function patWin() { return document.getElementById('patient-frame').contentWindow; }
+
+function proxyToggleMode() { try { ctrlWin().toggleManagementFullscreen(); } catch (e) {} }
+function proxyOpenJoinModal() { try { ctrlWin().openJoinModal(); } catch (e) {} }
+function proxySetDisplayMode(mode) { try { patWin().setDisplayMode(mode); } catch (e) {} }
+function proxySetHqVoice(on) { try { patWin().setHqVoiceEnabled(on); } catch (e) {} }
+function proxySetRtVoice(on) { try { patWin().setRtVoiceEnabled(on); } catch (e) {} }
+
+// ---------------------------------------------------------------------
+// Proxy state sync: mirrors the real (hidden) topbar elements inside
+// each iframe onto the equivalent element up here, once a second. Only
+// touches display/text/class/checked — never reaches into either page's
+// actual session logic.
+// ---------------------------------------------------------------------
+function mirrorVisibility(srcEl, dstEl) {
+  // Purely class-driven (see the .on rules in <style>) rather than copying
+  // an inline style.display across — every one of these proxy elements
+  // has display:none as its OWN base stylesheet rule, so clearing an
+  // inline override would just fall back to that same "none" instead of
+  // revealing it. The .on class is what actually shows each one.
+  const shown = srcEl && srcEl.style.display !== 'none' && getComputedStyle(srcEl).display !== 'none';
+  dstEl.classList.toggle('on', !!shown);
+}
+
+function syncProxyState() {
+  pollForSessionCode();
+  try {
+    const d = document.getElementById('control-frame').contentDocument;
+    if (d) {
+      const modeWrap = d.getElementById('mode-switch-wrap');
+      mirrorVisibility(modeWrap, document.getElementById('proxy-mode-switch-wrap'));
+      const srcSwitch = d.getElementById('mode-switch');
+      const dstSwitch = document.getElementById('proxy-mode-switch');
+      if (srcSwitch) dstSwitch.classList.toggle('on', srcSwitch.classList.contains('on'));
+      document.getElementById('proxy-mode-label-basic').classList.toggle('active', d.getElementById('mode-label-basic') && d.getElementById('mode-label-basic').classList.contains('active'));
+      document.getElementById('proxy-mode-label-advanced').classList.toggle('active', d.getElementById('mode-label-advanced') && d.getElementById('mode-label-advanced').classList.contains('active'));
+
+      mirrorVisibility(d.getElementById('ai-thinking-indicator'), document.getElementById('proxy-ai-thinking'));
+      const cost = d.getElementById('ai-cost-indicator');
+      if (cost) document.getElementById('proxy-ai-cost').textContent = cost.textContent;
+
+      const joinBtn = d.getElementById('join-btn');
+      mirrorVisibility(joinBtn, document.getElementById('proxy-join-btn'));
+      const joinDot = d.getElementById('join-btn-dot');
+      if (joinDot) document.getElementById('proxy-join-dot').style.background = joinDot.style.background;
+    }
+  } catch (e) {}
+  try {
+    const d = document.getElementById('patient-frame').contentDocument;
+    if (d) {
+      mirrorVisibility(d.getElementById('pause-indicator'), document.getElementById('proxy-pause-indicator'));
+      mirrorVisibility(d.getElementById('instant-mode-indicator'), document.getElementById('proxy-instant-indicator'));
+
+      const sel = d.getElementById('display-mode-select');
+      const proxySel = document.getElementById('proxy-display-mode-select');
+      if (sel && document.activeElement !== proxySel) proxySel.value = sel.value;
+
+      const hq = d.getElementById('hq-voice-checkbox');
+      const proxyHq = document.getElementById('proxy-hq-voice');
+      if (hq && document.activeElement !== proxyHq) proxyHq.checked = hq.checked;
+      const hqStatus = d.getElementById('hq-voice-status');
+      if (hqStatus) {
+        const proxyHqStatus = document.getElementById('proxy-hq-voice-status');
+        proxyHqStatus.textContent = hqStatus.textContent;
+        proxyHqStatus.className = hqStatus.className;
+        proxyHqStatus.title = hqStatus.title;
+        // On error this is tappable to alert() the failure detail (see
+        // setHqVoiceStatus() in sim_patient.html) — same function
+        // reference works fine to reuse directly, same-origin realm.
+        proxyHqStatus.onclick = hqStatus.onclick;
+        proxyHqStatus.style.cursor = hqStatus.onclick ? 'pointer' : '';
+      }
+
+      const rt = d.getElementById('rt-voice-checkbox');
+      const proxyRt = document.getElementById('proxy-rt-voice');
+      if (rt && document.activeElement !== proxyRt) proxyRt.checked = rt.checked;
+      const rtStatus = d.getElementById('rt-voice-status');
+      if (rtStatus) document.getElementById('proxy-rt-voice-status').textContent = rtStatus.textContent;
+
+      const timer = d.getElementById('scenario-timer');
+      if (timer) document.getElementById('proxy-scenario-timer').textContent = timer.textContent;
+    }
+  } catch (e) {}
+  refreshProxyRowVisibility();
+}
+setInterval(syncProxyState, 1000);
+syncProxyState();
+</script>
+
+</body>
+</html>

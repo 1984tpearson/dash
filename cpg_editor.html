@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPG Visual Editor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+/* HEADER */
+.header { background: #122849; color: white; padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+.header h1 { font-size: 16px; font-weight: 700; }
+.header p { font-size: 12px; opacity: .6; margin-top: 2px; }
+.badge { background: #E8921A; color: white; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; margin-left: auto; white-space: nowrap; }
+
+/* CONTROLS */
+.controls { background: white; border-bottom: 1px solid #dde; padding: 10px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.search-box { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+.filter-btn { padding: 7px 13px; border: 1px solid #ccc; background: white; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.filter-btn.active { background: #1C3A6E; color: white; border-color: #1C3A6E; }
+
+/* GRID */
+.grid { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+
+/* CARD */
+.card { background: white; border-radius: 8px; border: 1px solid #dde; overflow: hidden; }
+.card-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; user-select: none; }
+.card-header:hover { background: #f8f9fc; }
+.cpg-code { font-size: 11px; font-weight: 700; color: white; background: #1C3A6E; padding: 3px 7px; border-radius: 4px; white-space: nowrap; }
+.card-title { font-size: 14px; font-weight: 600; }
+.card-key { font-size: 11px; color: #888; font-family: monospace; }
+.chevron { margin-left: auto; font-size: 12px; color: #aaa; transition: transform .2s; flex-shrink: 0; }
+.card.open .chevron { transform: rotate(180deg); }
+.dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: #E8921A; display: none; flex-shrink: 0; }
+.card.dirty .dirty-dot { display: block; }
+
+/* CARD BODY */
+.card-body { display: none; padding: 0 16px 16px; border-top: 1px solid #eee; }
+.card.open .card-body { display: block; }
+
+/* SECTION LABEL */
+.section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #888; letter-spacing: .5px; margin: 16px 0 6px; display: flex; align-items: center; gap: 8px; }
+.section-label .add-btn { font-size: 11px; padding: 2px 8px; background: #1C3A6E; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.section-label .add-btn:hover { background: #2A4F8F; }
+
+/* STEPS */
+.steps-list { display: flex; flex-direction: column; gap: 3px; }
+
+/* STEP ROW */
+.step-row { display: flex; align-items: flex-start; gap: 6px; border-radius: 5px; padding: 2px; transition: background .1s; position: relative; }
+.step-row:hover { background: rgba(0,0,0,.03); }
+.step-row.dragging { opacity: .4; }
+.step-row.drag-over { border-top: 2px solid #1C3A6E; }
+
+/* DRAG HANDLE */
+.drag-handle { cursor: grab; color: #ccc; font-size: 14px; padding: 6px 2px; flex-shrink: 0; line-height: 1; user-select: none; }
+.drag-handle:active { cursor: grabbing; }
+
+/* STEP PILL (type selector) */
+.step-type-btn { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; border: none; cursor: pointer; flex-shrink: 0; margin-top: 5px; white-space: nowrap; }
+.type-action   { background: #eafaf1; color: #1e5631; border: 1px solid #1e5631; }
+.type-mica     { background: #e8f4fd; color: #1a5276; border: 1px solid #1a5276; }
+.type-header   { background: #1a1a1a; color: #fff;    border: 1px solid #1a1a1a; }
+.type-subheader{ background: #2c2c2c; color: #ddd;    border: 1px solid #2c2c2c; }
+.type-stop     { background: #FDEDEC; color: #C0392B; border: 1px solid #C0392B; }
+.type-note     { background: #f0f0f0; color: #444;    border: 1px solid #bbb; }
+.type-assess   { background: #FFF3E0; color: #7a4000; border: 1px solid #FFB74D; }
+
+/* STEP CONTENT (the editable block) */
+.step-content { flex: 1; font-size: 13px; padding: 5px 8px; border-radius: 4px; line-height: 1.5; border: 1px solid transparent; min-height: 30px; word-break: break-word; }
+.step-content[contenteditable="true"] { border-color: #1C3A6E; background: white; outline: none; box-shadow: 0 0 0 2px rgba(28,58,110,.15); }
+.step-content.bg-action   { background: #eafaf1; }
+.step-content.bg-mica     { background: #e8f4fd; }
+.step-content.bg-header   { background: #1a1a1a; color: #fff; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.step-content.bg-subheader{ background: #2c2c2c; color: #ddd; font-style: italic; }
+.step-content.bg-stop     { background: #FDEDEC; }
+.step-content.bg-note     { background: #f0f0f0; }
+.step-content.bg-assess   { background: #FFF3E0; }
+
+/* DELETE BUTTON */
+.del-btn { background: none; border: none; color: #ddd; cursor: pointer; font-size: 16px; padding: 4px 6px; flex-shrink: 0; line-height: 1; border-radius: 4px; margin-top: 2px; }
+.del-btn:hover { color: #C0392B; background: #FDEDEC; }
+
+/* TYPE DROPDOWN POPUP */
+.type-popup { position: absolute; left: 28px; top: 28px; background: white; border: 1px solid #dde; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.15); z-index: 200; padding: 4px; display: none; flex-direction: column; gap: 2px; min-width: 140px; }
+.type-popup.open { display: flex; }
+.type-opt { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; border: none; text-align: left; }
+.type-opt:hover { opacity: .8; }
+
+/* OBJECTIVES */
+.obj-list { display: flex; flex-direction: column; gap: 3px; }
+.obj-row { display: flex; align-items: flex-start; gap: 6px; }
+.obj-content { flex: 1; font-size: 13px; padding: 5px 8px; border-radius: 4px; border: 1px solid transparent; background: #eef1f7; border-left: 3px solid #1C3A6E; line-height: 1.5; min-height: 30px; word-break: break-word; }
+.obj-content[contenteditable="true"] { border-color: #1C3A6E; background: white; outline: none; box-shadow: 0 0 0 2px rgba(28,58,110,.15); border-left: 3px solid #1C3A6E; }
+
+/* SIMPLE FIELDS (title, cpg, notes) */
+.field-row { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; }
+.field-row label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #888; letter-spacing: .5px; }
+.field-input { font-size: 13px; padding: 7px 10px; border: 1px solid #dde; border-radius: 5px; font-family: inherit; width: 100%; }
+.field-input:focus { outline: none; border-color: #1C3A6E; box-shadow: 0 0 0 2px rgba(28,58,110,.12); }
+.field-textarea { min-height: 80px; resize: vertical; }
+
+/* SAVE BAR */
+.save-bar { display: flex; gap: 8px; margin-top: 16px; align-items: center; padding-top: 12px; border-top: 1px solid #eee; flex-wrap: wrap; }
+.btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+.btn-save   { background: #27833A; color: white; }
+.btn-reset  { background: #eee; color: #333; }
+.btn-delete { background: #C0392B; color: white; margin-left: auto; }
+.btn:hover  { opacity: .85; }
+.save-status { font-size: 12px; color: #888; }
+.save-status.ok  { color: #27833A; font-weight: 600; }
+.save-status.err { color: #C0392B; font-weight: 600; }
+
+/* EMPTY */
+.empty { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+
+/* DRUG TABLE */
+.drug-table-editor { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 2px; }
+.drug-table-editor td { padding: 3px 4px; }
+.drug-table-editor input { width: 100%; padding: 4px 7px; border: 1px solid #dde; border-radius: 4px; font-size: 12px; font-family: inherit; }
+.drug-table-editor input:focus { outline: none; border-color: #1C3A6E; }
+.drug-add-btn { font-size: 11px; margin-top: 4px; padding: 3px 8px; background: #1C3A6E; color: white; border: none; border-radius: 4px; cursor: pointer; }
+
+/* EXTRACT MODAL */
+.ex-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:500; align-items:center; justify-content:center; padding:16px; }
+.ex-modal-overlay.open { display:flex; }
+.ex-modal { background:white; border-radius:12px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.3); }
+.ex-modal-header { background:#122849; color:white; padding:14px 18px; display:flex; align-items:center; justify-content:space-between; border-radius:12px 12px 0 0; }
+.ex-modal-header h2 { font-size:15px; font-weight:700; }
+.ex-modal-close { background:rgba(255,255,255,.15); border:none; color:white; width:26px; height:26px; border-radius:6px; cursor:pointer; font-size:13px; }
+.ex-modal-body { padding:18px; }
+.ex-hint { font-size:12px; color:#888; margin-bottom:14px; line-height:1.5; }
+.ex-file-input { width:100%; padding:8px; border:1px dashed #ccc; border-radius:6px; font-size:12px; margin-bottom:10px; }
+.ex-filelist { font-size:12px; color:#555; margin-bottom:10px; }
+.ex-textarea { width:100%; min-height:90px; padding:8px 10px; border:1px solid #dde; border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; margin-bottom:14px; }
+.ex-status { font-size:12px; margin-top:10px; min-height:16px; }
+.ex-status.err { color:#C0392B; font-weight:600; }
+.ex-status.ok { color:#27833A; font-weight:600; }
+
+/* CATEGORY ACCORDION */
+.cpg-cat { background:white; border:1px solid #dde; border-radius:8px; margin-bottom:10px; overflow:hidden; }
+.cpg-cat-row { display:flex; align-items:center; gap:10px; padding:12px 16px; cursor:pointer; user-select:none; background:white; }
+.cpg-cat-row:hover { background:#f8f9fc; }
+.cpg-cat-stripe { width:4px; height:22px; border-radius:2px; flex-shrink:0; }
+.cpg-cat-icon { font-size:17px; width:24px; text-align:center; flex-shrink:0; }
+.cpg-cat-name { font-size:14px; font-weight:700; color:#1a1a2e; flex:1; }
+.cpg-cat-count { font-size:11px; color:#888; font-weight:600; margin-right:4px; }
+.cpg-cat-chevron { font-size:12px; color:#aaa; transition:transform .2s; }
+.cpg-cat-chevron.open { transform:rotate(90deg); }
+.cpg-cat-body { display:none; background:#f7f9fc; border-top:1px solid #eaedf0; }
+.cpg-cat-body.open { display:block; }
+
+.cpg-subcat-row { display:flex; align-items:center; gap:8px; padding:9px 16px; cursor:pointer; background:#f0f3f7; border-bottom:1px solid #eaedf0; user-select:none; }
+.cpg-subcat-row:hover { background:#e4e8ef; }
+.cpg-subcat-label { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; color:#1C3A6E; flex:1; }
+.cpg-subcat-count { font-size:11px; color:#888; font-weight:600; }
+.cpg-subcat-chevron { font-size:11px; color:#aaa; transition:transform .18s; }
+.cpg-subcat-chevron.open { transform:rotate(90deg); }
+.cpg-subcat-body { display:none; padding:10px 12px; }
+.cpg-subcat-body.open { display:block; }
+
+/* CROSS-REFERENCE CHIP */
+.cpg-crossref { display:flex; align-items:center; gap:10px; padding:9px 12px; margin-bottom:6px; cursor:pointer; background:white; border:1px dashed #dde; border-radius:6px; font-size:12px; transition:background .1s; }
+.cpg-crossref:hover { background:#f8f9fc; border-color:#1C3A6E; }
+.crossref-title { flex:1; color:#555; font-weight:600; }
+.crossref-loc { font-size:11px; color:#aaa; white-space:nowrap; }
+
+/* TEST QUESTIONS PREVIEW */
+.tq-item { background:#f7f8fa; border:1px solid #dde1e7; border-left:3px solid #1C3A6E; border-radius:6px; padding:10px 12px; margin-bottom:8px; font-size:13px; line-height:1.5; }
+.tq-q { color:#1a1a2e; margin-bottom:4px; }
+.tq-a { color:#555; }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>CPG Visual Editor</h1>
+    <p>AV ALS-MICA Clinical Practice Guidelines v3.13.1</p>
+  </div>
+  <div class="badge" id="pkg-count">Loading&hellip;</div>
+</div>
+
+<div class="controls">
+  <input class="search-box" type="text" id="search" placeholder="Search by title, CPG code or key&hellip;" oninput="renderCards()">
+  <button class="filter-btn" style="background:#27833A;color:white;border-color:#27833A" onclick="addNewPackage()">+ New CPG</button>
+  <button class="filter-btn" style="background:#7D3C98;color:white;border-color:#7D3C98" onclick="openExtractModal()">&#129302; Extract from Document</button>
+  <button class="filter-btn" onclick="changeGithubToken()" title="Update GitHub token">&#128273; Token</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="ex-modal-overlay" id="ex-modal">
+  <div class="ex-modal">
+    <div class="ex-modal-header">
+      <h2>&#129302; Extract CPG from Document</h2>
+      <button class="ex-modal-close" onclick="closeExtractModal()">&#10005;</button>
+    </div>
+    <div class="ex-modal-body">
+      <div class="ex-hint">Upload photo(s)/screenshot(s) or a PDF of the CPG page, and/or paste text below. The AI extracts <strong>verbatim</strong> content only &mdash; no inferred steps or doses &mdash; and splits ALS vs MICA scope. You'll review and edit everything before saving.</div>
+      <input type="file" id="ex-files" class="ex-file-input" accept="image/*,application/pdf" multiple onchange="updateExFileList()">
+      <div class="ex-filelist" id="ex-filelist"></div>
+      <textarea class="ex-textarea" id="ex-pasted-text" placeholder="Optionally paste CPG text here instead of / in addition to uploading&hellip;"></textarea>
+      <button class="btn btn-save" style="width:100%" id="ex-run-btn" onclick="runExtraction()">&#129302; Extract</button>
+      <div class="ex-status" id="ex-status"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ex-modal-overlay" id="cat-modal">
+  <div class="ex-modal">
+    <div class="ex-modal-header">
+      <h2>&#127991;&#65039; Assign Category</h2>
+      <button class="ex-modal-close" onclick="closeCategoryAssign()">&#10005;</button>
+    </div>
+    <div class="ex-modal-body">
+      <div class="ex-hint">Choose where this CPG belongs. This updates the category mapping used by the Scenario Generator too, not just this editor's grouping &mdash; it commits to <code>generator.html</code> and <code>cpg_editor.html</code>.</div>
+      <select class="field-input" id="cat-assign-select" style="margin-bottom:14px"></select>
+      <div class="field-row" style="margin-top:0;margin-bottom:14px">
+        <label>Condition name (optional)</label>
+        <input class="field-input" id="cat-assign-condition-name" type="text" placeholder="e.g. Fracture/dislocation">
+      </div>
+      <div class="ex-hint" style="margin-top:-8px">Fill this in to make the CPG tappable by name in the Quick Build picker. Leave blank and it's still usable via Custom Build's category pool, just not selectable by name.</div>
+      <button class="btn btn-save" style="width:100%" id="cat-assign-confirm-btn" onclick="confirmCategoryAssign()">Assign</button>
+      <button class="btn btn-reset" style="width:100%;margin-top:8px" onclick="closeCategoryAssign()">Cancel</button>
+      <div class="ex-status" id="cat-assign-status"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="cpg_packages_combined.js"></script>
+<script src="category_data.js"></script>
+<script>
+
+// ── ADMIN AUTH GATE ────────────────────────────────────────────
+const SUPABASE_URL = 'https://befsjenbaruxqrntuhpn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
+const ADMIN_UUID = 'fe1f2d3f-2139-44ec-bbe0-14ad6bb748ac';
+const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let _userSession = null;
+
+async function checkAdminAccess() {
+  const { data } = await _sb.auth.getSession();
+  const session = data.session;
+  if (!session) {
+    return denyAccess();
+  }
+  let profile = null;
+  try {
+    const profileResult = await _sb.from('profiles').select('role').eq('id', session.user.id).single();
+    profile = profileResult.data;
+  } catch (e) { /* best-effort — fall through to UUID check */ }
+  const isAdmin = (profile && profile.role === 'admin') || session.user.id === ADMIN_UUID;
+  if (!isAdmin) {
+    return denyAccess();
+  }
+  _userSession = session;
+  return true;
+}
+
+function denyAccess() {
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:Segoe UI,sans-serif;text-align:center;padding:20px">' +
+    '<div style="font-size:40px">&#128274;</div>' +
+    '<div style="font-size:16px;font-weight:700;color:#1a1a2e">Admin access required</div>' +
+    '<div style="font-size:13px;color:#888">This page is restricted to the site administrator.</div>' +
+    '<a href="index.html" style="margin-top:8px;color:#1C3A6E;font-weight:600;font-size:13px;text-decoration:none">&larr; Back to site</a>' +
+  '</div>';
+  return false;
+}
+</script>
+<script>
+
+// ── STATE ──────────────────────────────────────────────────────
+const ORIGINAL = JSON.parse(JSON.stringify(CPG_PACKAGES));
+// Working copy — edits go here
+const DATA = JSON.parse(JSON.stringify(CPG_PACKAGES));
+
+const _newKeys = new Set(); // keys added this session that don't exist in the file yet
+const STEP_TYPES = ['action','mica','header','subheader','stop','note','assess'];
+const TYPE_LABELS = { action:'ALS Action', mica:'MICA', header:'Header', subheader:'Subheader', stop:'Stop', note:'Note', assess:'Assess' };
+
+// ── CATEGORY GROUPING (mirrors generator.html / scenario.html) ──
+const TOP_CATEGORIES = [
+  { key: 'Adult',           icon: '🧑', color: 'var(--navy)' },
+  { key: 'Paediatric',      icon: '🧒', color: 'var(--blue)' },
+  { key: 'Maternity',       icon: '🤰', color: 'var(--purple)' },
+  { key: 'Newborn',         icon: '👶', color: 'var(--green)' },
+  { key: 'Treat and Refer', icon: '🩹', color: '#6D4C41' }
+];
+
+const _openCats = new Set();    // top-level category keys currently expanded
+const _openSubcats = new Set(); // 'Cat|Subcat' keys currently expanded
+const _dragAttached = new Set(); // CPG keys whose step rows currently have drag listeners attached
+
+// Same TOP_CATEGORIES-first traversal order as renderCards(), so this always
+// agrees with which location renderCards() treats as the "primary" one.
+function findCategoryPathForKey(key) {
+  for (const cat of TOP_CATEGORIES) {
+    const subKeys = Object.keys(CATEGORY_TO_CPG).filter(k => k.startsWith(cat.key + '|'));
+    for (const catSubKey of subKeys) {
+      if (CATEGORY_TO_CPG[catSubKey].includes(key)) {
+        return { cat: cat.key, sub: catSubKey.split('|')[1], catSubKey };
+      }
+    }
+  }
+  return null;
+}
+
+// ── SEARCH ────────────────────────────────────────────────────
+function matchesSearch(key, pkg, q) {
+  if (!q) return true;
+  q = q.toLowerCase();
+  return key.toLowerCase().includes(q) || (pkg.title||'').toLowerCase().includes(q) || (pkg.cpg||'').toLowerCase().includes(q);
+}
+
+// ── RENDER ACCORDION ──────────────────────────────────────────
+let _cardPrimaryLocation = {}; // key -> {cat, sub, catSubKey} — the ONE place each card is fully rendered
+
+function renderCards() {
+  const q = document.getElementById('search').value.trim();
+  const allEntries = Object.entries(DATA);
+  document.getElementById('pkg-count').textContent = allEntries.length + ' packages';
+
+  const usedKeys = new Set();
+  _cardPrimaryLocation = {};
+  _dragAttached.clear(); // grid is being rebuilt from scratch — every card's DOM node is new
+  const sections = [];
+
+  TOP_CATEGORIES.forEach(cat => {
+    const subKeys = Object.keys(CATEGORY_TO_CPG).filter(k => k.startsWith(cat.key + '|'));
+    const subcats = [];
+    subKeys.forEach(catSubKey => {
+      const sub = catSubKey.split('|')[1];
+      const entries = [];
+      const crossRefs = [];
+      CATEGORY_TO_CPG[catSubKey]
+        .filter(k => DATA[k] && matchesSearch(k, DATA[k], q))
+        .forEach(k => {
+          // A CPG can legitimately belong to several categories (e.g. seizures under
+          // Adult, Paediatric AND Maternity/Pre-eclampsia) — that mapping is correct and
+          // used by the scenario generator. But we only ever render the FULL editable
+          // card once (its first/primary location), to avoid duplicate DOM ids. Every
+          // other location gets a small cross-reference chip that jumps to it instead.
+          if (usedKeys.has(k)) {
+            crossRefs.push([k, DATA[k]]);
+          } else {
+            usedKeys.add(k);
+            _cardPrimaryLocation[k] = { cat: cat.key, sub, catSubKey };
+            entries.push([k, DATA[k]]);
+          }
+        });
+      if (entries.length || crossRefs.length) subcats.push({ sub, catSubKey, entries, crossRefs });
+    });
+    if (subcats.length) sections.push({ cat, subcats });
+  });
+
+  // Anything not mapped into a category/subcategory
+  const uncategorized = allEntries.filter(([k, v]) => !usedKeys.has(k) && matchesSearch(k, v, q));
+
+  const grid = document.getElementById('grid');
+  if (!sections.length && !uncategorized.length) { grid.innerHTML = '<div class="empty">No packages match.</div>'; return; }
+
+  const autoExpand = !!q; // auto-open groups with matches while searching
+
+  let html = sections.map(({ cat, subcats }) => {
+    const total = subcats.reduce((s, sc) => s + sc.entries.length + sc.crossRefs.length, 0);
+    const catOpen = _openCats.has(cat.key) || autoExpand;
+    const subcatsHtml = subcats.map(({ sub, catSubKey, entries, crossRefs }) => {
+      const subOpen = _openSubcats.has(catSubKey) || autoExpand;
+      return `<div class="cpg-subcat">
+        <div class="cpg-subcat-row" onclick="toggleSubcat('${catSubKey.replace(/'/g,"\\'")}')">
+          <span class="cpg-subcat-chevron${subOpen ? ' open' : ''}">&#9656;</span>
+          <span class="cpg-subcat-label">${esc(sub)}</span>
+          <span class="cpg-subcat-count">${entries.length + crossRefs.length}</span>
+        </div>
+        <div class="cpg-subcat-body${subOpen ? ' open' : ''}">
+          ${entries.map(([k,v]) => cardHTML(k,v)).join('')}
+          ${crossRefs.map(([k,v]) => crossRefHTML(k,v)).join('')}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="cpg-cat">
+      <div class="cpg-cat-row" onclick="toggleCat('${cat.key.replace(/'/g,"\\'")}')">
+        <span class="cpg-cat-stripe" style="background:${cat.color}"></span>
+        <span class="cpg-cat-icon">${cat.icon}</span>
+        <span class="cpg-cat-name">${esc(cat.key)}</span>
+        <span class="cpg-cat-count">${total}</span>
+        <span class="cpg-cat-chevron${catOpen ? ' open' : ''}">&#9656;</span>
+      </div>
+      <div class="cpg-cat-body${catOpen ? ' open' : ''}">${subcatsHtml}</div>
+    </div>`;
+  }).join('');
+
+  if (uncategorized.length) {
+    const catOpen = _openCats.has('__uncategorized__') || autoExpand;
+    html += `<div class="cpg-cat">
+      <div class="cpg-cat-row" onclick="toggleCat('__uncategorized__')">
+        <span class="cpg-cat-stripe" style="background:#888"></span>
+        <span class="cpg-cat-icon">&#128193;</span>
+        <span class="cpg-cat-name">Uncategorised</span>
+        <span class="cpg-cat-count">${uncategorized.length}</span>
+        <span class="cpg-cat-chevron${catOpen ? ' open' : ''}">&#9656;</span>
+      </div>
+      <div class="cpg-cat-body${catOpen ? ' open' : ''}">${uncategorized.map(([k,v]) => cardHTML(k,v)).join('')}</div>
+    </div>`;
+  }
+
+  grid.innerHTML = html;
+}
+
+function toggleCat(catKey) {
+  if (_openCats.has(catKey)) _openCats.delete(catKey); else _openCats.add(catKey);
+  renderCards();
+}
+function toggleSubcat(catSubKey) {
+  if (_openSubcats.has(catSubKey)) _openSubcats.delete(catSubKey); else _openSubcats.add(catSubKey);
+  renderCards();
+}
+
+// Jump to a card's primary (fully-rendered) location — used by cross-reference chips
+function scrollToCard(key) {
+  const loc = _cardPrimaryLocation[key];
+  if (loc) { _openCats.add(loc.cat); _openSubcats.add(loc.catSubKey); }
+  renderCards();
+  const card = document.getElementById('card-' + key);
+  if (!card) return;
+  card.classList.add('open');
+  if (!_dragAttached.has(key)) attachDrag(key);
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.style.outline = '2px solid #E8921A';
+  setTimeout(() => { card.style.outline = ''; }, 1200);
+}
+
+function revealCard(key) {
+  const path = findCategoryPathForKey(key);
+  if (path) { _openCats.add(path.cat); _openSubcats.add(path.catSubKey); }
+  else { _openCats.add('__uncategorized__'); }
+}
+
+// ── CROSS-REFERENCE CHIP (for CPGs shared across multiple categories) ──
+function crossRefHTML(key, pkg) {
+  const loc = _cardPrimaryLocation[key];
+  const locLabel = loc ? `${loc.cat} \u25b8 ${loc.sub}` : '';
+  return `<div class="cpg-crossref" onclick="scrollToCard('${key}')">
+    <span class="cpg-code">${esc(pkg.cpg||'?')}</span>
+    <span class="crossref-title">${esc(pkg.title||key)}</span>
+    <span class="crossref-loc">also under ${esc(locLabel)} &#8250;</span>
+  </div>`;
+}
+
+// ── CARD HTML ──────────────────────────────────────────────────
+function cardHTML(key, pkg) {
+  return `<div class="card" id="card-${key}">
+  <div class="card-header" onclick="toggleCard('${key}')">
+    <span class="cpg-code">${esc(pkg.cpg||'?')}</span>
+    <div>
+      <div class="card-title">${esc(pkg.title||key)}</div>
+      <div class="card-key">${esc(key)}</div>
+    </div>
+    <span class="dirty-dot"></span>
+    <span class="chevron">&#9660;</span>
+  </div>
+  <div class="card-body" id="body-${key}">
+    ${renderCardBody(key, pkg)}
+  </div>
+</div>`;
+}
+
+function renderCardBody(key, pkg) {
+  return `
+    <!-- Title / CPG -->
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <div class="field-row" style="flex:1">
+        <label>Title</label>
+        <input class="field-input" value="${esc(pkg.title||'')}" onchange="setField('${key}','title',this.value)">
+      </div>
+      <div class="field-row" style="width:110px">
+        <label>CPG Code</label>
+        <input class="field-input" value="${esc(pkg.cpg||'')}" onchange="setField('${key}','cpg',this.value)">
+      </div>
+    </div>
+
+    <!-- Care Objectives -->
+    <div class="section-label">
+      Care Objectives
+      <button class="add-btn" onclick="addObjective('${key}')">+ Add</button>
+    </div>
+    <div class="obj-list" id="objs-${key}">
+      ${(pkg.careObjectives||[]).map((o,i) => objRowHTML(key,i,o)).join('')}
+    </div>
+
+    <!-- Management (ALS) -->
+    <div class="section-label">
+      Management — ALS
+      <button class="add-btn" onclick="addStep('${key}','management')">+ Add Step</button>
+    </div>
+    <div class="steps-list" id="steps-management-${key}">
+      ${(pkg.management||[]).map((s,i) => stepRowHTML(key,'management',i,s)).join('')}
+    </div>
+
+    <!-- Management MICA -->
+    <div class="section-label" style="color:#2E86C1">
+      Management — MICA only
+      <button class="add-btn" style="background:#2E86C1" onclick="addStep('${key}','management_mica')">+ Add Step</button>
+    </div>
+    <div class="steps-list" id="steps-management_mica-${key}">
+      ${(pkg.management_mica||[]).map((s,i) => stepRowHTML(key,'management_mica',i,s)).join('')}
+    </div>
+
+    <!-- Notes -->
+    <div class="field-row">
+      <label>Question-Writing Context (AI use only)</label>
+      <textarea class="field-input field-textarea" id="notes-${key}" onchange="setField('${key}','notes',this.value)">${esc(pkg.notes||'')}</textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="filter-btn" style="font-size:11px;padding:5px 10px" onclick="toggleNxPanel('${key}')">&#129302; Add context from document</button>
+        <button class="filter-btn" style="font-size:11px;padding:5px 10px" id="tq-run-btn-${key}" onclick="generateTestQuestions('${key}')">&#129514; Generate Test Questions</button>
+      </div>
+      <div class="nx-panel" id="nx-panel-${key}" style="display:none;margin-top:6px;padding:12px;background:#f7f8fa;border:1px solid #dde1e7;border-radius:8px">
+        <div class="ex-hint" style="margin-bottom:8px">Doesn't touch management steps or drugs &mdash; only tops up this context field. Upload/paste something, and it'll extract background, indications, pitfalls and nuance for the question-writer AI to draw on &mdash; not doses or steps, those already live above.</div>
+        <input type="file" id="nx-files-${key}" class="ex-file-input" accept="image/*,application/pdf" multiple onchange="updateNxFileList('${key}')">
+        <div class="ex-filelist" id="nx-filelist-${key}"></div>
+        <textarea class="ex-textarea" id="nx-pasted-${key}" style="min-height:70px" placeholder="Optionally paste text here instead of / in addition to uploading&hellip;"></textarea>
+        <select class="field-input" id="nx-mode-${key}" style="margin-bottom:10px">
+          <option value="append">Append to existing context</option>
+          <option value="replace">Replace existing context</option>
+        </select>
+        <button class="btn btn-save" style="width:100%" id="nx-run-btn-${key}" onclick="runNotesExtraction('${key}')">&#129302; Extract &amp; Add</button>
+        <div class="ex-status" id="nx-status-${key}"></div>
+      </div>
+      <div class="tq-panel" id="tq-panel-${key}" style="display:none;margin-top:6px"></div>
+    </div>
+
+    <!-- Save bar -->
+    <div class="save-bar">
+      <button class="btn btn-save" onclick="savePkg('${key}')">&#10003; Save to file</button>
+      <button class="btn btn-reset" onclick="resetPkg('${key}')">Reset</button>
+      <button class="btn btn-reset" onclick="openCategoryAssign('${key}')">&#127991;&#65039; Category</button>
+      <button class="btn btn-delete" onclick="deletePkg('${key}')">&#128465;&#65039; Delete</button>
+      <span class="save-status" id="status-${key}"></span>
+    </div>
+  `;
+}
+
+// ── STEP ROW ───────────────────────────────────────────────────
+function stepText(step) {
+  if (typeof step === 'string') return step;
+  if (step.items) return step.items.join('\n');
+  return step.text || '';
+}
+
+function stepType(step) {
+  if (typeof step === 'string') return 'action';
+  return step.type || 'action';
+}
+
+function stepRowHTML(key, field, idx, step) {
+  const t = stepType(step);
+  const txt = esc(stepText(step));
+  return `<div class="step-row" draggable="true" id="steprow-${key}-${field}-${idx}" data-key="${key}" data-field="${field}" data-idx="${idx}">
+  <span class="drag-handle" title="Drag to reorder">&#8801;</span>
+  <div style="position:relative">
+    <button class="step-type-btn type-${t}" onclick="openTypePopup('${key}','${field}',${idx},this)" title="Change type">${TYPE_LABELS[t]||t}</button>
+    <div class="type-popup" id="popup-${key}-${field}-${idx}">
+      ${STEP_TYPES.map(tt => `<button class="type-opt type-${tt}" onclick="changeType('${key}','${field}',${idx},'${tt}')">${TYPE_LABELS[tt]}</button>`).join('')}
+    </div>
+  </div>
+  <div class="step-content bg-${t}" contenteditable="false"
+    onclick="startEdit(this)"
+    onblur="commitStep(this,'${key}','${field}',${idx})"
+    data-key="${key}" data-field="${field}" data-idx="${idx}">${txt}</div>
+  <button class="del-btn" onclick="deleteStep('${key}','${field}',${idx})" title="Delete">&#10005;</button>
+</div>`;
+}
+
+// ── OBJ ROW ───────────────────────────────────────────────────
+function objRowHTML(key, idx, text) {
+  return `<div class="obj-row" id="objrow-${key}-${idx}">
+  <div class="obj-content" contenteditable="false"
+    onclick="startEdit(this)"
+    onblur="commitObj(this,'${key}',${idx})"
+    data-key="${key}" data-idx="${idx}">${esc(text)}</div>
+  <button class="del-btn" onclick="deleteObj('${key}',${idx})" title="Delete">&#10005;</button>
+</div>`;
+}
+
+// ── INLINE EDIT ───────────────────────────────────────────────
+function startEdit(el) {
+  el.contentEditable = 'true';
+  el.focus();
+  // move cursor to end
+  const range = document.createRange();
+  const sel = window.getSelection();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function commitStep(el, key, field, idx) {
+  el.contentEditable = 'false';
+  const newText = el.innerText.trim();
+  const arr = DATA[key][field];
+  const step = arr[idx];
+  if (typeof step === 'string') {
+    arr[idx] = newText;
+  } else if (step.items) {
+    arr[idx] = { ...step, items: newText.split('\n').map(s => s.trim()).filter(Boolean) };
+  } else {
+    arr[idx] = { ...step, text: newText };
+  }
+  markDirty(key);
+}
+
+function commitObj(el, key, idx) {
+  el.contentEditable = 'false';
+  DATA[key].careObjectives[idx] = el.innerText.trim();
+  markDirty(key);
+}
+
+// ── TYPE CHANGE ───────────────────────────────────────────────
+function openTypePopup(key, field, idx, btn) {
+  // close all others
+  document.querySelectorAll('.type-popup.open').forEach(p => p.classList.remove('open'));
+  const popup = document.getElementById('popup-' + key + '-' + field + '-' + idx);
+  popup.classList.toggle('open');
+  // close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!popup.contains(e.target) && e.target !== btn) {
+        popup.classList.remove('open');
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 10);
+}
+
+function changeType(key, field, idx, newType) {
+  document.querySelectorAll('.type-popup.open').forEach(p => p.classList.remove('open'));
+  const arr = DATA[key][field];
+  const step = arr[idx];
+  const text = stepText(step);
+  // rebuild as object with new type
+  arr[idx] = newType === 'assess' ? { type: newType, items: text.split('\n').filter(Boolean) }
+           : { type: newType, text: text };
+  markDirty(key);
+  reRenderSteps(key, field);
+}
+
+// ── ADD / DELETE ──────────────────────────────────────────────
+function addStep(key, field) {
+  if (!DATA[key][field]) DATA[key][field] = [];
+  DATA[key][field].push({ type: 'action', text: 'New step' });
+  markDirty(key);
+  reRenderSteps(key, field);
+}
+
+function deleteStep(key, field, idx) {
+  DATA[key][field].splice(idx, 1);
+  markDirty(key);
+  reRenderSteps(key, field);
+}
+
+function addObjective(key) {
+  if (!DATA[key].careObjectives) DATA[key].careObjectives = [];
+  DATA[key].careObjectives.push('New objective');
+  markDirty(key);
+  reRenderObjs(key);
+}
+
+function deleteObj(key, idx) {
+  DATA[key].careObjectives.splice(idx, 1);
+  markDirty(key);
+  reRenderObjs(key);
+}
+
+// ── FIELD EDIT ────────────────────────────────────────────────
+function setField(key, field, value) {
+  DATA[key][field] = value;
+  // update card header if title or cpg changed
+  if (field === 'title') document.querySelector('#card-' + key + ' .card-title').textContent = value;
+  if (field === 'cpg')   document.querySelector('#card-' + key + ' .cpg-code').textContent = value;
+  markDirty(key);
+}
+
+// ── RE-RENDER HELPERS ─────────────────────────────────────────
+function reRenderSteps(key, field) {
+  const container = document.getElementById('steps-' + field + '-' + key);
+  if (!container) return;
+  container.innerHTML = (DATA[key][field]||[]).map((s,i) => stepRowHTML(key,field,i,s)).join('');
+  attachDrag(key);
+}
+
+function reRenderObjs(key) {
+  const container = document.getElementById('objs-' + key);
+  if (!container) return;
+  container.innerHTML = (DATA[key].careObjectives||[]).map((o,i) => objRowHTML(key,i,o)).join('');
+}
+
+// ── DIRTY STATE ───────────────────────────────────────────────
+function markDirty(key) {
+  document.getElementById('card-' + key).classList.add('dirty');
+}
+
+// ── DRAG AND DROP (reorder steps) ─────────────────────────────
+let dragSrc = null;
+
+function attachDrag(key) {
+  _dragAttached.add(key);
+  ['management','management_mica'].forEach(field => {
+    const container = document.getElementById('steps-' + field + '-' + key);
+    if (!container) return;
+    container.querySelectorAll('.step-row').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        dragSrc = row;
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        container.querySelectorAll('.step-row').forEach(r => r.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        container.querySelectorAll('.step-row').forEach(r => r.classList.remove('drag-over'));
+        if (row !== dragSrc) row.classList.add('drag-over');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (!dragSrc || dragSrc === row) return;
+        const srcIdx = parseInt(dragSrc.dataset.idx);
+        const dstIdx = parseInt(row.dataset.idx);
+        const arr = DATA[key][field];
+        const [moved] = arr.splice(srcIdx, 1);
+        arr.splice(dstIdx, 0, moved);
+        markDirty(key);
+        reRenderSteps(key, field);
+      });
+    });
+  });
+}
+
+// ── TOGGLE CARD ───────────────────────────────────────────────
+function toggleCard(key) {
+  const card = document.getElementById('card-' + key);
+  if (!card) return;
+  const opening = !card.classList.contains('open');
+  card.classList.toggle('open');
+  // Lazily wire up drag-and-drop only once, the first time a card is actually opened —
+  // avoids re-attaching listeners to every CPG's steps on every render.
+  if (opening && !_dragAttached.has(key)) attachDrag(key);
+}
+
+// ── RESET ─────────────────────────────────────────────────────
+function resetPkg(key) {
+  if (_newKeys.has(key)) {
+    if (!confirm('Discard this new, unsaved package?')) return;
+    delete DATA[key];
+    _newKeys.delete(key);
+    renderCards();
+    return;
+  }
+  if (!confirm('Reset "' + (DATA[key].title||key) + '" to original? All unsaved changes will be lost.')) return;
+  DATA[key] = JSON.parse(JSON.stringify(ORIGINAL[key]));
+  document.getElementById('card-' + key).classList.remove('dirty');
+  document.getElementById('body-' + key).innerHTML = renderCardBody(key, DATA[key]);
+  attachDrag(key);
+  setStatus(key, '', '');
+}
+
+// ── NEW PACKAGE ───────────────────────────────────────────────
+function addNewPackage() {
+  const key = (prompt('New package key — lowercase, underscores only, e.g. "quetiapine_toxicity":') || '').trim();
+  if (!key) return;
+  if (!/^[a-z][a-z0-9_]*$/.test(key)) { alert('Key must start with a letter and contain only lowercase letters, numbers and underscores.'); return; }
+  if (DATA[key]) { alert('A package with that key already exists.'); return; }
+  const cpgCode = (prompt('CPG code, e.g. "A0603" or "P0602-1":') || '').trim();
+  const title = (prompt('Title:') || key).trim();
+  DATA[key] = { title, cpg: cpgCode, careObjectives: [], management: [], management_mica: [], notes: '' };
+  _newKeys.add(key);
+  revealCard(key);
+  renderCards();
+  const card = document.getElementById('card-' + key);
+  if (card) {
+    card.classList.add('open', 'dirty');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  openCategoryAssign(key);
+}
+
+// ── GITHUB CONFIG & API ──────────────────────────────────────
+const GH_OWNER = '1984tpearson';
+const GH_REPO = 'AV';
+const GH_BRANCH = 'main';
+const GH_PATH = 'cpg_packages_combined.js';
+
+let _cachedGithubToken = null;
+
+async function getGithubTokenFromSupabase() {
+  if (!_userSession) return null;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/admin_secrets?key=eq.github_pat&select=value', {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + _userSession.access_token }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && data[0] && data[0].value) ? data[0].value : null;
+  } catch (e) { return null; }
+}
+
+async function saveGithubTokenToSupabase(token) {
+  if (!_userSession) return;
+  try {
+    await fetch(SUPABASE_URL + '/rest/v1/admin_secrets', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + _userSession.access_token,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ key: 'github_pat', value: token })
+    });
+  } catch (e) { /* best-effort — local cache still works */ }
+}
+
+async function ghGetToken() {
+  if (_cachedGithubToken) return _cachedGithubToken;
+  // Try the account-linked copy first — works across every device you're logged into
+  const fromSupabase = await getGithubTokenFromSupabase();
+  if (fromSupabase) {
+    _cachedGithubToken = fromSupabase;
+    localStorage.setItem('av_gh_pat', fromSupabase);
+    return fromSupabase;
+  }
+  // Fall back to this device's local cache (e.g. offline)
+  const local = localStorage.getItem('av_gh_pat');
+  if (local) {
+    _cachedGithubToken = local;
+    saveGithubTokenToSupabase(local); // best-effort sync so other devices pick it up too
+    return local;
+  }
+  // Nothing found anywhere — ask once
+  const entered = prompt('Enter your GitHub Personal Access Token\n(fine-grained, scoped to the AV repo, Contents: Read and write).\n\nSaved to your account so you won\u2019t need to re-enter it on other devices.');
+  if (!entered) return null;
+  const trimmed = entered.trim();
+  _cachedGithubToken = trimmed;
+  localStorage.setItem('av_gh_pat', trimmed);
+  await saveGithubTokenToSupabase(trimmed);
+  return trimmed;
+}
+
+async function changeGithubToken() {
+  const entered = prompt('Enter a new GitHub Personal Access Token to replace the current one:');
+  if (!entered) return;
+  const trimmed = entered.trim();
+  _cachedGithubToken = trimmed;
+  localStorage.setItem('av_gh_pat', trimmed);
+  await saveGithubTokenToSupabase(trimmed);
+  alert('Token updated — available on all your devices.');
+}
+
+async function ghGetFileAtPath(path) {
+  const token = await ghGetToken();
+  if (!token) throw new Error('No GitHub token provided');
+  const res = await fetch('https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + path + '?ref=' + GH_BRANCH, {
+    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' }
+  });
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) { localStorage.removeItem('av_gh_pat'); _cachedGithubToken = null; }
+    throw new Error('GitHub fetch failed (' + res.status + '): ' + await res.text());
+  }
+  const json = await res.json();
+  const bytes = Uint8Array.from(atob(json.content.replace(/\n/g, '')), c => c.charCodeAt(0));
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return { text, sha: json.sha };
+}
+async function ghGetFile() { return ghGetFileAtPath(GH_PATH); }
+
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+
+async function ghCommitFileAtPath(path, newText, sha, message) {
+  const token = await ghGetToken();
+  if (!token) throw new Error('No GitHub token provided');
+  const res = await fetch('https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + path, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, content: utf8ToBase64(newText), sha, branch: GH_BRANCH })
+  });
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) { localStorage.removeItem('av_gh_pat'); _cachedGithubToken = null; }
+    throw new Error('GitHub commit failed (' + res.status + '): ' + await res.text());
+  }
+  return res.json();
+}
+async function ghCommitFile(newText, sha, message) { return ghCommitFileAtPath(GH_PATH, newText, sha, message); }
+
+function ghEscapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Find the { ... } value belonging to `key` and replace it in place.
+function spliceExistingPackage(src, key, pkg) {
+  const newJson = JSON.stringify(pkg, null, 2);
+  const keyPattern = new RegExp('(\\/\\/\\s*-+[\\s\\S]*?\\n\\s*)(' + ghEscapeRegex(key) + '\\s*:\\s*)(\\{)', 'm');
+  let match = keyPattern.exec(src);
+  if (!match) {
+    const simplePattern = new RegExp('(' + ghEscapeRegex(key) + '\\s*:\\s*)(\\{)', 'm');
+    match = simplePattern.exec(src);
+    if (!match) throw new Error('Key "' + key + '" not found in file');
+  }
+  const openBraceIdx = match.index + match[0].length - 1;
+  let depth = 0, i = openBraceIdx, inStr = false, strChar = '';
+  while (i < src.length) {
+    const ch = src[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeBraceIdx = i;
+  const indented = newJson.replace(/^/gm, '  ').replace(/^  /, '');
+  return src.slice(0, openBraceIdx) + indented + src.slice(closeBraceIdx + 1);
+}
+
+// Insert a brand-new key: value pair just before the closing brace of CPG_PACKAGES = { ... }
+function spliceNewPackage(src, key, pkg) {
+  if (new RegExp('(^|[^A-Za-z0-9_])' + ghEscapeRegex(key) + '\\s*:').test(src)) {
+    throw new Error('Key "' + key + '" already exists in the file');
+  }
+  const declIdx = src.indexOf('CPG_PACKAGES');
+  if (declIdx === -1) throw new Error('CPG_PACKAGES declaration not found');
+  const openBraceIdx = src.indexOf('{', declIdx);
+  if (openBraceIdx === -1) throw new Error('Could not locate CPG_PACKAGES opening brace');
+  let depth = 0, i = openBraceIdx, inStr = false, strChar = '';
+  while (i < src.length) {
+    const ch = src[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeBraceIdx = i; // closing brace of CPG_PACKAGES itself
+  // The last existing entry may have no trailing comma (valid JS) — check before inserting a sibling
+  let j = closeBraceIdx - 1;
+  while (j > openBraceIdx && /\s/.test(src[j])) j--;
+  const needsComma = src[j] !== ',' && src[j] !== '{';
+  const newJson = JSON.stringify(pkg, null, 2).replace(/^/gm, '  ').replace(/^  /, '');
+  const insertion = (needsComma ? ',' : '') + '\n\n  ' + key + ': ' + newJson + ',\n';
+  return src.slice(0, closeBraceIdx) + insertion + src.slice(closeBraceIdx);
+}
+
+// Removes an existing key: { ... } package entry entirely (including its preceding
+// banner comment, if any, and the trailing comma/newline) from CPG_PACKAGES = { ... }.
+function spliceDeletePackage(src, key) {
+  const keyPattern = new RegExp('(\\/\\/\\s*-+[\\s\\S]*?\\n\\s*)(' + ghEscapeRegex(key) + '\\s*:\\s*)(\\{)', 'm');
+  let match = keyPattern.exec(src);
+  let deleteStart;
+  if (match) {
+    deleteStart = match.index;
+  } else {
+    const simplePattern = new RegExp('(' + ghEscapeRegex(key) + '\\s*:\\s*)(\\{)', 'm');
+    match = simplePattern.exec(src);
+    if (!match) throw new Error('Key "' + key + '" not found in file');
+    deleteStart = match.index;
+  }
+  const openBraceIdx = match.index + match[0].length - 1;
+  let depth = 0, i = openBraceIdx, inStr = false, strChar = '';
+  while (i < src.length) {
+    const ch = src[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  let deleteEnd = i + 1;
+  if (src[deleteEnd] === ',') deleteEnd++;
+  const lineEnd = src.indexOf('\n', deleteEnd);
+  if (lineEnd !== -1 && src.slice(deleteEnd, lineEnd).trim() === '') deleteEnd = lineEnd + 1;
+  return src.slice(0, deleteStart) + src.slice(deleteEnd);
+}
+
+function validateJs(text) {
+  try { new Function(text); }
+  catch (e) { throw new Error('Generated file has a syntax error — nothing was saved: ' + e.message); }
+}
+
+// ── SAVE ──────────────────────────────────────────────────────
+async function savePkg(key) {
+  const pkg = DATA[key];
+  const isNew = _newKeys.has(key);
+  const btn = document.querySelector('#card-' + key + ' .btn-save');
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  setStatus(key, '', 'Fetching latest file from GitHub…');
+  try {
+    const { text, sha } = await ghGetFile();
+    const newText = isNew ? spliceNewPackage(text, key, pkg) : spliceExistingPackage(text, key, pkg);
+    validateJs(newText);
+    const ok = confirm((isNew ? 'Add new CPG package "' : 'Save changes to "') + (pkg.title || key) + '" ' + (pkg.cpg ? '(' + pkg.cpg + ') ' : '') + 'and commit to GitHub now?\n\nThis goes live on the site in about a minute.');
+    if (!ok) {
+      setStatus(key, '', '');
+      btn.textContent = '✓ Save to file'; btn.disabled = false;
+      return;
+    }
+    setStatus(key, '', 'Committing to GitHub…');
+    await ghCommitFile(newText, sha, (isNew ? 'Add CPG: ' : 'Edit CPG: ') + (pkg.cpg || key));
+    document.getElementById('card-' + key).classList.remove('dirty');
+    setStatus(key, 'ok', '\u2713 Committed \u2014 live in ~1 min');
+    if (isNew) _newKeys.delete(key);
+    ORIGINAL[key] = JSON.parse(JSON.stringify(DATA[key]));
+  } catch(e) {
+    setStatus(key, 'err', 'Save failed: ' + e.message);
+  }
+  btn.textContent = '\u2713 Save to file'; btn.disabled = false;
+}
+
+function setStatus(key, cls, msg) {
+  const el = document.getElementById('status-' + key);
+  el.className = 'save-status' + (cls ? ' ' + cls : '');
+  el.textContent = msg;
+}
+
+// ── UTIL ──────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── EXTRACT FROM DOCUMENT ────────────────────────────────────
+let _cachedAnthropicKey = null;
+async function getAnthropicKey() {
+  if (_cachedAnthropicKey) return _cachedAnthropicKey;
+  const res = await fetch(SUPABASE_URL + '/rest/v1/app_config?key=eq.anthropic_api_key&select=value', {
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (data && data[0] && data[0].value) { _cachedAnthropicKey = data[0].value; return _cachedAnthropicKey; }
+  }
+  throw new Error('AI extraction is temporarily unavailable — could not load API key.');
+}
+
+function openExtractModal() {
+  document.getElementById('ex-files').value = '';
+  document.getElementById('ex-pasted-text').value = '';
+  document.getElementById('ex-filelist').textContent = '';
+  document.getElementById('ex-status').className = 'ex-status';
+  document.getElementById('ex-status').textContent = '';
+  document.getElementById('ex-modal').classList.add('open');
+}
+function closeExtractModal() {
+  document.getElementById('ex-modal').classList.remove('open');
+}
+function updateExFileList() {
+  const files = document.getElementById('ex-files').files;
+  document.getElementById('ex-filelist').textContent = files.length
+    ? Array.from(files).map(f => f.name).join(', ')
+    : '';
+}
+
+// Robustly extract the first valid JSON object from an AI response — handles cases where
+// the model adds preamble/trailing prose around the JSON despite being told not to, or
+// includes trailing commas / stray comments. Same approach used in generator.html.
+function parseFirstJSON(raw) {
+  let s = raw.replace(/```json|```/g, '').trim();
+  const start = s.indexOf('{');
+  if (start === -1) throw new Error('No JSON object found in the AI response.');
+  let depth = 0, end = -1;
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '{') depth++;
+    else if (s[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) throw new Error('The AI response was cut off mid-JSON — try again, or with less/clearer material.');
+  let jsonStr = s.slice(start, end + 1);
+  try { return JSON.parse(jsonStr); } catch(e1) {}
+  try {
+    const stripped = jsonStr.replace(/\/\/[^\n\r"]*/g, '');
+    return JSON.parse(stripped);
+  } catch(e2) {}
+  try {
+    const fixed = jsonStr
+      .replace(/([{,\s])'([^']+)'\s*:/g, '$1"$2":')
+      .replace(/:\s*'([^']*)'/g, ': "$1"')
+      .replace(/,\s*}/g, '}')
+      .replace(/,\s*]/g, ']');
+    return JSON.parse(fixed);
+  } catch(e3) {
+    throw new Error('AI returned malformed JSON — try again, or with clearer material.');
+  }
+}
+
+// This page doesn't load nav.js (no shared nav bar here), so it can't use
+// AVNav.logAIUsage — this mirrors it exactly (same table, same pricing, same
+// formula) so all three AI tools on this page show up in the admin cost visualiser.
+const MODEL_PRICING = {
+  'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-haiku-4-5-20251001': { input: 1, output: 5 }
+};
+async function logAIUsage(opts) {
+  try {
+    opts = opts || {};
+    const pricing = MODEL_PRICING[opts.model] || { input: 0, output: 0 };
+    const inTok = opts.input_tokens || 0;
+    const outTok = opts.output_tokens || 0;
+    const cost = (inTok / 1e6 * pricing.input) + (outTok / 1e6 * pricing.output);
+    await fetch(SUPABASE_URL + '/rest/v1/ai_usage_log', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + (_userSession ? _userSession.access_token : SUPABASE_KEY),
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        source: 'cpg_editor',
+        label: opts.label || null,
+        model: opts.model || 'unknown',
+        input_tokens: inTok,
+        output_tokens: outTok,
+        search_count: 0,
+        cost_usd: Number(cost.toFixed(5)),
+        user_id: _userSession ? _userSession.user.id : null,
+        user_name: _userSession ? _userSession.user.email : null
+      })
+    });
+  } catch (e) {
+    console.error('logAIUsage failed:', e.message);
+  }
+}
+
+// ── ADD TO NOTES (separate from full CPG extraction, embedded per-card) ─
+function toggleNxPanel(key) {
+  const panel = document.getElementById('nx-panel-' + key);
+  if (!panel) return;
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  if (opening) {
+    document.getElementById('nx-files-' + key).value = '';
+    document.getElementById('nx-pasted-' + key).value = '';
+    document.getElementById('nx-filelist-' + key).textContent = '';
+    document.getElementById('nx-mode-' + key).value = 'append';
+    document.getElementById('nx-status-' + key).className = 'ex-status';
+    document.getElementById('nx-status-' + key).textContent = '';
+  }
+}
+function updateNxFileList(key) {
+  const files = document.getElementById('nx-files-' + key).files;
+  document.getElementById('nx-filelist-' + key).textContent = files.length
+    ? Array.from(files).map(f => f.name).join(', ')
+    : '';
+}
+
+const NOTES_EXTRACT_SYSTEM_PROMPT = `You extract supplementary clinical context for a paramedic training tool. This context is stored separately from the CPG's structured management steps and drug doses — it is fed to another AI as background when it writes knowledge-assessment questions for scenarios based on this guideline, so it should read as useful clinical background, not as instructions.
+
+CRITICAL RULES:
+- Extract and lightly organise content from the supplied document/text only. Do not invent clinical facts, doses, or management steps from your own training knowledge.
+- Do NOT restate management steps, drug doses, or care objectives verbatim — those already live in the CPG's structured fields. Focus on background, indications, rationale, differentials, pitfalls, nuance, and other context that would help someone write varied, specific knowledge questions.
+- Keep "notes" concise — roughly 150–800 words. This is a distilled summary of the most useful context, not an exhaustive reproduction of the source document (which may be many pages long). Pick out what's genuinely most valuable rather than covering everything.
+- If the source material is mostly management steps with nothing else of use, say so plainly rather than repeating the steps.
+- If part of the document is illegible or ambiguous, do not guess — note it briefly in "caveats".
+
+Return ONLY a single valid JSON object, no markdown fences, no commentary:
+{
+  "notes": "The extracted/organised clinical context, in plain prose. Empty string if nothing useful found.",
+  "caveats": "Your notes to the human reviewer about extraction quality/uncertainty. Empty string if none."
+}`;
+
+async function runNotesExtraction(key) {
+  const btn = document.getElementById('nx-run-btn-' + key);
+  const statusEl = document.getElementById('nx-status-' + key);
+  const mode = document.getElementById('nx-mode-' + key).value;
+  const files = Array.from(document.getElementById('nx-files-' + key).files);
+  const pastedText = document.getElementById('nx-pasted-' + key).value.trim();
+  if (!files.length && !pastedText) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Upload at least one file or paste some text.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Extracting…';
+  statusEl.className = 'ex-status';
+  statusEl.textContent = 'Reading files…';
+  try {
+    const content = [];
+    for (const file of files) {
+      const b64 = await fileToBase64(file);
+      if (file.type === 'application/pdf') {
+        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
+      } else {
+        content.push({ type: 'image', source: { type: 'base64', media_type: file.type || 'image/png', data: b64 } });
+      }
+    }
+    if (pastedText) content.push({ type: 'text', text: pastedText });
+    content.push({ type: 'text', text: `This context relates to the "${DATA[key].title || key}" CPG. Extract the supplementary clinical context now.` });
+
+    statusEl.textContent = 'Calling AI…';
+    const apiKey = await getAnthropicKey();
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        system: NOTES_EXTRACT_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content }]
+      })
+    });
+    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
+    const data = await response.json();
+    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Add to Notes: ' + (DATA[key].title || key) });
+    const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const extracted = parseFirstJSON(rawText);
+
+    const newNotes = (extracted.notes || '').trim();
+    if (!newNotes) {
+      statusEl.className = 'ex-status err';
+      statusEl.textContent = 'AI found nothing useful to add — nothing was changed.';
+      btn.disabled = false; btn.textContent = '\ud83e\udd16 Extract & Add';
+      return;
+    }
+    const existing = (DATA[key].notes || '').trim();
+    DATA[key].notes = (mode === 'append' && existing) ? `${existing}\n\n${newNotes}` : newNotes;
+    markDirty(key);
+    const notesBox = document.getElementById('notes-' + key);
+    if (notesBox) notesBox.value = DATA[key].notes;
+
+    // Panel intentionally stays open so the success message below is visible
+    statusEl.className = 'ex-status ok';
+    statusEl.textContent = '\u2713 Added — remember to Save to file when you\'re happy with it.';
+    if (extracted.caveats) {
+      alert('\u26a0\ufe0f AI flagged something about this extraction (not saved — for your review only):\n\n' + extracted.caveats);
+    }
+  } catch (e) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Extraction failed: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = '\ud83e\udd16 Extract & Add';
+}
+
+// ── GENERATE TEST QUESTIONS (preview only — never saved anywhere) ──
+function buildTestCPGContext(key) {
+  const pkg = DATA[key];
+  let mgmtLines = '';
+  if (Array.isArray(pkg.management) && pkg.management.length && typeof pkg.management[0] === 'object') {
+    mgmtLines = pkg.management.map(step => {
+      if (!step || !step.type) return '';
+      switch (step.type) {
+        case 'assess': return `  ASSESS: ${(step.items||[]).join(', ')}`;
+        case 'stop':   return `  STOP: ${step.text}`;
+        case 'header': return `  [${step.text}]`;
+        case 'subheader': return `    (${step.text})`;
+        case 'action': return step.items ? `  - ${step.items.join('; ')}` : `  - ${step.text}`;
+        case 'note':   return step.items ? `  NOTE: ${step.items.join('; ')}` : `  NOTE: ${step.text}`;
+        case 'mica':   return step.items ? `  MICA: ${step.items.join('; ')}` : `  MICA: ${step.text}`;
+        default: return '';
+      }
+    }).filter(Boolean).join('\n');
+  } else if (Array.isArray(pkg.management)) {
+    mgmtLines = pkg.management.filter(Boolean).map(s => `  - ${s}`).join('\n');
+  }
+  let micaLines = '';
+  if (Array.isArray(pkg.management_mica) && pkg.management_mica.length) {
+    micaLines = pkg.management_mica.map(step => {
+      if (typeof step === 'string') return `  - ${step}`;
+      return step.items ? `  - ${step.items.join('; ')}` : `  - ${step.text || ''}`;
+    }).filter(Boolean).join('\n');
+  }
+  const drugLines = Object.entries(pkg.drugs || {}).map(([dk, dv]) => `  ${dk}: ${dv}`).join('\n');
+  return `--- CPG: ${pkg.title || key} (${pkg.cpg || '?'}) ---\n` +
+    `Care objectives: ${(pkg.careObjectives||[]).join('; ')}\n` +
+    `Management (ALS):\n${mgmtLines}\n` +
+    (micaLines ? `Management (MICA):\n${micaLines}\n` : '') +
+    (drugLines ? `Drugs:\n${drugLines}\n` : '') +
+    (pkg.pitfalls ? `Pitfalls: ${pkg.pitfalls.join('; ')}\n` : '') +
+    (pkg.highRiskFeatures ? `High-risk features: ${pkg.highRiskFeatures.join(', ')}\n` : '') +
+    (pkg.notes ? `Additional clinical context: ${pkg.notes}\n` : '');
+}
+
+const TEST_QUESTIONS_SYSTEM_PROMPT = `You write short-answer knowledge-recall questions for Ambulance Victoria paramedic training, testing a student's direct factual knowledge of one specific Clinical Practice Guideline. Respond with valid JSON only — no markdown, no commentary.
+
+CRITICAL RULES:
+- Do NOT write clinical vignettes or case scenarios. Never start a question with a patient description (e.g. "A 74-year-old female presents with..."). These are direct recall questions, not scenario-based ones.
+- Ask directly for facts from the CPG: doses and routes, thresholds/criteria, contraindications, indications, definitions, number of steps in a sequence, what to do in a specific defined situation named in the CPG (e.g. "What is the adult dose of X?", "Name three contraindications to Y.", "At what SpO2 threshold should Z be considered?", "What does the CPG define as [term]?").
+- All clinical content must be drawn exclusively from the CPG content provided below — do not add doses, steps, or facts from your own training knowledge.
+- Write exactly 3 questions, varying in focus (e.g. one on doses/thresholds, one on contraindications/indications, one on definitions/procedure). If additional clinical context is supplied, use it to vary and enrich the questions beyond just the management steps.
+- Each answer should be a short, direct model answer a clinical instructor could compare a student's spoken answer against — not a paragraph of reasoning.
+
+Return ONLY a valid JSON object:
+{"questions":[{"q":"...","answer":"..."},{"q":"...","answer":"..."},{"q":"...","answer":"..."}]}`;
+
+async function generateTestQuestions(key) {
+  const btn = document.getElementById('tq-run-btn-' + key);
+  const panel = document.getElementById('tq-panel-' + key);
+  btn.disabled = true; btn.textContent = 'Generating…';
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="ex-hint">Calling AI…</div>';
+  try {
+    const apiKey = await getAnthropicKey();
+    const context = buildTestCPGContext(key);
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1200,
+        system: TEST_QUESTIONS_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: `${context}\nGenerate 3 knowledge-assessment questions and answers for this CPG now.` }]
+      })
+    });
+    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
+    const data = await response.json();
+    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Test Questions: ' + (DATA[key].title || key) });
+    const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const parsed = parseFirstJSON(rawText);
+    const qs = Array.isArray(parsed.questions) ? parsed.questions : [];
+    if (!qs.length) throw new Error('AI returned no questions.');
+    panel.innerHTML =
+      '<div class="ex-hint" style="margin-bottom:8px">Test preview only &mdash; not saved anywhere.</div>' +
+      qs.map((q, i) => `<div class="tq-item">
+        <div class="tq-q"><strong>Q${i+1}.</strong> ${esc(q.q||'')}</div>
+        <div class="tq-a">${esc(q.answer||'')}</div>
+      </div>`).join('');
+  } catch (e) {
+    panel.innerHTML = `<div class="ex-status err">Failed: ${esc(e.message)}</div>`;
+  }
+  btn.disabled = false; btn.textContent = '\ud83e\uddea Generate Test Questions';
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function slugify(title) {
+  return String(title || '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || ('cpg_' + Date.now());
+}
+
+const EXTRACT_SYSTEM_PROMPT = `You extract structured data from Ambulance Victoria ALS-MICA Clinical Practice Guideline (CPG) documents for a paramedic training tool.
+
+CRITICAL RULES — clinical safety depends on these:
+- Extract content VERBATIM from the supplied document only. Do not add, infer, paraphrase, or summarise any clinical content.
+- Do NOT add management steps, drug doses, or clinical rules from your own training knowledge, even if they seem standard or obviously missing. If it is not visibly in the document, it does not go in the output.
+- ALS/MICA split: green-coded / plain action boxes are ALS scope → "management". Blue-coded / MICA-labelled boxes (infusions, intubation, BiPAP/NIV detail, vasopressors, finger thoracostomy, thrombolysis, RSI drugs) → "management_mica". A step belongs in exactly one array, never both.
+- If part of the document is illegible, cut off, or ambiguous, do NOT guess — put a short flag about it in "extractionCaveats" instead (e.g. "Right column partially cut off in source image — verify against full CPG").
+- If you are not confident about the ALS/MICA classification of a specific step, still place it in your best-guess array but flag the uncertainty in "extractionCaveats".
+- "notes" and "extractionCaveats" are different fields with different purposes — do not mix them:
+  - "notes" is ONLY for genuine verbatim clinical context that is actually written in the source document itself (e.g. an "Indication" or "Background" paragraph). Leave it as an empty string if the document has no such text. This field gets fed to another AI as clinical context for generating training scenarios, so it must never contain commentary about the extraction process itself.
+  - "extractionCaveats" is for YOUR commentary about this extraction — illegible sections, low confidence, anything a human reviewer should double-check. This is shown to the reviewer on screen and is never saved into the CPG data or shown to any other system.
+
+Return ONLY a single valid JSON object, no markdown fences, no commentary, in this exact shape:
+{
+  "suggestedKey": "lowercase_snake_case_key",
+  "title": "Guideline title exactly as shown",
+  "cpg": "CPG code exactly as shown, e.g. A0603 or P0602-1",
+  "careObjectives": ["verbatim care objective", "..."],
+  "management": [
+    {"type":"header","text":"Section heading if present"},
+    {"type":"assess","items":["assessment item", "..."]},
+    {"type":"action","text":"single ALS action step"},
+    {"type":"note","text":"verbatim note"},
+    {"type":"stop","text":"verbatim stop/consult instruction"}
+  ],
+  "management_mica": [
+    {"type":"mica","text":"single MICA-only step"}
+  ],
+  "notes": "Genuine verbatim clinical context from the document only. Empty string if none.",
+  "extractionCaveats": "Your notes to the human reviewer about extraction quality/uncertainty. Empty string if none."
+}
+Valid step "type" values: assess, action, header, subheader, stop, note, mica. Use "items" (array) for steps with multiple sub-points, "text" (string) for single-line steps.`;
+
+async function runExtraction() {
+  const btn = document.getElementById('ex-run-btn');
+  const statusEl = document.getElementById('ex-status');
+  const files = Array.from(document.getElementById('ex-files').files);
+  const pastedText = document.getElementById('ex-pasted-text').value.trim();
+  if (!files.length && !pastedText) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Upload at least one file or paste some text.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Extracting…';
+  statusEl.className = 'ex-status';
+  statusEl.textContent = 'Reading files…';
+  try {
+    const content = [];
+    for (const file of files) {
+      const b64 = await fileToBase64(file);
+      if (file.type === 'application/pdf') {
+        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } });
+      } else {
+        content.push({ type: 'image', source: { type: 'base64', media_type: file.type || 'image/png', data: b64 } });
+      }
+    }
+    if (pastedText) content.push({ type: 'text', text: pastedText });
+    content.push({ type: 'text', text: 'Extract this CPG into the specified JSON format now.' });
+
+    statusEl.textContent = 'Calling AI…';
+    const apiKey = await getAnthropicKey();
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        system: EXTRACT_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content }]
+      })
+    });
+    if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
+    const data = await response.json();
+    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Extract from Document' });
+    const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const extracted = parseFirstJSON(rawText);
+    finalizeExtractedPackage(extracted);
+    statusEl.className = 'ex-status ok';
+    statusEl.textContent = '\u2713 Extracted — review the opened card below.';
+    if (extracted.extractionCaveats) {
+      alert('\u26a0\ufe0f AI flagged something about this extraction (not saved into the CPG \u2014 for your review only):\n\n' + extracted.extractionCaveats);
+    }
+  } catch (e) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Extraction failed: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = '\ud83e\udd16 Extract';
+}
+
+function finalizeExtractedPackage(extracted) {
+  let key = slugify(extracted.suggestedKey || extracted.title);
+  const isExisting = !!DATA[key];
+  if (isExisting) {
+    if (!confirm('A package with key "' + key + '" already exists ("' + (DATA[key].title || key) + '"). Overwrite its content with this extraction?\n\nClick Cancel to save as a new package with a different key instead.')) {
+      const alt = (prompt('Enter a different key for this new package:', key + '_2') || '').trim();
+      if (!alt) return;
+      key = alt;
+      _newKeys.add(key);
+    }
+  } else {
+    _newKeys.add(key);
+  }
+  DATA[key] = {
+    title: extracted.title || key,
+    cpg: extracted.cpg || '',
+    careObjectives: Array.isArray(extracted.careObjectives) ? extracted.careObjectives : [],
+    management: Array.isArray(extracted.management) ? extracted.management : [],
+    management_mica: Array.isArray(extracted.management_mica) ? extracted.management_mica : [],
+    notes: extracted.notes || ''
+  };
+  closeExtractModal();
+  revealCard(key);
+  renderCards();
+  const card = document.getElementById('card-' + key);
+  if (card) {
+    card.classList.add('open', 'dirty');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  openCategoryAssign(key);
+}
+
+// ── CATEGORY ASSIGNMENT (patches CATEGORY_TO_CPG in generator.html + this file) ──
+let _catAssignKey = null;
+
+function populateCategorySelectOptions(selectEl, currentValue) {
+  let html = '<option value="">— Uncategorised —</option>';
+  TOP_CATEGORIES.forEach(cat => {
+    const subKeys = Object.keys(CATEGORY_TO_CPG).filter(k => k.startsWith(cat.key + '|'));
+    const subs = [...new Set(subKeys.map(k => k.split('|')[1]))];
+    html += '<optgroup label="' + esc(cat.key) + '">';
+    subs.forEach(sub => {
+      const val = cat.key + '|' + sub;
+      html += '<option value="' + esc(val) + '"' + (val === currentValue ? ' selected' : '') + '>' + esc(cat.key) + ' — ' + esc(sub) + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  selectEl.innerHTML = html;
+}
+
+let _catAssignOldConditionName = '';
+
+async function openCategoryAssign(key) {
+  _catAssignKey = key;
+  const current = findCategoryPathForKey(key);
+  const sel = document.getElementById('cat-assign-select');
+  populateCategorySelectOptions(sel, current ? current.catSubKey : '');
+  const nameInput = document.getElementById('cat-assign-condition-name');
+  nameInput.value = '';
+  _catAssignOldConditionName = '';
+  const statusEl = document.getElementById('cat-assign-status');
+  statusEl.className = 'ex-status';
+  statusEl.textContent = 'Checking for an existing condition name…';
+  document.getElementById('cat-modal').classList.add('open');
+  try {
+    const catData = await ghGetFileAtPath('category_data.js');
+    const match = new RegExp("'([^']+)'\\s*:\\s*'" + ghEscapeRegex(key) + "'").exec(catData.text);
+    _catAssignOldConditionName = match ? match[1] : '';
+    nameInput.value = _catAssignOldConditionName;
+    statusEl.textContent = '';
+  } catch (e) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Could not check for an existing condition name: ' + e.message;
+  }
+}
+function closeCategoryAssign() {
+  document.getElementById('cat-modal').classList.remove('open');
+  _catAssignKey = null;
+}
+
+// Removes `cpgKey` from every category array in the file's CATEGORY_TO_CPG object,
+// then (if newCatSubKey is given) adds it under that key — creating the entry if needed.
+function patchCategoryToCpgText(fileText, cpgKey, newCatSubKey) {
+  const declMatch = /const\s+CATEGORY_TO_CPG\s*=\s*\{/.exec(fileText);
+  if (!declMatch) throw new Error('CATEGORY_TO_CPG declaration not found in this file');
+  const openBraceIdx = declMatch.index + declMatch[0].length - 1;
+  let depth = 0, i = openBraceIdx, inStr = false, strChar = '';
+  while (i < fileText.length) {
+    const ch = fileText[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeBraceIdx = i;
+  let block = fileText.slice(openBraceIdx, closeBraceIdx + 1);
+
+  const entryRe = /'([^']+)'\s*:\s*\[([^\]]*)\]/g;
+  let foundTarget = false;
+  block = block.replace(entryRe, (m, catSubKey, arrText) => {
+    let items = arrText.split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^['"]|['"]$/g, ''));
+    items = items.filter(it => it !== cpgKey);
+    if (newCatSubKey && catSubKey === newCatSubKey) {
+      if (!items.includes(cpgKey)) items.push(cpgKey);
+      foundTarget = true;
+    }
+    const newArr = items.map(it => "'" + it + "'").join(', ');
+    return "'" + catSubKey + "': [" + newArr + ']';
+  });
+
+  if (newCatSubKey && !foundTarget) {
+    // block.slice(0,-1) strips the outer trailing '}'; the entry before it may not have a trailing comma
+    let body = block.slice(0, -1);
+    let j = body.length - 1;
+    while (j >= 0 && /\s/.test(body[j])) j--;
+    const needsComma = body[j] !== ',' && body[j] !== '{';
+    const insertion = (needsComma ? ',' : '') + "\n  '" + newCatSubKey + "': ['" + cpgKey + "'],";
+    block = body + insertion + '\n' + block.slice(-1);
+  }
+
+  return fileText.slice(0, openBraceIdx) + block + fileText.slice(closeBraceIdx + 1);
+}
+
+// Adds/moves/removes a condition display name within the (generator.html-only) CATEGORIES picker list.
+// oldConditionName: removed from wherever it currently is (pass '' if none). newConditionName: added under catKey/subKey (pass '' to just remove).
+function patchCategoriesText(fileText, oldConditionName, catKey, subKey, newConditionName) {
+  const declMatch = /const\s+CATEGORIES\s*=\s*\[/.exec(fileText);
+  if (!declMatch) throw new Error('CATEGORIES declaration not found in this file');
+  const openIdx = declMatch.index + declMatch[0].length - 1;
+  let depth = 0, i = openIdx, inStr = false, strChar = '';
+  while (i < fileText.length) {
+    const ch = fileText[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeIdx = i;
+  let block = fileText.slice(openIdx, closeIdx + 1);
+
+  if (oldConditionName) {
+    block = block.replace(/'([^']+)'\s*:\s*\[([^\]]*)\]/g, (m, subK, arrText) => {
+      let items = arrText.split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^['"]|['"]$/g, ''));
+      const filtered = items.filter(it => it !== oldConditionName);
+      if (filtered.length === items.length) return m;
+      const newArr = filtered.map(it => "'" + it.replace(/'/g, "\\'") + "'").join(',');
+      return "'" + subK + "':[" + newArr + ']';
+    });
+  }
+
+  if (newConditionName && catKey && subKey) {
+    const catRe = new RegExp("\\{key:\\s*'" + ghEscapeRegex(catKey) + "'.*?\\}\\},?", 'g');
+    const catMatch = catRe.exec(block);
+    if (!catMatch) throw new Error('Category "' + catKey + '" not found in CATEGORIES');
+    let catLine = catMatch[0];
+    const subRe = new RegExp("'" + ghEscapeRegex(subKey) + "'\\s*:\\s*\\[([^\\]]*)\\]");
+    const subMatch = subRe.exec(catLine);
+    let newCatLine;
+    if (subMatch) {
+      let items = subMatch[1].split(',').map(s => s.trim()).filter(Boolean).map(s => s.replace(/^['"]|['"]$/g, ''));
+      if (!items.includes(newConditionName)) items.push(newConditionName);
+      const newArr = items.map(it => "'" + it.replace(/'/g, "\\'") + "'").join(',');
+      newCatLine = catLine.slice(0, subMatch.index) + "'" + subKey + "':[" + newArr + "]" + catLine.slice(subMatch.index + subMatch[0].length);
+    } else {
+      const insertion = ",'" + subKey.replace(/'/g, "\\'") + "':['" + newConditionName.replace(/'/g, "\\'") + "']";
+      const lastClose = catLine.lastIndexOf('}}');
+      newCatLine = catLine.slice(0, lastClose) + insertion + catLine.slice(lastClose);
+    }
+    block = block.slice(0, catMatch.index) + newCatLine + block.slice(catMatch.index + catMatch[0].length);
+  }
+
+  return fileText.slice(0, openIdx) + block + fileText.slice(closeIdx + 1);
+}
+
+// Adds/moves/removes a condition-name → CPG-key mapping (generator.html-only, drives Quick Build selection).
+function patchCondToCpgKeyText(fileText, oldConditionName, cpgKey, newConditionName) {
+  const declMatch = /const\s+COND_TO_CPG_KEY\s*=\s*\{/.exec(fileText);
+  if (!declMatch) throw new Error('COND_TO_CPG_KEY declaration not found in this file');
+  const openIdx = declMatch.index + declMatch[0].length - 1;
+  let depth = 0, i = openIdx, inStr = false, strChar = '';
+  while (i < fileText.length) {
+    const ch = fileText[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeIdx = i;
+  let block = fileText.slice(openIdx, closeIdx + 1);
+
+  const entryRe = /'([^']+)'\s*:\s*'([^']*)'/g;
+  const toRemove = [];
+  let m;
+  while ((m = entryRe.exec(block))) {
+    if (m[2] === cpgKey || (oldConditionName && m[1] === oldConditionName)) toRemove.push(m);
+  }
+  for (let k = toRemove.length - 1; k >= 0; k--) {
+    const mm = toRemove[k];
+    const start = mm.index;
+    let end = start + mm[0].length;
+    if (block[end] === ',') end++;
+    let lineEnd = block.indexOf('\n', end);
+    if (lineEnd !== -1 && block.slice(end, lineEnd).trim() === '') end = lineEnd + 1;
+    block = block.slice(0, start) + block.slice(end);
+  }
+
+  if (newConditionName) {
+    const closeRel = block.length - 1;
+    let j = closeRel - 1;
+    while (j >= 0 && /\s/.test(block[j])) j--;
+    const needsComma = block[j] !== ',' && block[j] !== '{';
+    const insertion = (needsComma ? ',' : '') + "\n  '" + newConditionName.replace(/'/g, "\\'") + "': '" + cpgKey + "',";
+    block = block.slice(0, closeRel) + insertion + '\n' + block.slice(closeRel);
+  }
+
+  return fileText.slice(0, openIdx) + block + fileText.slice(closeIdx + 1);
+}
+
+// Adds/updates a bare-identifier-key label in scenario.html's CPG_SUBTYPE_LABELS (e.g. `fracture_dislocation_a0806: 'Fracture/dislocation',`).
+function patchSubtypeLabelText(fileText, cpgKey, newLabel) {
+  const declMatch = /const\s+CPG_SUBTYPE_LABELS\s*=\s*\{/.exec(fileText);
+  if (!declMatch) throw new Error('CPG_SUBTYPE_LABELS declaration not found in this file');
+  const openIdx = declMatch.index + declMatch[0].length - 1;
+  let depth = 0, i = openIdx, inStr = false, strChar = '';
+  while (i < fileText.length) {
+    const ch = fileText[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeIdx = i;
+  let block = fileText.slice(openIdx, closeIdx + 1);
+
+  const entryRe = /([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*'([^']*)'/g;
+  let m, foundIdx = -1, foundLen = 0;
+  while ((m = entryRe.exec(block))) {
+    if (m[1] === cpgKey) { foundIdx = m.index; foundLen = m[0].length; break; }
+  }
+  if (foundIdx !== -1) {
+    block = block.slice(0, foundIdx) + cpgKey + ": '" + newLabel.replace(/'/g, "\\'") + "'" + block.slice(foundIdx + foundLen);
+  } else {
+    const closeRel = block.length - 1;
+    let j = closeRel - 1;
+    while (j >= 0 && /\s/.test(block[j])) j--;
+    const needsComma = block[j] !== ',' && block[j] !== '{';
+    const insertion = (needsComma ? ',' : '') + '\n  ' + cpgKey + ": '" + newLabel.replace(/'/g, "\\'") + "',";
+    block = block.slice(0, closeRel) + insertion + '\n' + block.slice(closeRel);
+  }
+  return fileText.slice(0, openIdx) + block + fileText.slice(closeIdx + 1);
+}
+
+// Removes a bare-identifier-key label entry from CPG_SUBTYPE_LABELS entirely (used on CPG delete).
+function deleteSubtypeLabelText(fileText, cpgKey) {
+  const declMatch = /const\s+CPG_SUBTYPE_LABELS\s*=\s*\{/.exec(fileText);
+  if (!declMatch) throw new Error('CPG_SUBTYPE_LABELS declaration not found in this file');
+  const openIdx = declMatch.index + declMatch[0].length - 1;
+  let depth = 0, i = openIdx, inStr = false, strChar = '';
+  while (i < fileText.length) {
+    const ch = fileText[i];
+    if (inStr) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === strChar) inStr = false;
+    } else {
+      if (ch === '"' || ch === "'" || ch === '`') { inStr = true; strChar = ch; }
+      else if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) break; }
+    }
+    i++;
+  }
+  const closeIdx = i;
+  let block = fileText.slice(openIdx, closeIdx + 1);
+  const entryRe = /([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*'([^']*)'/g;
+  let m, foundIdx = -1, foundLen = 0;
+  while ((m = entryRe.exec(block))) {
+    if (m[1] === cpgKey) { foundIdx = m.index; foundLen = m[0].length; break; }
+  }
+  if (foundIdx !== -1) {
+    let end = foundIdx + foundLen;
+    if (block[end] === ',') end++;
+    const lineEnd = block.indexOf('\n', end);
+    if (lineEnd !== -1 && block.slice(end, lineEnd).trim() === '') end = lineEnd + 1;
+    block = block.slice(0, foundIdx) + block.slice(end);
+  }
+  return fileText.slice(0, openIdx) + block + fileText.slice(closeIdx + 1);
+}
+
+async function confirmCategoryAssign() {
+  const key = _catAssignKey;
+  if (!key) return;
+  const newCatSubKey = document.getElementById('cat-assign-select').value || null;
+  const newConditionName = document.getElementById('cat-assign-condition-name').value.trim();
+  const oldConditionName = _catAssignOldConditionName || '';
+  const btn = document.getElementById('cat-assign-confirm-btn');
+  const statusEl = document.getElementById('cat-assign-status');
+  btn.disabled = true; btn.textContent = 'Assigning…';
+  statusEl.className = 'ex-status';
+  try {
+    statusEl.textContent = 'Updating category_data.js…';
+    const catData = await ghGetFileAtPath('category_data.js');
+    let patched = patchCategoryToCpgText(catData.text, key, newCatSubKey);
+    const [catKey, subKey] = newCatSubKey ? newCatSubKey.split('|') : [null, null];
+    patched = patchCategoriesText(patched, oldConditionName, catKey, subKey, newConditionName);
+    patched = patchCondToCpgKeyText(patched, oldConditionName, key, newConditionName);
+    const subtypeLabel = newConditionName || DATA[key].title || key;
+    patched = patchSubtypeLabelText(patched, key, subtypeLabel);
+    validateJs(patched);
+    await ghCommitFileAtPath('category_data.js', patched, catData.sha, 'Update CPG category/condition mapping: ' + key);
+
+    // Reflect immediately in this session without waiting for a reload
+    Object.keys(CATEGORY_TO_CPG).forEach(csk => {
+      CATEGORY_TO_CPG[csk] = CATEGORY_TO_CPG[csk].filter(k => k !== key);
+    });
+    if (newCatSubKey) {
+      if (!CATEGORY_TO_CPG[newCatSubKey]) CATEGORY_TO_CPG[newCatSubKey] = [];
+      CATEGORY_TO_CPG[newCatSubKey].push(key);
+    }
+
+    statusEl.className = 'ex-status ok';
+    statusEl.textContent = '✓ Category updated — live in ~1 min';
+    closeCategoryAssign();
+    revealCard(key);
+    renderCards();
+  } catch (e) {
+    statusEl.className = 'ex-status err';
+    statusEl.textContent = 'Failed: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = 'Assign';
+}
+
+// ── DELETE PACKAGE (removes from CPG_PACKAGES + all category_data.js mappings) ──
+async function deletePkg(key) {
+  const pkg = DATA[key];
+  if (!pkg) return;
+  const label = (pkg.title || key) + (pkg.cpg ? ' (' + pkg.cpg + ')' : '');
+  const allLocations = Object.keys(CATEGORY_TO_CPG).filter(csk => CATEGORY_TO_CPG[csk].includes(key));
+  const whereText = allLocations.length
+    ? ('It currently appears under: ' + allLocations.map(csk => csk.replace('|', ' \u2192 ')).join(', ') + '.')
+    : 'It is currently uncategorised.';
+  const typed = prompt(
+    'This permanently deletes "' + label + '" from CPG_PACKAGES, and strips it from every category mapping ' +
+    '(CATEGORY_TO_CPG, CATEGORIES, COND_TO_CPG_KEY, CPG_SUBTYPE_LABELS) in category_data.js.\n\n' +
+    whereText + '\n\nType the package key exactly to confirm: "' + key + '"'
+  );
+  if (typed !== key) {
+    if (typed !== null) alert('Key didn\u2019t match — nothing deleted.');
+    return;
+  }
+
+  const statusEl = document.getElementById('status-' + key);
+  const setDelStatus = (cls, msg) => { if (statusEl) { statusEl.className = 'save-status' + (cls ? ' ' + cls : ''); statusEl.textContent = msg; } };
+
+  if (_newKeys.has(key)) {
+    // Never saved to GitHub yet — just discard locally, nothing to commit.
+    delete DATA[key];
+    delete ORIGINAL[key];
+    _newKeys.delete(key);
+    Object.keys(CATEGORY_TO_CPG).forEach(csk => { CATEGORY_TO_CPG[csk] = CATEGORY_TO_CPG[csk].filter(k => k !== key); });
+    renderCards();
+    return;
+  }
+
+  try {
+    setDelStatus('', 'Deleting from cpg_packages_combined.js\u2026');
+    const pkgFile = await ghGetFile();
+    const pkgPatched = spliceDeletePackage(pkgFile.text, key);
+    validateJs(pkgPatched);
+    await ghCommitFile(pkgPatched, pkgFile.sha, 'Delete CPG: ' + (pkg.cpg || key));
+
+    setDelStatus('', 'Removing category mappings\u2026');
+    const catData = await ghGetFileAtPath('category_data.js');
+    const oldConditionName = _catAssignOldConditionName && _catAssignKey === key ? _catAssignOldConditionName : (
+      (new RegExp("'([^']+)'\\s*:\\s*'" + ghEscapeRegex(key) + "'").exec(catData.text) || [])[1] || ''
+    );
+    let catPatched = patchCategoryToCpgText(catData.text, key, null);
+    catPatched = patchCategoriesText(catPatched, oldConditionName, null, null, '');
+    catPatched = patchCondToCpgKeyText(catPatched, oldConditionName, key, '');
+    catPatched = deleteSubtypeLabelText(catPatched, key);
+    validateJs(catPatched);
+    await ghCommitFileAtPath('category_data.js', catPatched, catData.sha, 'Delete CPG category mapping: ' + key);
+
+    // Reflect immediately in this session
+    delete DATA[key];
+    delete ORIGINAL[key];
+    Object.keys(CATEGORY_TO_CPG).forEach(csk => { CATEGORY_TO_CPG[csk] = CATEGORY_TO_CPG[csk].filter(k => k !== key); });
+    renderCards();
+  } catch (e) {
+    setDelStatus('err', 'Delete failed: ' + e.message);
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+(async function initEditor(){
+  const ok = await checkAdminAccess();
+  if (ok) renderCards();
+})();
+</script>
+</body>
+</html>

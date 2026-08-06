@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quizotron 5000 — Host</title>
+<script>
+// Apply saved theme immediately to prevent flash (needed by nav.js sidebar/modal)
+(function(){const t=localStorage.getItem('av_theme');if(t&&t!=='default')document.documentElement.setAttribute('data-theme',t);})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
+<script src="category_data.js"></script>
+<script src="cpg_packages_combined.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0B0E1A; --bg2:#141931; --card:#1B2140;
+  --gold:#FFC93C; --magenta:#FF3D7F; --teal:#2FE6C4; --violet:#7B61FF;
+  --ink:#F5F5FA; --muted:#8B93A8; --line:rgba(255,255,255,0.08);
+}
+/* Variables below are consumed by nav.js (shared hamburger/settings sidebar) —
+   not used by the quiz UI itself. Values match the app's default theme in
+   scenario.html so the sidebar/modal look consistent across the whole suite. */
+:root{
+  --navy:#1C3A6E; --navy-dark:#122849; --navy-light:#2A4F8F;
+  --red:#C0392B; --red-light:#FDEDEC;
+  --amber:#E8921A; --amber-light:#FEF5E7; --btn-accent:#E8921A; --green:#27833A; --green-light:#EAFAF1;
+  --blue:#2E86C1; --blue-light:#EBF5FB;
+  --purple:#7D3C98; --purple-light:#F5EEF8;
+  --grey:#6C7A89; --light:#F4F6F9; --white:#FFFFFF; --text:#1A1A2E; --border:#D5D8DC;
+  --shadow:0 2px 8px rgba(28,58,110,0.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  font-family:'Poppins',sans-serif; background:var(--bg); color:var(--ink); min-height:100vh;
+  background-image:
+    radial-gradient(circle at 50% -10%, rgba(255,201,60,0.15), transparent 60%),
+    radial-gradient(circle at 90% 20%, rgba(255,61,127,0.12), transparent 50%),
+    radial-gradient(circle at 10% 80%, rgba(47,230,196,0.10), transparent 50%);
+}
+.stage-bar{background:linear-gradient(90deg,var(--bg2),var(--card));border-bottom:2px solid var(--gold); color:var(--gold); padding:16px 22px; font-weight:900; font-size:19px; display:flex; align-items:center; gap:14px; justify-content:space-between; letter-spacing:0.5px;}
+.host-tag{font-family:'Space Mono',monospace; font-size:12px; color:var(--muted); font-weight:400; margin-left:auto;}
+.wrap{max-width:820px;margin:0 auto;padding:24px 20px 60px;}
+.card{background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px; box-shadow:0 12px 30px rgba(0,0,0,0.35); margin-bottom:18px;}
+h2{color:var(--gold); font-size:16px; font-weight:800; margin-bottom:14px; text-transform:uppercase; letter-spacing:1px;}
+label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;}
+textarea,select,input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;margin-bottom:14px; background:#0F1428; color:var(--ink);}
+textarea{min-height:140px;resize:vertical;}
+textarea::placeholder{color:var(--muted);}
+.btn{display:inline-block;padding:13px 22px;border:none;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;background:var(--gold);color:#1B1400; text-transform:uppercase; letter-spacing:0.5px; transition:transform .12s;}
+.btn:active{transform:scale(0.97);}
+.btn-amber{background:var(--magenta); color:white;}
+.btn-full{width:100%;}
+.btn:disabled{opacity:0.4;cursor:not-allowed;}
+.marquee-frame{position:relative; padding:26px 10px; text-align:center; margin-bottom:6px;}
+.marquee-frame::before,.marquee-frame::after{content:'';position:absolute;left:0;right:0;height:2px;background:
+  radial-gradient(circle,var(--gold) 2.5px, transparent 3px); background-size:22px 100%; }
+.marquee-frame::before{top:0; animation:bulbFlash 1.4s infinite;}
+.marquee-frame::after{bottom:0; animation:bulbFlash 1.4s infinite 0.7s;}
+.room-code{font-family:'Space Mono',monospace; font-size:52px;font-weight:700;letter-spacing:12px;color:var(--gold); text-shadow:0 0 20px rgba(255,201,60,0.5);}
+@keyframes bulbFlash{0%,100%{opacity:1}50%{opacity:0.35}}
+.player-chip{display:inline-flex;flex-direction:column;align-items:center;gap:6px;padding:10px 14px;border-radius:16px;font-size:13px;font-weight:700;margin:4px; color:#0B0E1A; animation:popIn .3s ease;}
+.player-avatar{width:128px;height:128px;border-radius:16px;object-fit:cover;border:3px solid rgba(255,255,255,0.6);}
+.game-players-bar{display:flex;flex-direction:column;gap:10px;}
+.game-player-chip{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 8px;border-radius:16px;background:#0F1428;border:1px solid var(--line);font-size:12px;font-weight:700;color:var(--ink);width:100%;}
+.game-player-chip .gp-score{font-family:'Space Mono',monospace;color:var(--gold);font-size:15px;}
+.game-layout{display:flex;gap:22px;align-items:flex-start;}
+.game-main{flex:1;min-width:0;}
+.game-sidebar{width:190px;flex-shrink:0;padding:18px 14px;}
+.game-sidebar-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:var(--muted);text-align:center;margin-bottom:12px;}
+@keyframes popIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.q-progress{text-align:center;color:var(--muted);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+.timer-wrap{display:flex;justify-content:center;margin-bottom:18px;}
+.timer-ring{position:relative;width:96px;height:96px;}
+.timer-ring svg{transform:rotate(-90deg);}
+.timer-ring circle{fill:none;stroke-width:8;}
+.timer-ring .track{stroke:var(--line);}
+.timer-ring .bar{stroke:var(--teal); stroke-linecap:round; transition:stroke-dashoffset 0.2s linear, stroke 0.3s;}
+.timer-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:28px;font-weight:700;}
+.q-text{font-size:22px;font-weight:800;margin-bottom:18px;text-align:center;}
+.opt-row{display:flex;align-items:center;gap:12px;padding:16px 18px;border-radius:12px;margin-bottom:10px;font-size:16px;font-weight:700;color:var(--qtext,#fff); background:linear-gradient(135deg,var(--qc1,#3FBFAE),var(--qc2,#2C9686)); transition:opacity .3s, transform .3s;}
+.opt-row .shape{font-size:18px;}
+.opt-row.correct{animation:pulseGlow 1s ease infinite;}
+.opt-row.faded{opacity:0.35;transform:scale(0.98);}
+@keyframes pulseGlow{0%,100%{box-shadow:0 0 0 rgba(47,230,196,0.5);}50%{box-shadow:0 0 28px 6px rgba(47,230,196,0.6);}}
+.opt-count{margin-left:auto;font-family:'Space Mono',monospace;font-weight:700;font-size:15px;}
+.opt-row.clickable{cursor:pointer;border:none;width:100%;text-align:left;font-family:inherit;}
+.opt-row.clickable:disabled{opacity:0.6;cursor:default;}
+.opt-row.selected{outline:3px solid var(--gold);outline-offset:2px;}
+.status-line{text-align:center;color:var(--muted);font-size:13px;margin-bottom:12px;}
+.hidden{display:none;}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin:20px 0 24px;}
+.pod-step{flex:1;max-width:170px;border-radius:12px 12px 0 0;text-align:center;padding:14px 6px 10px;position:relative;animation:slideUp .5s ease backwards;}
+.pod-step .pname{font-weight:800;font-size:13px;margin-bottom:4px;}
+.pod-step .pscore{font-family:'Space Mono',monospace;font-weight:700;font-size:15px;}
+.pod-avatar{width:128px;height:128px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,0.75);display:block;margin:0 auto 8px;}
+.lb-avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;}
+.pod-1{background:linear-gradient(180deg,var(--gold),#B8890A);height:250px;order:2;color:#1B1400;}
+.pod-2{background:linear-gradient(180deg,#C7CEDB,#8A93A6);height:210px;order:1;color:#12162A;}
+.pod-3{background:linear-gradient(180deg,#D98A4B,#9C5A26);height:185px;order:3;color:#1B1400;}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+.lb-row{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);font-size:15px;animation:slideUp .4s ease backwards;}
+.lb-rank{font-weight:800;color:var(--gold);margin-right:10px;font-family:'Space Mono',monospace;}
+.err{color:var(--magenta);font-size:13px;margin-top:-8px;margin-bottom:12px;font-weight:600;}
+.adv-box{border:1px solid var(--line);border-radius:10px;margin-bottom:14px;background:#0F1428;overflow:hidden;}
+.adv-box summary{list-style:none;cursor:pointer;padding:12px 13px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;user-select:none;}
+.adv-box summary::-webkit-details-marker{display:none;}
+.adv-box summary::before{content:'▸ ';color:var(--gold);}
+.adv-box[open] summary::before{content:'▾ ';}
+.adv-box-body{padding:0 13px 13px;}
+.adv-box-body input,.adv-box-body select{margin-bottom:12px;}
+.adv-box-body label:first-child{margin-top:0;}
+.mode-toggle{display:flex;gap:10px;margin-bottom:14px;}
+.mode-btn{flex:1;padding:12px 10px;border:1px solid var(--line);border-radius:10px;background:#0F1428;color:var(--ink);font-family:inherit;font-weight:800;font-size:14px;cursor:pointer;transition:all .15s;}
+.mode-btn.selected{background:var(--gold);color:#1B1400;border-color:var(--gold);}
+.toggle-btn{width:100%;padding:12px 10px;border:1px solid var(--line);border-radius:10px;background:#0F1428;color:var(--ink);font-family:inherit;font-weight:800;font-size:14px;cursor:pointer;transition:all .15s;margin-bottom:14px;}
+.toggle-btn.active{background:var(--gold);color:#1B1400;border-color:var(--gold);}
+.question-row{border:1px solid var(--line);border-radius:10px;padding:12px 13px;margin-bottom:10px;background:#161C36;}
+.question-row-text{font-weight:700;font-size:14px;margin-bottom:8px;}
+.question-row-opts{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;}
+.question-row-opt{font-size:12px;padding:6px 8px;border-radius:6px;background:#0F1428;border:1px solid var(--line);color:var(--muted);}
+.question-row-opt.correct{border-color:var(--teal);color:var(--teal);font-weight:700;}
+.q-regen-btn{width:100%;padding:8px;font-size:12px;background:#0F1428;color:var(--ink);border:1px solid var(--line);}
+.q-regen-btn:hover{border-color:var(--gold);}
+#q-image-wrap{text-align:center;margin-bottom:16px;}
+#q-image-wrap img{max-width:100%;max-height:220px;border-radius:12px;border:1px solid var(--line);}
+#q-options.pic-grid,#host-options.pic-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.opt-row.pic-opt{flex-direction:column;align-items:stretch;padding:8px;gap:6px;}
+.opt-row.pic-opt img{width:100%;height:120px;object-fit:contain;background:rgba(0,0,0,0.15);border-radius:8px;display:block;}
+.opt-row.pic-opt .pic-label{display:flex;align-items:center;gap:6px;font-size:13px;}
+.opt-row.pic-opt .pic-fallback{display:flex;align-items:center;justify-content:center;height:120px;border-radius:8px;background:rgba(0,0,0,0.15);font-size:13px;text-align:center;padding:6px;}
+.opt-row.pic-opt .opt-count{margin-left:auto;}
+@media (max-width: 640px) {
+  .game-layout{flex-direction:column;}
+  .game-sidebar{width:100%;padding:10px 12px;}
+  .game-sidebar-title{margin-bottom:8px;}
+  .game-players-bar{flex-direction:row;overflow-x:auto;gap:8px;padding-bottom:4px;}
+  .game-player-chip{flex-direction:row;width:auto;flex-shrink:0;padding:6px 10px;gap:8px;white-space:nowrap;}
+  .game-player-chip .player-avatar{width:32px;height:32px;border-radius:8px;}
+}
+</style>
+</head>
+<body>
+<div class="stage-bar"><div id="avnav-slot"></div><a href="quizotron.html" style="color:inherit;text-decoration:none;"><span>🎙️ QUIZOTRON 5000</span></a><span id="host-name" class="host-tag"></span></div>
+<div class="wrap">
+  <div id="screen-setup" class="card">
+    <h2>Build Your Quiz</h2>
+    <label>Package source</label>
+    <select id="package-preset" onchange="onPresetChange()">
+      <option value="topic" selected>Type a topic</option>
+      <option value="custom">— Paste your own text —</option>
+      <option value="cpg">CPG Package (single condition)</option>
+      <option value="upload">Upload File(s)</option>
+    </select>
+    <div id="cpg-pickers" class="hidden">
+      <label>Category</label>
+      <select id="cpg-category" onchange="onCpgCategoryChange()"></select>
+      <label>Condition</label>
+      <select id="cpg-condition" onchange="onCpgConditionChange()"></select>
+    </div>
+    <div id="upload-picker" class="hidden">
+      <label>Upload reference file(s)</label>
+      <input type="file" id="upload-files" multiple accept="image/*,application/pdf" onchange="updateUploadFileList()">
+      <div id="upload-filelist" class="status-line" style="margin-bottom:10px;"></div>
+    </div>
+    <div id="topic-picker" class="hidden">
+      <label>Topic</label>
+      <input type="text" id="topic-input" placeholder="e.g. Asthma, WWII, French Revolution">
+      <div id="web-search-status" class="status-line" style="margin-top:6px;"></div>
+    </div>
+    <textarea id="package-text" placeholder="Paste any reference material here — the AI will write quiz questions from it."></textarea>
+    <label>Difficulty</label>
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="standard" selected>Standard</option>
+      <option value="hard">Hard</option>
+      <option value="extreme">Extreme</option>
+    </select>
+    <details class="adv-box" open>
+      <summary>Quiz settings</summary>
+      <div class="adv-box-body">
+        <label>Number of questions</label>
+        <input type="number" id="num-questions" min="3" max="30" value="5">
+        <label>Time per question (seconds)</label>
+        <input type="number" id="q-duration" min="5" max="60" value="20">
+      </div>
+    </details>
+    <label style="margin-top:14px;">Game mode</label>
+    <input type="hidden" id="scoring-mode" value="standard">
+    <div class="mode-toggle">
+      <button type="button" class="mode-btn selected" data-mode="standard" title="Everyone who answers correctly gets the same points." onclick="selectGameMode(this)">Standard</button>
+      <button type="button" class="mode-btn" data-mode="speed" title="Correct answers score more the faster you buzz in — quickest correct answer wins the most points." onclick="selectGameMode(this)">Speed</button>
+    </div>
+    <label style="margin-top:14px;">Picture Mode</label>
+    <input type="hidden" id="picture-mode-value" value="text">
+    <div class="mode-toggle">
+      <button type="button" class="mode-btn selected" data-picmode="text" title="Standard text questions and answers, no images." onclick="selectPictureMode(this)">Text Only</button>
+      <button type="button" class="mode-btn" data-picmode="picture" title="Every question either shows a picture with text answers, or a word/description with picture answers to click." onclick="selectPictureMode(this)">Picture Only</button>
+      <button type="button" class="mode-btn" data-picmode="mixed" title="A random mix of standard text questions and picture questions/answers." onclick="selectPictureMode(this)">Mixed</button>
+    </div>
+    <div id="setup-err" class="err hidden"></div>
+    <button class="btn btn-full" id="gen-btn" onclick="generateQuiz()">✦ Generate Quiz</button>
+    <div id="gen-progress-wrap" class="hidden" style="margin-top:14px;">
+      <div class="status-line" id="gen-progress-label" style="margin-bottom:6px;">Preparing…</div>
+      <div style="background:#0F1428;border-radius:8px;overflow:hidden;height:10px;border:1px solid var(--line);">
+        <div id="gen-progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,var(--teal),var(--gold));transition:width 0.3s ease;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-lobby" class="card hidden">
+    <h2>Players Join</h2>
+    <div class="status-line">Room code — enter this on each player device</div>
+    <div class="marquee-frame"><div class="room-code" id="room-code-display"></div></div>
+    <div id="qr-code" style="display:flex;justify-content:center;margin-bottom:16px"></div>
+    <div id="lobby-players" style="text-align:center;"></div>
+    <details class="adv-box">
+      <summary>Questions (<span id="questions-count">0</span>)</summary>
+      <div class="adv-box-body">
+        <button type="button" class="btn btn-full" id="regen-all-btn" onclick="regenerateAllQuestions()" style="margin-bottom:12px;">↻ Regenerate All</button>
+        <div id="questions-list"></div>
+      </div>
+    </details>
+    <label style="margin-top:6px;">Host device mode</label>
+    <input type="hidden" id="host-mode-value" value="display">
+    <button type="button" class="toggle-btn" id="host-mode-btn" onclick="toggleHostMode()">Display Only</button>
+    <label>Read questions aloud</label>
+    <input type="hidden" id="voice-mode-value" value="off">
+    <button type="button" class="toggle-btn" id="voice-mode-btn" onclick="toggleVoiceMode()">Off</button>
+    <div id="voice-select-wrap" class="hidden">
+      <label>Voice</label>
+      <select id="voice-select">
+        <option value="">Browser default</option>
+      </select>
+    </div>
+    <button class="btn btn-full btn-amber" id="start-game-btn" onclick="startGame()">▶ Start Game</button>
+  </div>
+  <div id="screen-game" class="hidden">
+    <div class="game-layout">
+      <div class="game-main card">
+        <div class="q-progress" id="game-progress"></div>
+        <div class="timer-wrap">
+          <div class="timer-ring">
+            <svg width="96" height="96"><circle class="track" cx="48" cy="48" r="42"></circle><circle class="bar" id="timer-bar" cx="48" cy="48" r="42"></circle></svg>
+            <div class="timer-num" id="timer-num">20</div>
+          </div>
+        </div>
+        <div class="q-text" id="q-text"></div>
+        <div id="q-image-wrap" class="hidden"><img id="q-image" alt=""></div>
+        <div id="q-options"></div>
+        <div id="host-play-panel" class="hidden">
+          <h2 style="margin-top:6px">Your Answer</h2>
+          <div id="host-options"></div>
+        </div>
+        <div class="status-line" id="answer-count"></div>
+        <button class="btn btn-full" id="reveal-btn" onclick="manualReveal()">👁 Reveal Answer</button>
+        <button class="btn btn-full btn-amber hidden" id="next-btn" onclick="triggerNext()">Next Question ▶</button>
+      </div>
+      <div class="game-sidebar card" id="game-sidebar">
+        <div class="game-sidebar-title">🏆 Leaderboard</div>
+        <div id="game-players-bar" class="game-players-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-end" class="card hidden">
+    <h2>🏆 Final Leaderboard</h2>
+    <div id="podium" class="podium"></div>
+    <div id="leaderboard"></div>
+    <button class="btn btn-full" onclick="location.reload()">New Quiz</button>
+  </div>
+
+</div>
+<script>
+const SUPABASE_URL = 'https://befsjenbaruxqrntuhpn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
+const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+window.__avSupabaseClient = _sb; // shared with nav.js — avoids duplicate GoTrueClient instances
+let _session=null, _room=null, _questions=[], _curIdx=-1, _playersChannel=null, _answersChannel=null, _revealing=false, _timerInterval=null, _questionDuration=20;
+let _autoAdvanceTimer=null, _autoAdvanceCountdownInterval=null, _advancing=false;
+let _profile=null, _hostPlays=false, _hostPlayerId=null, _hostAnswered=false;
+let _scoringMode='standard';
+let _voiceEnabled = false;
+let _voiceIndex = '';
+
+function selectGameMode(btn) {
+  btn.closest('.mode-toggle').querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('scoring-mode').value = btn.dataset.mode;
+}
+
+function toggleHostMode() {
+  const hidden = document.getElementById('host-mode-value');
+  const btn = document.getElementById('host-mode-btn');
+  const nowPlay = hidden.value !== 'play';
+  hidden.value = nowPlay ? 'play' : 'display';
+  btn.textContent = nowPlay ? 'Play Along' : 'Display Only';
+  btn.classList.toggle('active', nowPlay);
+}
+
+function toggleVoiceMode() {
+  const hidden = document.getElementById('voice-mode-value');
+  const btn = document.getElementById('voice-mode-btn');
+  const nowOn = hidden.value !== 'on';
+  hidden.value = nowOn ? 'on' : 'off';
+  btn.textContent = nowOn ? 'On' : 'Off';
+  btn.classList.toggle('active', nowOn);
+  document.getElementById('voice-select-wrap').classList.toggle('hidden', !nowOn);
+}
+
+function selectPictureMode(btn) {
+  btn.closest('.mode-toggle').querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('picture-mode-value').value = btn.dataset.picmode;
+}
+
+// Resolves a single image_query to an actual image URL via Wikipedia's public API —
+// no API key, no LLM tokens, single combined search+thumbnail request. Returns undefined
+// (not null) if nothing decent comes back, so callers can distinguish "tried, found nothing"
+// from "not yet tried".
+async function resolveWikipediaImage(query) {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=500&format=json&origin=*`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const pages = data && data.query && data.query.pages;
+    const page = pages ? Object.values(pages)[0] : null;
+    return (page && page.thumbnail && page.thumbnail.source) || undefined;
+  } catch(e) {
+    return undefined;
+  }
+}
+
+async function resolveQuestionImage(index) {
+  const q = _questions[index];
+  if (!q || !q.image_query || q.image_url !== null) return; // already resolved (or no query)
+  q.image_url = await resolveWikipediaImage(q.image_query);
+  if (_questions[_curIdx] === q) updateQuestionImageDisplay();
+}
+
+// Resolves all 4 option images for a picture_answer question (parallel lookups).
+async function resolveOptionImages(index) {
+  const q = _questions[index];
+  if (!q || !q.option_image_queries || !q.option_image_queries.length) return;
+  if (!q.option_image_urls) q.option_image_urls = q.option_image_queries.map(()=>null);
+  await Promise.all(q.option_image_queries.map(async (query,i) => {
+    if (q.option_image_urls[i] !== null) return; // already resolved
+    q.option_image_urls[i] = await resolveWikipediaImage(query);
+  }));
+  if (_questions[_curIdx] === q) showQuestion();
+}
+
+async function resolveAllQuestionImages() {
+  await Promise.all(_questions.map((q,i) => {
+    const tasks = [];
+    if (q.image_query && q.image_url === null) tasks.push(resolveQuestionImage(i));
+    if (q.option_image_queries && q.option_image_queries.length) tasks.push(resolveOptionImages(i));
+    return Promise.all(tasks);
+  }));
+}
+
+// If the AI can't find a decent real image for a picture question (obscure topics often
+// have poor Wikipedia thumbnail coverage), showing a broken/missing image or a picture_answer
+// grid where most tiles fall back to plain text labels looks broken. Rather than leave it
+// half-working, we re-ask the AI for a plain text replacement of that specific question so
+// the quiz stays coherent.
+async function convertQuestionToText(index, avoidList) {
+  const savedMode = _genContext.pictureMode;
+  _genContext.pictureMode = 'text';
+  try {
+    const parsed = await callQuizAI(1, false, avoidList);
+    const newQ = parsed.questions[0];
+    const q = _questions[index];
+    q.question_text = newQ.question; q.options = newQ.options; q.correct_index = newQ.correct_index;
+    q.question_type = 'text';
+    q.image_query = null; q.image_url = null;
+    q.option_image_queries = null; q.option_image_urls = null;
+  } finally {
+    _genContext.pictureMode = savedMode;
+  }
+}
+
+// Resolves all images, then checks for any picture question that came back with unusable
+// images (no main image for picture_question, or any missing option image for picture_answer
+// — a partially-filled image grid looks worse than a clean text question) and swaps those
+// specific questions over to plain text.
+async function resolveImagesWithFallback() {
+  await resolveAllQuestionImages();
+  const avoidList = _questions.map(q => q.question_text);
+  for (let i = 0; i < _questions.length; i++) {
+    const q = _questions[i];
+    const broken = (q.question_type === 'picture_question' && !q.image_url)
+      || (q.question_type === 'picture_answer' && q.option_image_urls && !q.option_image_urls.every(Boolean));
+    if (broken) await convertQuestionToText(i, avoidList);
+  }
+}
+
+function updateQuestionImageDisplay() {
+  const wrap = document.getElementById('q-image-wrap');
+  const img = document.getElementById('q-image');
+  const q = _questions[_curIdx];
+  const showImages = q && q.question_type === 'picture_question';
+  if (showImages && q && q.image_url) {
+    img.src = q.image_url;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+    img.src = '';
+  }
+}
+
+function speakQuestion(text) {
+  if (!_voiceEnabled || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.95;
+    if (_voiceIndex !== '') {
+      const voices = window.speechSynthesis.getVoices();
+      const v = voices[parseInt(_voiceIndex)];
+      if (v) utter.voice = v;
+    }
+    window.speechSynthesis.speak(utter);
+  } catch(e) {}
+}
+
+function populateVoices() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return;
+  const sel = document.getElementById('voice-select');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Browser default</option>' +
+    voices.map((v,i)=>`<option value="${i}">${escapeHtml(v.name)} (${v.lang})</option>`).join('');
+  sel.value = current || '';
+}
+if (window.speechSynthesis) {
+  populateVoices();
+  window.speechSynthesis.onvoiceschanged = populateVoices;
+}
+
+async function requireAuth() {
+  const { data: { session } } = await _sb.auth.getSession();
+  if (!session) {
+    // Guests can't host (hosting = generating quiz content) — send them to
+    // join as a player instead of just bouncing to a bare Google login.
+    if (window.localStorage.getItem('av_guest_mode') === 'true') {
+      alert("Guests can't host a quiz — join an existing one as a player instead.");
+      window.location.href = 'quiz_player.html';
+      return null;
+    }
+    window.location.href = 'login.html?redirect=quiz_host.html';
+    return null;
+  }
+  return session;
+}
+
+async function init() {
+  _session = await requireAuth();
+  if (!_session) return;
+  const { data: profile } = await _sb.from('profiles').select('display_name, avatar_url').eq('id', _session.user.id).single();
+  _profile = profile;
+  document.getElementById('host-name').textContent = (profile && profile.display_name) || _session.user.email;
+}
+init();
+onPresetChange();
+
+function onPresetChange() {
+  const val = document.getElementById('package-preset').value;
+  const ta = document.getElementById('package-text');
+  const pickers = document.getElementById('cpg-pickers');
+  const uploadPicker = document.getElementById('upload-picker');
+  const topicPicker = document.getElementById('topic-picker');
+  pickers.classList.add('hidden');
+  uploadPicker.classList.add('hidden');
+  topicPicker.classList.add('hidden');
+  ta.classList.remove('hidden');
+  ta.readOnly = false;
+  ta.value = '';
+  if (val === 'cpg') {
+    pickers.classList.remove('hidden');
+    ta.readOnly = true;
+    populateCpgCategories();
+  } else if (val === 'upload') {
+    uploadPicker.classList.remove('hidden');
+    ta.placeholder = 'Optional — add extra instructions or context for the AI here.';
+  } else if (val === 'topic') {
+    topicPicker.classList.remove('hidden');
+    ta.classList.add('hidden');
+  } else {
+    ta.placeholder = 'Paste any reference material here — the AI will write quiz questions from it.';
+  }
+}
+
+function updateUploadFileList() {
+  const files = document.getElementById('upload-files').files;
+  document.getElementById('upload-filelist').textContent = files.length
+    ? Array.from(files).map(f => f.name).join(', ')
+    : '';
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function populateCpgCategories() {
+  const catSel = document.getElementById('cpg-category');
+  catSel.innerHTML = CATEGORIES.map(c => `<option value="${c.key}">${c.icon} ${c.key}</option>`).join('');
+  onCpgCategoryChange();
+}
+
+function onCpgCategoryChange() {
+  const cat = CATEGORIES.find(c => c.key === document.getElementById('cpg-category').value);
+  const condSel = document.getElementById('cpg-condition');
+  const conditions = [];
+  Object.keys(cat.subcats).forEach(sub => cat.subcats[sub].forEach(c => conditions.push(c)));
+  condSel.innerHTML = conditions.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  onCpgConditionChange();
+}
+
+function onCpgConditionChange() {
+  const cond = document.getElementById('cpg-condition').value;
+  const key = COND_TO_CPG_KEY[cond];
+  const pkg = key && typeof CPG_PACKAGES !== 'undefined' ? CPG_PACKAGES[key] : null;
+  document.getElementById('package-text').value = pkg ? JSON.stringify(pkg, null, 2) : '(No CPG package data found for this condition)';
+}
+
+async function sbFetch(path, opts={}) {
+  const token = (_session && _session.access_token) || SUPABASE_KEY;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${token}`, 'Content-Type':'application/json',
+      'Prefer': opts.prefer || 'return=representation', ...(opts.headers||{}) }
+  });
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message || `Supabase error ${res.status}`); }
+  const text = await res.text();
+  return text ? JSON.parse(text) : [];
+}
+
+let _cachedKey = null;
+async function getAnthropicKey() {
+  if (_cachedKey) return _cachedKey;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/app_config?key=eq.anthropic_api_key&select=value`, {
+    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (data && data[0] && data[0].value) { _cachedKey = data[0].value; return _cachedKey; }
+  }
+  throw new Error('AI generation is temporarily unavailable.');
+}
+
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+function playTone(freq, duration, type='sine', volume=0.2) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+function playTick(urgent) { playTone(urgent ? 1200 : 800, 0.08, 'square', 0.12); }
+function playChime(correct) {
+  if (correct) { playTone(880, 0.15); setTimeout(()=>playTone(1320, 0.2), 100); }
+  else { playTone(220, 0.25, 'sawtooth', 0.15); }
+}
+function playFanfare() {
+  const notes = [523.25, 659.25, 783.99, 1046.5];
+  notes.forEach((f,i) => setTimeout(()=>playTone(f, 0.3, 'triangle', 0.18), i*120));
+}
+
+function fireConfetti(intensity) {
+  const count = intensity === 'big' ? 140 : intensity === 'medium' ? 70 : 30;
+  let canvas = document.getElementById('confetti-canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'confetti-canvas';
+    canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999;';
+    document.body.appendChild(canvas);
+  }
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  const colors = ['#FFC93C','#FF3D7F','#2FE6C4','#7B61FF'];
+  const particles = Array.from({length:count}, () => ({
+    x: Math.random()*canvas.width,
+    y: -20 - Math.random()*canvas.height*0.3,
+    r: 4 + Math.random()*5,
+    color: colors[Math.floor(Math.random()*colors.length)],
+    vy: 2 + Math.random()*3,
+    vx: (Math.random()-0.5)*2,
+    rot: Math.random()*360,
+    vrot: (Math.random()-0.5)*10
+  }));
+  const start = Date.now();
+  const duration = 3500;
+  function frame() {
+    const elapsed = Date.now() - start;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    particles.forEach(p=>{
+      p.x += p.vx; p.y += p.vy; p.rot += p.vrot;
+      ctx.save();
+      ctx.translate(p.x,p.y);
+      ctx.rotate(p.rot*Math.PI/180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*0.6);
+      ctx.restore();
+    });
+    if (elapsed < duration) requestAnimationFrame(frame);
+    else { ctx.clearRect(0,0,canvas.width,canvas.height); canvas.remove(); }
+  }
+  requestAnimationFrame(frame);
+}
+
+function parseFirstJSONArray(raw) {
+  let s = raw.replace(/```json|```/g,'').trim();
+  const start = s.indexOf('[');
+  if (start===-1) throw new Error('No JSON array found in AI response');
+  let depth=0, end=-1;
+  for (let i=start;i<s.length;i++){ if(s[i]==='[')depth++; else if(s[i]===']'){depth--; if(depth===0){end=i;break;}} }
+  if (end===-1) throw new Error('Unterminated JSON array');
+  return JSON.parse(s.slice(start,end+1));
+}
+
+function parseFirstJSONObject(raw) {
+  let s = raw.replace(/```json|```/g,'').trim();
+  const start = s.indexOf('{');
+  if (start===-1) throw new Error('No JSON object found in AI response');
+  let depth=0, end=-1;
+  for (let i=start;i<s.length;i++){ if(s[i]==='{')depth++; else if(s[i]==='}'){depth--; if(depth===0){end=i;break;}} }
+  if (end===-1) throw new Error('Unterminated JSON object');
+  return JSON.parse(s.slice(start,end+1));
+}
+
+function isValidHex(h) { return typeof h === 'string' && /^#[0-9A-Fa-f]{6}$/.test(h); }
+
+function hexToHsl(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h=0, s=0, l=(max+min)/2;
+  if (max !== min) {
+    const d = max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    if (max===r) h = (g-b)/d + (g<b?6:0);
+    else if (max===g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h *= 60;
+  }
+  return { h, s: s*100, l: l*100 };
+}
+
+function hslToHex(h, s, l) {
+  h = ((h%360)+360)%360; s = Math.max(0,Math.min(100,s))/100; l = Math.max(0,Math.min(100,l))/100;
+  const c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2;
+  let r,g,b;
+  if (h<60) [r,g,b]=[c,x,0]; else if (h<120) [r,g,b]=[x,c,0]; else if (h<180) [r,g,b]=[0,c,x];
+  else if (h<240) [r,g,b]=[0,x,c]; else if (h<300) [r,g,b]=[x,0,c]; else [r,g,b]=[c,0,x];
+  const toHex = v => Math.round((v+m)*255).toString(16).padStart(2,'0');
+  return '#'+toHex(r)+toHex(g)+toHex(b);
+}
+
+// Applies the AI-suggested 4-colour palette directly as CSS variable overrides on :root
+// (no hue-rotation math — the AI picks all 4 accent colours itself so they're guaranteed
+// to be genuinely distinct, rather than being derived and risking clustering in one hue
+// range). Background shades are still derived from the primary colour's hue at low
+// saturation/lightness. Falls back silently to the default neon arcade palette if any
+// colour is missing/invalid.
+function applyQuizTheme(primary, secondary, tertiary, quaternary) {
+  if (!isValidHex(primary) || !isValidHex(secondary) || !isValidHex(tertiary) || !isValidHex(quaternary)) return;
+  try {
+    const p = hexToHsl(primary);
+    const root = document.documentElement.style;
+    root.setProperty('--gold', primary);
+    root.setProperty('--magenta', secondary);
+    root.setProperty('--teal', tertiary);
+    root.setProperty('--violet', quaternary);
+    root.setProperty('--bg', hslToHex(p.h, 35, 8));
+    root.setProperty('--bg2', hslToHex(p.h, 30, 12));
+    root.setProperty('--card', hslToHex(p.h, 26, 17));
+  } catch(e) { /* keep default palette on any failure */ }
+}
+
+function genRoomCode() {
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c=''; for(let i=0;i<4;i++) c+=chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+
+let _genTrickleInterval = null;
+function setGenProgress(pct, label) {
+  document.getElementById('gen-progress-wrap').classList.remove('hidden');
+  document.getElementById('gen-progress-bar').style.width = pct + '%';
+  document.getElementById('gen-progress-label').textContent = label;
+}
+function startGenTrickle(from, ceiling, label) {
+  clearInterval(_genTrickleInterval);
+  let pct = from;
+  setGenProgress(pct, label);
+  _genTrickleInterval = setInterval(() => {
+    pct += (ceiling - pct) * 0.06;
+    setGenProgress(pct, label);
+  }, 400);
+}
+function stopGenTrickle() {
+  clearInterval(_genTrickleInterval);
+  _genTrickleInterval = null;
+}
+function resetGenProgress() {
+  stopGenTrickle();
+  document.getElementById('gen-progress-wrap').classList.add('hidden');
+  document.getElementById('gen-progress-bar').style.width = '0%';
+}
+
+async function joinHostAsPlayer() {
+  const hName = (_profile && _profile.display_name) || _session.user.email;
+  const hAvatar = (_profile && _profile.avatar_url) || null;
+  const hprows = await sbFetch(`quiz_players?on_conflict=room_id,user_id`, { method:'POST',
+    headers:{ 'Prefer':'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({ room_id:_room.id, user_id:_session.user.id, name:hName, avatar_url:hAvatar }) });
+  _hostPlayerId = hprows[0].id;
+}
+
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let _genContext = null; // { mode, topicText, packageText, uploadBlocks, difficultyInstruction, numQ } — persists after generation so Regenerate/Regenerate All can rebuild the same prompt
+
+// Cross-session repeat prevention: keyed by a hash of the quiz source (topic text or
+// reference material), we keep a rolling list of question texts previously generated
+// for that same source in localStorage, and feed them back in as an avoid-list on the
+// NEXT fresh generation — so "same topic, same settings" quizzes actually mix it up
+// instead of the AI defaulting to the same "obvious" facts every time.
+function topicHistoryKey(sourceSummary) {
+  const norm = (sourceSummary || '').toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 300);
+  let hash = 0;
+  for (let i = 0; i < norm.length; i++) { hash = ((hash << 5) - hash + norm.charCodeAt(i)) | 0; }
+  return `quiz_topic_history_${hash}`;
+}
+function loadTopicHistory(key) {
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; }
+}
+function saveTopicHistory(key, newTexts) {
+  try {
+    const merged = loadTopicHistory(key).concat(newTexts).slice(-60); // cap so the prompt doesn't grow unbounded
+    localStorage.setItem(key, JSON.stringify(merged));
+  } catch(e) { /* localStorage full/unavailable — non-critical, just skip dedup this time */ }
+}
+
+// Builds the system prompt for a quiz-generation call. count = how many questions to
+// request; wantTheme = whether to also ask for theme colours (only the very first
+// generation needs this — regenerations keep the existing theme); avoidList = question
+// texts already in the quiz, so regenerated questions don't repeat them.
+function buildSystemPrompt(count, wantTheme, avoidList) {
+  const mode = _genContext.mode;
+  const base = mode === 'topic'
+    ? 'You write multiple-choice quiz questions on a given topic.'
+    : `You write multiple-choice quiz questions from reference material${mode==='upload' ? ' supplied as documents/images' : ''}.`;
+  const factRule = mode === 'topic'
+    ? 'correct_index is 0-based and must be factually correct.'
+    : 'correct_index is 0-based and must be accurate per the source material.';
+  const varyRule = mode === 'topic'
+    ? 'Vary question style (recall, application, scenario-based) where the topic supports it.'
+    : 'Questions must be answerable strictly from the material provided — do not invent facts. Vary question style (recall, application, scenario-based) where the material supports it.';
+  const searchRule = mode === 'topic'
+    ? ' (5) If the topic involves recent, current, or time-sensitive information (e.g. "current events", ongoing tournaments or competitions, recent news), use the web search tool to verify facts before writing questions. For timeless or historical topics, rely on your own knowledge without searching. Only include facts you are confident are accurate — do not invent statistics, dates, or names.'
+    : '';
+  const themeFormatPart = wantTheme ? '"theme":{"primary":"#RRGGBB","secondary":"#RRGGBB","tertiary":"#RRGGBB","quaternary":"#RRGGBB"},' : '';
+  const themeRule = wantTheme ? ` (7) theme.primary, theme.secondary, theme.tertiary and theme.quaternary must be 4 vivid, punchy hex colours (not muddy or pastel) that evoke the subject matter visually and are clearly distinct from each other — spread around the colour wheel rather than clustered near the same hue. Pick colours that would look good as bold neon accents on a dark background.` : '';
+  const avoidRule = (avoidList && avoidList.length)
+    ? ` Do not repeat any of these previously used questions — avoid duplicating the fact, angle, or specific detail tested by them, and actively pick different sub-topics/examples where possible: ${avoidList.map(t=>`"${t}"`).join('; ')}.`
+    : '';
+  const pictureSetting = _genContext.pictureMode || 'text'; // 'text' | 'picture' | 'mixed'
+  const pictureActive = pictureSetting !== 'text';
+  const pictureFormatPart = pictureActive ? ',"question_type":"text, picture_question, or picture_answer","image_query":"... or null","option_image_queries":null or ["...","...","...","..."]' : '';
+  const pictureTypeGuidance = `For "picture_question": phrase the question as something answerable by looking at an image (e.g. "What is shown in this image?", "Which rhythm is this?"), set image_query to a short 2-4 word phrase naming the concrete subject the image should depict, and set option_image_queries to null. For "picture_answer": phrase the question as a word, name, or short description to identify (e.g. "Which of these is a fire ant?"), keep options as short text labels (2-4 words each, used as fallback if an image fails to load) naming what each option's image depicts, set option_image_queries to an array of exactly 4 short concrete photographable phrases index-aligned with options, and set image_query to null. Critically, for "picture_answer" the question text must NEVER describe anything visible in the correct option's image — not its colours, shapes, patterns, layout, AND NOT any symbol, emblem, icon, object, animal, or figure depicted in it either. Naming a depicted symbol is just as much a giveaway as describing colours: e.g. "which flag has a double-headed eagle" or "which flag features a trident" are BOTH forbidden, for exactly the same reason a "black and red flag with a triangle" would be — the reader can just visually match the clue against the four images without knowing anything else. Ask via name, fact, category, or context instead (e.g. "Which national flag belongs to Papua New Guinea?" rather than describing its triangle and serrated edge, or "Which of these countries' flag has a double-headed eagle?" naming a country instead of the country's flag imagery only works if the country name itself isn't the visual clue). This applies at every difficulty level — difficulty should come from how obscure or closely-related the options are, never from describing what the correct image looks like. Before finalizing a "picture_answer" question, re-read the question text and confirm it contains zero visual/iconographic details of the correct image. For "text", set both image_query and option_image_queries to null. Every image query (image_query and each option_image_queries item) must name a distinct, clearly photographable real-world subject — avoid abstract concepts.`;
+  const distractorRule = ` (11) Before finalizing each question, verify that the stated fact/criterion in the question is true ONLY for the correct option and clearly FALSE for all 3 distractors as specifically chosen — not just true "in general" for the correct answer. A criterion that also happens to apply to one of the distractors (e.g. asking which flag has a double-headed eagle when two of the four options both have one) is an invalid question even if only one option was intended as correct — swap out a distractor or change the criterion until it uniquely isolates the correct option among the exact 4 given.`;
+  let pictureRule = '';
+  if (pictureSetting === 'picture') {
+    pictureRule = ` (10) Picture mode is enabled: every question must have question_type set to either "picture_question" or "picture_answer" — mix the two roughly evenly and randomly across the quiz, never use plain text-only questions. ${pictureTypeGuidance}`;
+  } else if (pictureSetting === 'mixed') {
+    pictureRule = ` (10) Mixed mode is enabled: randomly assign each question's question_type to "text", "picture_question", or "picture_answer", spread roughly evenly across the quiz (aim for roughly a third each). ${pictureTypeGuidance}`;
+  }
+  return `${base} Respond with valid JSON only — no markdown, no preamble, no commentary before or after the JSON. Format: {${themeFormatPart}"questions":[{"question":"...","options":["a","b","c","d"],"correct_index":0${pictureFormatPart}}${count>1?', ...':''}]}. Rules: (1) Generate exactly ${count} question${count>1?'s':''}. (2) Each question has exactly 4 options. (3) ${factRule} (4) ${varyRule}${searchRule} (6) ${_genContext.difficultyInstruction}${themeRule}${pictureRule}${distractorRule}${avoidRule}`;
+}
+
+function buildUserContent() {
+  const { mode, topicText, packageText, uploadBlocks } = _genContext;
+  if (mode === 'topic') return `Topic: ${topicText}\n\nGenerate the quiz as JSON.`;
+  if (mode === 'upload') return uploadBlocks.concat([{ type:'text', text:'Generate the quiz as JSON from the material above.' }]);
+  return `Reference material:\n\n${packageText}\n\nGenerate the quiz as JSON.`;
+}
+
+// Cheap Haiku pre-check: does this topic plausibly need current/real-time info?
+// Returns false on any failure — fails closed (no search) rather than risking cost.
+async function shouldUseWebSearch(topicText) {
+  try {
+    const apiKey = await getAnthropicKey();
+    const systemPrompt = `Decide whether writing an accurate quiz on the given topic would benefit from a web search for current/real-time information, as opposed to being answerable from stable, timeless knowledge. Respond with valid JSON only, no markdown: {"needsSearch": true|false}. Say true only for topics involving recent events, ongoing situations, current statistics/records, or anything likely to have changed recently. Say false for evergreen topics (general knowledge, established history, sports rules, science, clinical/medical concepts, etc).`;
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+      body: JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens: 50, system: systemPrompt, messages:[{ role:'user', content: `Topic: ${topicText}` }] })
+    });
+    if (!response.ok) return false;
+    const data = await response.json();
+    if (data.usage && window.AVNav && AVNav.logAIUsage) {
+      AVNav.logAIUsage({ source:'quiz', model:'claude-haiku-4-5-20251001', input_tokens:data.usage.input_tokens, output_tokens:data.usage.output_tokens, label:'web search check' });
+    }
+    const text = (data.content||[]).map(b=>b.text||'').join('');
+    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}');
+    return parsed.needsSearch === true;
+  } catch (e) {
+    return false; // best-effort — never block generation
+  }
+}
+
+async function callQuizAI(count, wantTheme, avoidList) {
+  const apiKey = await getAnthropicKey();
+  const systemPrompt = buildSystemPrompt(count, wantTheme, avoidList);
+  const userContent = buildUserContent();
+  const requestBody = { model:'claude-sonnet-4-6', max_tokens: wantTheme ? 4000 : Math.max(1200, count*500), system: systemPrompt, messages:[{role:'user', content:userContent}] };
+  if (_genContext.mode === 'topic' && _genContext.webSearchEnabled) requestBody.tools = [{ type:'web_search_20250305', name:'web_search', max_uses:5 }];
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify(requestBody)
+  });
+  if (!response.ok) throw new Error('AI request failed: ' + response.status);
+  const data = await response.json();
+  if (data.usage && window.AVNav && AVNav.isAdmin && AVNav.isAdmin()) {
+    const u = data.usage;
+    const searches = (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;
+    const inCost = (u.input_tokens || 0) / 1e6 * 3;
+    const outCost = (u.output_tokens || 0) / 1e6 * 15;
+    const searchCost = searches * 0.01;
+    const total = inCost + outCost + searchCost;
+    console.log(`[Quiz cost] input:${u.input_tokens}tok ($${inCost.toFixed(4)}) output:${u.output_tokens}tok ($${outCost.toFixed(4)}) searches:${searches} ($${searchCost.toFixed(4)}) → total ~$${total.toFixed(4)}`);
+  }
+  if (data.usage && window.AVNav && AVNav.logAIUsage) {
+    const u = data.usage;
+    const searches = (u.server_tool_use && u.server_tool_use.web_search_requests) || 0;
+    const label = _genContext.mode === 'topic' ? _genContext.topicText : _genContext.mode;
+    AVNav.logAIUsage({ source:'quiz', model:'claude-sonnet-4-6', input_tokens:u.input_tokens, output_tokens:u.output_tokens, search_count:searches, label });
+  }
+  const text = (data.content||[]).map(b=>b.text||'').join('');
+  const parsed = parseFirstJSONObject(text);
+  if (!parsed || !Array.isArray(parsed.questions) || !parsed.questions.length) throw new Error('AI returned no questions');
+  return parsed;
+}
+
+async function generateQuiz() {
+  const errEl = document.getElementById('setup-err');
+  errEl.classList.add('hidden');
+  const mode = document.getElementById('package-preset').value;
+  const packageText = document.getElementById('package-text').value.trim();
+  const topicText = document.getElementById('topic-input').value.trim();
+  const uploadFiles = Array.from(document.getElementById('upload-files').files || []);
+  const numQ = parseInt(document.getElementById('num-questions').value) || 5;
+  _questionDuration = parseInt(document.getElementById('q-duration').value) || 20;
+  const difficulty = document.getElementById('difficulty').value;
+  const DIFFICULTY_TEXT = {
+    easy: 'Keep questions easy — straightforward recall of clearly-stated facts, simple wording, and distractors that are obviously wrong.',
+    standard: 'Use a standard difficulty — a normal mix of recall and light application, with plausible but fair distractors.',
+    hard: 'Make questions hard — require applying concepts rather than pure recall, with distractors that are plausible and require real understanding to rule out.',
+    extreme: 'Make questions extremely difficult — nuanced edge cases, closely-related distractors that differ only in fine detail, and questions that demand deep, precise understanding rather than surface familiarity.'
+  };
+  const difficultyInstruction = DIFFICULTY_TEXT[difficulty] || DIFFICULTY_TEXT.standard;
+
+  if (mode === 'upload' && !uploadFiles.length) { errEl.textContent='Upload at least one file first.'; errEl.classList.remove('hidden'); return; }
+  if (mode === 'topic' && !topicText) { errEl.textContent='Enter a topic first.'; errEl.classList.remove('hidden'); return; }
+  if ((mode === 'custom' || mode === 'cpg') && !packageText) { errEl.textContent='Paste some reference material first.'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true; btn.textContent = '✦ Generating…';
+  resetGenProgress();
+  setGenProgress(5, 'Preparing…');
+  try {
+    let uploadBlocks = [];
+    let sourceSummary;
+    if (mode === 'upload') {
+      for (let i=0; i<uploadFiles.length; i++) {
+        const file = uploadFiles[i];
+        setGenProgress(8 + (i / uploadFiles.length) * 15, `Reading files… (${i+1}/${uploadFiles.length})`);
+        const b64 = await fileToBase64(file);
+        if (file.type === 'application/pdf') uploadBlocks.push({ type:'document', source:{ type:'base64', media_type:'application/pdf', data:b64 } });
+        else uploadBlocks.push({ type:'image', source:{ type:'base64', media_type: file.type || 'image/png', data:b64 } });
+      }
+      if (packageText) uploadBlocks.push({ type:'text', text: packageText });
+      sourceSummary = `Uploaded: ${uploadFiles.map(f=>f.name).join(', ')}` + (packageText ? ` + notes: ${packageText.slice(0,500)}` : '');
+    } else if (mode === 'topic') {
+      sourceSummary = `Topic: ${topicText}`;
+    } else {
+      sourceSummary = packageText.slice(0,2000);
+    }
+
+    const searchStatusEl = document.getElementById('web-search-status');
+    if (searchStatusEl) searchStatusEl.textContent = '';
+    let webSearchEnabled = false;
+    if (mode === 'topic') {
+      if (searchStatusEl) searchStatusEl.textContent = 'Checking topic…';
+      const needsSearch = await shouldUseWebSearch(topicText);
+      if (needsSearch) {
+        const isAdminUser = window.AVNav && AVNav.isAdmin && AVNav.isAdmin();
+        const usedToday = isAdminUser ? 0 : (window.AVNav && AVNav.getTodaySearchCount ? await AVNav.getTodaySearchCount('quiz') : null);
+        if (!isAdminUser && (usedToday === null || usedToday >= 2)) {
+          webSearchEnabled = false;
+          if (searchStatusEl) searchStatusEl.textContent = 'Daily web search limit reached (2/2 today) — generating from existing knowledge instead.';
+        } else if (window.AVNav && AVNav.confirmModal) {
+          if (searchStatusEl) searchStatusEl.textContent = '';
+          const capNote = isAdminUser ? '' : ` (${usedToday}/2 used today)`;
+          const proceed = await AVNav.confirmModal({
+            title: '🔎 Web search available',
+            message: `"${topicText}" may need current info. Use web search?${capNote}`,
+            confirmLabel: 'Use web search',
+            cancelLabel: 'Skip — use existing knowledge'
+          });
+          webSearchEnabled = proceed;
+          if (searchStatusEl) searchStatusEl.textContent = proceed ? 'Using web search for current info' : 'Skipped web search — using existing knowledge.';
+        } else {
+          webSearchEnabled = true;
+          if (searchStatusEl) searchStatusEl.textContent = 'Using web search for current info';
+        }
+      } else if (searchStatusEl) {
+        searchStatusEl.textContent = '';
+      }
+    }
+
+    const pictureMode = document.getElementById('picture-mode-value').value; // 'text' | 'picture' | 'mixed'
+    _genContext = { mode, topicText, packageText, uploadBlocks, difficultyInstruction, numQ, webSearchEnabled, pictureMode };
+
+    const historyKey = topicHistoryKey(sourceSummary);
+    const priorQuestions = loadTopicHistory(historyKey);
+
+    startGenTrickle(30, 82, '✦ Calling AI…');
+    const parsed = await callQuizAI(numQ, true, priorQuestions.length ? priorQuestions : null);
+    stopGenTrickle();
+    setGenProgress(85, 'Parsing response…');
+    _questions = parsed.questions.map((q,i)=>({
+      order_index:i, question_text:q.question, options:q.options, correct_index:q.correct_index,
+      question_type: q.question_type || 'text',
+      image_query: q.image_query || null, image_url: null,
+      option_image_queries: (q.option_image_queries && q.option_image_queries.length) ? q.option_image_queries : null,
+      option_image_urls: (q.option_image_queries && q.option_image_queries.length) ? q.option_image_queries.map(()=>null) : null
+    }));
+    saveTopicHistory(historyKey, _questions.map(q=>q.question_text));
+    if (pictureMode !== 'text') {
+      setGenProgress(87, 'Fetching images…');
+      await resolveImagesWithFallback();
+    }
+    const themePrimary = (parsed.theme && isValidHex(parsed.theme.primary)) ? parsed.theme.primary : null;
+    const themeSecondary = (parsed.theme && isValidHex(parsed.theme.secondary)) ? parsed.theme.secondary : null;
+    const themeTertiary = (parsed.theme && isValidHex(parsed.theme.tertiary)) ? parsed.theme.tertiary : null;
+    const themeQuaternary = (parsed.theme && isValidHex(parsed.theme.quaternary)) ? parsed.theme.quaternary : null;
+
+    setGenProgress(90, 'Creating room…');
+    let code, room;
+    for (let attempt=0; attempt<5; attempt++) {
+      code = genRoomCode();
+      try {
+        const rows = await sbFetch('quiz_rooms', { method:'POST', body: JSON.stringify({ code, host_user_id:_session.user.id, package_source: sourceSummary.slice(0,2000), status:'lobby', current_question_index:-1, question_duration_seconds:_questionDuration, theme_primary:themePrimary, theme_secondary:themeSecondary, theme_tertiary:themeTertiary, theme_quaternary:themeQuaternary }) });
+        room = rows[0]; break;
+      } catch(e) { if (attempt===4) throw e; }
+    }
+    _room = room;
+    applyQuizTheme(_room.theme_primary, _room.theme_secondary, _room.theme_tertiary, _room.theme_quaternary);
+    setGenProgress(95, 'Saving questions…');
+    const insertedRows = await sbFetch('quiz_questions', { method:'POST', body: JSON.stringify(_questions.map(q=>({ room_id:_room.id, order_index:q.order_index, question_text:q.question_text, options:q.options, correct_index:q.correct_index, question_type:q.question_type||'text', image_query:q.image_query||null, image_url:q.image_url||null, option_image_queries:q.option_image_queries||null, option_image_urls:q.option_image_urls||null }))) });
+    insertedRows.forEach((row,i) => { _questions[i].id = row.id; });
+
+    _scoringMode = document.getElementById('scoring-mode').value;
+    setGenProgress(100, 'Done!');
+
+    document.getElementById('screen-setup').classList.add('hidden');
+    document.getElementById('screen-lobby').classList.remove('hidden');
+    document.getElementById('room-code-display').textContent = _room.code;
+    renderJoinQR();
+    renderQuestionsList();
+    subscribeLobby();
+  } catch(e) {
+    resetGenProgress();
+    errEl.textContent = e.message; errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled=false; btn.textContent='✦ Generate Quiz';
+  }
+}
+
+async function regenerateQuestion(index) {
+  const btn = document.getElementById(`regen-btn-${index}`);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const avoidList = _questions.map(q => q.question_text);
+    const parsed = await callQuizAI(1, false, avoidList);
+    const newQ = parsed.questions[0];
+    const q = _questions[index];
+    q.question_text = newQ.question; q.options = newQ.options; q.correct_index = newQ.correct_index;
+    q.question_type = newQ.question_type || 'text';
+    q.image_query = newQ.image_query || null; q.image_url = null;
+    q.option_image_queries = (newQ.option_image_queries && newQ.option_image_queries.length) ? newQ.option_image_queries : null;
+    q.option_image_urls = q.option_image_queries ? q.option_image_queries.map(()=>null) : null;
+    if (_genContext.pictureMode !== 'text') await resolveImagesWithFallback();
+    await sbFetch(`quiz_questions?id=eq.${q.id}`, { method:'PATCH', prefer:'return=minimal', body: JSON.stringify({ question_text:q.question_text, options:q.options, correct_index:q.correct_index, question_type:q.question_type, image_query:q.image_query, image_url:q.image_url, option_image_queries:q.option_image_queries, option_image_urls:q.option_image_urls }) });
+    renderQuestionsList();
+  } catch(e) {
+    console.error(e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Failed — retry'; }
+    return;
+  }
+}
+
+async function regenerateAllQuestions() {
+  const btn = document.getElementById('regen-all-btn');
+  btn.disabled = true; btn.textContent = 'Regenerating…';
+  document.querySelectorAll('.q-regen-btn').forEach(b => b.disabled = true);
+  let ok = true;
+  try {
+    const parsed = await callQuizAI(_genContext.numQ, false, null);
+    const newQuestions = parsed.questions.map((q,i)=>({
+      order_index:i, question_text:q.question, options:q.options, correct_index:q.correct_index,
+      question_type: q.question_type || 'text',
+      image_query: q.image_query || null, image_url: null,
+      option_image_queries: (q.option_image_queries && q.option_image_queries.length) ? q.option_image_queries : null,
+      option_image_urls: (q.option_image_queries && q.option_image_queries.length) ? q.option_image_queries.map(()=>null) : null
+    }));
+    _questions = newQuestions;
+    if (_genContext.pictureMode !== 'text') await resolveImagesWithFallback();
+    await sbFetch(`quiz_questions?room_id=eq.${_room.id}`, { method:'DELETE', prefer:'return=minimal' });
+    const inserted = await sbFetch('quiz_questions', { method:'POST', body: JSON.stringify(newQuestions.map(q=>({ room_id:_room.id, order_index:q.order_index, question_text:q.question_text, options:q.options, correct_index:q.correct_index, question_type:q.question_type||'text', image_query:q.image_query||null, image_url:q.image_url||null, option_image_queries:q.option_image_queries||null, option_image_urls:q.option_image_urls||null }))) });
+    newQuestions.forEach((q,i) => { q.id = inserted[i].id; });
+    renderQuestionsList();
+  } catch(e) {
+    console.error(e);
+    ok = false;
+  }
+  btn.disabled = false;
+  btn.textContent = ok ? '↻ Regenerate All' : 'Failed — try again';
+}
+
+function renderQuestionsList() {
+  const list = document.getElementById('questions-list');
+  const countEl = document.getElementById('questions-count');
+  if (!list || !countEl) return;
+  countEl.textContent = _questions.length;
+  list.innerHTML = _questions.map((q,i) => `
+    <div class="question-row">
+      <div class="question-row-text">${i+1}. ${escapeHtml(q.question_text)}</div>
+      <div class="question-row-opts">
+        ${q.options.map((o,oi)=>`<div class="question-row-opt${oi===q.correct_index?' correct':''}">${escapeHtml(o)}</div>`).join('')}
+      </div>
+      <button type="button" class="btn q-regen-btn" id="regen-btn-${i}" onclick="regenerateQuestion(${i})">Regenerate</button>
+    </div>
+  `).join('');
+}
+
+function subscribeLobby() {
+  refreshLobbyPlayers();
+  _playersChannel = _sb.channel('room-players-'+_room.id)
+    .on('postgres_changes', { event:'*', schema:'public', table:'quiz_players', filter:`room_id=eq.${_room.id}` }, refreshLobbyPlayers)
+    .subscribe();
+}
+
+async function refreshLobbyPlayers() {
+  const rows = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=name,score,avatar_url&order=joined_at.asc`);
+  const colors = ['var(--magenta)','var(--teal)','var(--gold)','var(--violet)'];
+  const textDark = ['','','color:#1B1400;',''];
+  document.getElementById('lobby-players').innerHTML = rows.length
+    ? rows.map((p,i)=>`<span class="player-chip" style="background:${colors[i%4]};${textDark[i%4]}">${p.avatar_url?`<img src="${escapeHtml(p.avatar_url)}" class="player-avatar" alt="">`:''}${escapeHtml(p.name)}</span>`).join('')
+    : '<div class="status-line">Waiting for players…</div>';
+  const startBtn = document.getElementById('start-game-btn');
+  if (startBtn) startBtn.textContent = rows.length ? '▶ Start Game' : '▶ Start Game (Single Player)';
+}
+
+async function renderGamePlayers() {
+  const rows = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=name,score,avatar_url&order=score.desc`);
+  const bar = document.getElementById('game-players-bar');
+  if (!bar) return;
+  const sidebar = document.getElementById('game-sidebar');
+  if (sidebar) sidebar.classList.toggle('hidden', rows.length <= 1);
+  bar.innerHTML = rows.map(p=>`<span class="game-player-chip">${p.avatar_url?`<img src="${escapeHtml(p.avatar_url)}" class="player-avatar" alt="">`:''}${escapeHtml(p.name)}<span class="gp-score">${p.score}</span></span>`).join('');
+}
+
+function renderJoinQR() {
+  const joinUrl = new URL('quiz_player.html?code=' + _room.code, window.location.href).href;
+  const container = document.getElementById('qr-code');
+  container.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  container.appendChild(canvas);
+  const themeCs = getComputedStyle(document.documentElement);
+  const qrGold = themeCs.getPropertyValue('--gold').trim() || '#FFC93C';
+  const qrCard = themeCs.getPropertyValue('--card').trim() || '#1B2140';
+  QRCode.toCanvas(canvas, joinUrl, { width: 200, margin: 1, color: { dark: qrGold, light: qrCard } }, function (err) {
+    if (err) container.innerHTML = '<div class="status-line">(QR code unavailable — use the room code above)</div>';
+  });
+}
+
+function startTimerUI(startedAtISO, durationSec) {
+  clearInterval(_timerInterval);
+  const circle = document.getElementById('timer-bar');
+  const numEl = document.getElementById('timer-num');
+  const circumference = 2 * Math.PI * 42;
+  circle.style.strokeDasharray = circumference;
+  let _lastWholeSecond = null;
+  function tick() {
+    const elapsed = (Date.now() - new Date(startedAtISO).getTime()) / 1000;
+    const remaining = Math.max(0, durationSec - elapsed);
+    const frac = remaining / durationSec;
+    circle.style.strokeDashoffset = circumference * (1 - frac);
+    circle.style.stroke = remaining <= 5 ? 'var(--magenta)' : 'var(--teal)';
+    const wholeRemaining = Math.ceil(remaining);
+    numEl.textContent = wholeRemaining;
+    if (wholeRemaining !== _lastWholeSecond && wholeRemaining > 0) {
+      _lastWholeSecond = wholeRemaining;
+      if (wholeRemaining <= 5) playTick(true);
+    }
+    if (remaining <= 0) {
+      clearInterval(_timerInterval);
+      if (!_revealing) { _revealing = true; revealAnswer(); }
+    }
+  }
+  tick();
+  _timerInterval = setInterval(tick, 200);
+}
+
+async function startGame() {
+  _voiceEnabled = document.getElementById('voice-mode-value').value === 'on';
+  _voiceIndex = document.getElementById('voice-select').value;
+  _hostPlays = document.getElementById('host-mode-value').value === 'play';
+  if (!_hostPlays) {
+    const playerRows = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=user_id`);
+    const otherPlayers = playerRows.filter(p => p.user_id !== _session.user.id);
+    if (!otherPlayers.length) {
+      _hostPlays = true;
+    }
+  }
+  if (_hostPlays) {
+    await joinHostAsPlayer();
+  }
+  const startedAt = new Date().toISOString();
+  await sbFetch(`quiz_rooms?id=eq.${_room.id}`, { method:'PATCH', prefer:'return=minimal', body: JSON.stringify({ status:'live', current_question_index:0, question_started_at:startedAt, question_duration_seconds:_questionDuration }) });
+  _room.question_started_at = startedAt; _room.question_duration_seconds = _questionDuration;
+  _curIdx = 0;
+  document.getElementById('screen-lobby').classList.add('hidden');
+  document.getElementById('screen-game').classList.remove('hidden');
+  if (_playersChannel) _sb.removeChannel(_playersChannel);
+  showQuestion();
+  subscribeAnswers();
+}
+
+function relLuma(hex) {
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  return 0.299*r + 0.587*g + 0.114*b;
+}
+
+// Builds the 4-colour answer-option palette from the current theme's CSS
+// variables (which applyQuizTheme sets per-quiz) so the option boxes always
+// match the AI-suggested topic colours instead of a fixed static palette.
+function questionPalette() {
+  const cs = getComputedStyle(document.documentElement);
+  const fallback = { '--magenta':'#FF3D7F', '--teal':'#2FE6C4', '--gold':'#FFC93C', '--violet':'#7B61FF' };
+  return ['--magenta','--teal','--gold','--violet'].map(v => {
+    const hex = (cs.getPropertyValue(v).trim() || fallback[v]);
+    const hsl = hexToHsl(hex);
+    const darker = hslToHex(hsl.h, hsl.s, Math.max(15, hsl.l - 18));
+    const text = relLuma(hex) > 0.6 ? '#2A1B00' : '#fff';
+    return [hex, darker, text];
+  });
+}
+
+function showQuestion() {
+  _revealing = false;
+  _advancing = false;
+  clearTimeout(_autoAdvanceTimer);
+  clearInterval(_autoAdvanceCountdownInterval);
+  document.getElementById('next-btn').textContent = 'Next Question ▶';
+  renderGamePlayers();
+  const q = _questions[_curIdx];
+  const shapes = ['▲','◆','●','■'];
+  const pal = questionPalette()[_curIdx % 4];
+  const optsEl = document.getElementById('q-options');
+  optsEl.style.setProperty('--qc1', pal[0]);
+  optsEl.style.setProperty('--qc2', pal[1]);
+  optsEl.style.setProperty('--qtext', pal[2]);
+  document.getElementById('game-progress').textContent = `Question ${_curIdx+1} of ${_questions.length}`;
+  document.getElementById('q-text').textContent = q.question_text;
+  updateQuestionImageDisplay();
+  speakQuestion(q.question_text);
+  const isPicAnswer = q.question_type === 'picture_answer';
+  optsEl.classList.toggle('pic-grid', isPicAnswer);
+  if (isPicAnswer) {
+    optsEl.innerHTML = q.options.map((o,i)=>{
+      const url = q.option_image_urls && q.option_image_urls[i];
+      const body = url ? `<img src="${url}" alt="${escapeHtml(o)}">` : `<span class="pic-fallback">${escapeHtml(o)}</span>`;
+      return `<div class="opt-row pic-opt" id="opt-${i}"><span class="shape">${shapes[i]}</span>${body}<span class="opt-count" id="opt-count-${i}"></span></div>`;
+    }).join('');
+  } else {
+    optsEl.innerHTML = q.options.map((o,i)=>`<div class="opt-row" id="opt-${i}"><span class="shape">${shapes[i]}</span>${escapeHtml(o)}<span class="opt-count" id="opt-count-${i}"></span></div>`).join('');
+  }
+  optsEl.classList.toggle('hidden', _hostPlays);
+  optsEl.style.display = _hostPlays ? 'none' : ''; // belt-and-suspenders: guarantees hiding regardless of pic-grid's higher-specificity display:grid rule
+  document.getElementById('answer-count').textContent = '';
+  document.getElementById('reveal-btn').classList.remove('hidden');
+  document.getElementById('next-btn').classList.add('hidden');
+  _hostAnswered = false;
+  const hostPanel = document.getElementById('host-play-panel');
+  if (_hostPlays) {
+    hostPanel.classList.remove('hidden');
+    const hostOptsEl = document.getElementById('host-options');
+    hostOptsEl.style.setProperty('--qc1', pal[0]);
+    hostOptsEl.style.setProperty('--qc2', pal[1]);
+    hostOptsEl.style.setProperty('--qtext', pal[2]);
+    hostOptsEl.classList.toggle('pic-grid', isPicAnswer);
+    if (isPicAnswer) {
+      hostOptsEl.innerHTML = q.options.map((o,i)=>{
+        const url = q.option_image_urls && q.option_image_urls[i];
+        const body = url ? `<img src="${url}" alt="${escapeHtml(o)}">` : `<span class="pic-fallback">${escapeHtml(o)}</span>`;
+        return `<button type="button" class="opt-row pic-opt clickable" id="host-opt-${i}" onclick="submitHostAnswer(${i})"><span class="shape">${shapes[i]}</span>${body}</button>`;
+      }).join('');
+    } else {
+      hostOptsEl.innerHTML = q.options.map((o,i)=>`<button type="button" class="opt-row clickable" id="host-opt-${i}" onclick="submitHostAnswer(${i})"><span class="shape">${shapes[i]}</span>${escapeHtml(o)}</button>`).join('');
+    }
+  } else {
+    hostPanel.classList.add('hidden');
+  }
+  startTimerUI(_room.question_started_at, _room.question_duration_seconds);
+}
+
+function subscribeAnswers() {
+  if (_answersChannel) _sb.removeChannel(_answersChannel);
+  _answersChannel = _sb.channel('room-answers-'+_room.id)
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'quiz_answers', filter:`room_id=eq.${_room.id}` }, updateAnswerCount)
+    .subscribe();
+  updateAnswerCount();
+}
+
+async function updateAnswerCount() {
+  const qid = await currentQuestionId();
+  const answers = await sbFetch(`quiz_answers?question_id=eq.${qid}&select=selected_index`);
+  const players = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=id`);
+  document.getElementById('answer-count').textContent = `${answers.length} of ${players.length} answered`;
+  const revealBtn = document.getElementById('reveal-btn');
+  if (!_revealing && players.length > 0 && answers.length >= players.length && !revealBtn.classList.contains('hidden')) {
+    _revealing = true;
+    revealAnswer();
+  }
+}
+
+let _qidCache = {};
+async function currentQuestionId() {
+  const key = _curIdx;
+  if (_qidCache[key]) return _qidCache[key];
+  const rows = await sbFetch(`quiz_questions?room_id=eq.${_room.id}&order_index=eq.${_curIdx}&select=id`);
+  _qidCache[key] = rows[0].id;
+  return _qidCache[key];
+}
+
+function manualReveal() {
+  if (_revealing) return;
+  _revealing = true;
+  revealAnswer();
+}
+
+async function submitHostAnswer(selectedIndex) {
+  if (_hostAnswered || !_hostPlayerId) return;
+  _hostAnswered = true;
+  document.querySelectorAll('#host-options .opt-row').forEach((el,i)=>{ el.disabled = true; if (i===selectedIndex) el.classList.add('selected'); });
+  const qid = await currentQuestionId();
+  const q = _questions[_curIdx];
+  try {
+    await sbFetch('quiz_answers', { method:'POST', prefer:'return=minimal',
+      body: JSON.stringify({ room_id:_room.id, question_id:qid, player_id:_hostPlayerId, selected_index:selectedIndex, is_correct: selectedIndex===q.correct_index }) });
+  } catch(e) { /* likely already answered — ignore */ }
+}
+
+async function revealAnswer() {
+  clearInterval(_timerInterval);
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  const q = _questions[_curIdx];
+  const qid = await currentQuestionId();
+  const answers = await sbFetch(`quiz_answers?question_id=eq.${qid}&select=selected_index,player_id,answered_at&order=answered_at.asc`);
+  if (_hostPlays && _hostPlayerId) {
+    const hostAnswer = answers.find(a => a.player_id === _hostPlayerId);
+    playChime(!!hostAnswer && hostAnswer.selected_index === q.correct_index);
+  } else {
+    playChime(true);
+  }
+  const counts = q.options.map((_,i)=> answers.filter(a=>a.selected_index===i).length);
+  counts.forEach((c,i)=>{ document.getElementById('opt-count-'+i).textContent = c; });
+  q.options.forEach((_,i)=>{
+    const el = document.getElementById('opt-'+i);
+    if (i === q.correct_index) el.classList.add('correct'); else el.classList.add('faded');
+    const hostEl = document.getElementById('host-opt-'+i);
+    if (hostEl) {
+      hostEl.disabled = true;
+      if (i === q.correct_index) hostEl.classList.add('correct'); else hostEl.classList.add('faded');
+    }
+  });
+
+  const deltas = {};
+  if (_scoringMode === 'speed') {
+    const allPlayers = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=id`);
+    const answeredIds = new Set(answers.map(a=>a.player_id));
+    const correctOrdered = answers.filter(a=>a.selected_index===q.correct_index);
+    correctOrdered.forEach((a,i)=>{ deltas[a.player_id] = i===0 ? 10 : (i===1 ? 5 : 0); });
+    answers.filter(a=>a.selected_index!==q.correct_index).forEach(a=>{ deltas[a.player_id] = -5; });
+    allPlayers.forEach(p=>{ if (!answeredIds.has(p.id)) deltas[p.id] = -5; });
+  } else {
+    answers.filter(a=>a.selected_index===q.correct_index).forEach(a=>{ deltas[a.player_id] = 10; });
+  }
+
+  for (const pid of Object.keys(deltas)) {
+    const delta = deltas[pid];
+    if (!delta) continue;
+    const rows = await sbFetch(`quiz_players?id=eq.${pid}&select=score`);
+    const cur = (rows[0] && rows[0].score) || 0;
+    await sbFetch(`quiz_players?id=eq.${pid}`, { method:'PATCH', prefer:'return=minimal', body: JSON.stringify({ score: cur+delta }) });
+  }
+  renderGamePlayers();
+
+  document.getElementById('reveal-btn').classList.add('hidden');
+  document.getElementById('next-btn').classList.remove('hidden');
+  scheduleAutoAdvance();
+}
+
+function scheduleAutoAdvance() {
+  clearTimeout(_autoAdvanceTimer);
+  clearInterval(_autoAdvanceCountdownInterval);
+  let secondsLeft = 6;
+  const btn = document.getElementById('next-btn');
+  btn.textContent = `Next Question ▶ (${secondsLeft})`;
+  _autoAdvanceCountdownInterval = setInterval(() => {
+    secondsLeft--;
+    if (secondsLeft > 0) btn.textContent = `Next Question ▶ (${secondsLeft})`;
+  }, 1000);
+  _autoAdvanceTimer = setTimeout(triggerNext, 6000);
+}
+
+function triggerNext() {
+  if (_advancing) return;
+  _advancing = true;
+  clearTimeout(_autoAdvanceTimer);
+  clearInterval(_autoAdvanceCountdownInterval);
+  nextQuestion();
+}
+
+async function nextQuestion() {
+  _curIdx++;
+  if (_curIdx >= _questions.length) {
+    clearInterval(_timerInterval);
+    await sbFetch(`quiz_rooms?id=eq.${_room.id}`, { method:'PATCH', prefer:'return=minimal', body: JSON.stringify({ status:'ended' }) });
+    if (_answersChannel) _sb.removeChannel(_answersChannel);
+    showLeaderboard();
+    return;
+  }
+  const startedAt = new Date().toISOString();
+  await sbFetch(`quiz_rooms?id=eq.${_room.id}`, { method:'PATCH', prefer:'return=minimal', body: JSON.stringify({ current_question_index: _curIdx, question_started_at:startedAt, question_duration_seconds:_questionDuration }) });
+  _room.question_started_at = startedAt;
+  showQuestion();
+}
+
+async function showLeaderboard() {
+  document.getElementById('screen-game').classList.add('hidden');
+  document.getElementById('screen-end').classList.remove('hidden');
+  const rows = await sbFetch(`quiz_players?room_id=eq.${_room.id}&select=name,score,avatar_url&order=score.desc&limit=3`);
+  document.getElementById('podium').innerHTML = rows.map((p,i)=>`<div class="pod-step pod-${i+1}">${p.avatar_url?`<img src="${escapeHtml(p.avatar_url)}" class="pod-avatar" alt="">`:''}<div class="pname">${escapeHtml(p.name)}</div><div class="pscore">${p.score}</div></div>`).join('');
+  playFanfare();
+  fireConfetti('big');
+}
+</script>
+<script src="nav.js"></script>
+</body>
+</html>

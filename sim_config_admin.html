@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sim Config Admin</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f8; color: #1e2a36; }
+  #app { display: none; }
+  header { background: #1C3A6E; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  header .sub { font-size: 11px; opacity: 0.75; }
+  #layout { display: flex; min-height: calc(100vh - 54px); }
+  #tabs { width: 210px; flex-shrink: 0; background: #fff; border-right: 1px solid #e0e4e8; padding: 10px 0; }
+  .tab-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 10px 16px; border: none; background: none; cursor: pointer; font-size: 13px; color: #33475a; border-left: 3px solid transparent; }
+  .tab-btn:hover { background: #f4f6f8; }
+  .tab-btn.active { background: #eef2f7; border-left-color: #1C3A6E; font-weight: 700; color: #1C3A6E; }
+  .tab-badge { font-size: 9px; padding: 1px 6px; border-radius: 8px; background: #d1e7dd; color: #0f5132; }
+  .tab-badge.stock { background: #eee; color: #888; }
+  #content { flex: 1; padding: 20px 28px; max-width: 980px; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .section-header h2 { margin: 0; font-size: 18px; }
+  .section-owner { font-size: 11px; color: #8a97a3; margin-bottom: 16px; }
+  .section-actions { display: flex; gap: 8px; }
+  button.btn { font-size: 12px; padding: 7px 14px; border-radius: 6px; border: 1px solid #cfd7de; background: #fff; cursor: pointer; color: #33475a; }
+  button.btn:hover { background: #f4f6f8; }
+  button.btn-primary { background: #1C3A6E; border-color: #1C3A6E; color: #fff; }
+  button.btn-primary:hover { background: #142c54; }
+  button.btn-danger { color: #b91c1c; border-color: #f3c6c6; }
+  .readonly-note { background: #fff8e1; border: 1px solid #f0dfa0; border-radius: 6px; padding: 10px 12px; font-size: 12px; color: #6b5a12; margin-bottom: 16px; }
+  .field-block { background: #fff; border: 1px solid #e5e9ed; border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  .field-label { font-size: 13px; font-weight: 700; color: #1e2a36; display: flex; align-items: center; gap: 8px; }
+  .field-help { font-size: 11px; color: #8a97a3; margin: 3px 0 10px; max-width: 720px; }
+  .field-error { font-size: 11px; color: #b91c1c; margin-top: 6px; }
+  .readonly-pill { font-size: 9px; padding: 1px 6px; border-radius: 8px; background: #eee; color: #777; }
+  input[type=text], input[type=number], textarea { font-family: inherit; font-size: 12px; padding: 5px 7px; border: 1px solid #cfd7de; border-radius: 4px; }
+  input[type=number] { width: 90px; }
+  .row-list { display: flex; flex-direction: column; gap: 6px; }
+  .row-list-item { display: flex; align-items: center; gap: 6px; }
+  .row-list-item input[type=text] { flex: 1; }
+  .small-btn { font-size: 11px; padding: 3px 8px; border-radius: 4px; border: 1px solid #cfd7de; background: #fff; cursor: pointer; color: #556; }
+  .small-btn.danger { color: #b91c1c; }
+  table.editor-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.editor-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: #8a97a3; padding: 4px 6px; border-bottom: 1px solid #e5e9ed; }
+  table.editor-table td { padding: 4px 6px; border-bottom: 1px solid #f0f2f4; vertical-align: top; }
+  .color-swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .color-swatch { display: flex; align-items: center; gap: 4px; border: 1px solid #e5e9ed; border-radius: 6px; padding: 3px 6px; }
+  .color-swatch input[type=color] { width: 26px; height: 26px; border: none; padding: 0; background: none; }
+  .map-row { display: flex; gap: 6px; align-items: center; }
+  .map-row input.map-key { width: 160px; }
+  .status-msg { font-size: 12px; margin-top: 10px; min-height: 16px; }
+  .status-msg.ok { color: #0f5132; }
+  .status-msg.err { color: #b91c1c; }
+  .derived-preview { font-size: 12px; color: #33475a; background: #f4f6f8; border-radius: 4px; padding: 6px 10px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1>🛠 Sim Config Admin</h1>
+    <span class="sub">View, edit, and save sim_control.html / sim_patient.html tuning values</span>
+  </header>
+  <div id="layout">
+    <nav id="tabs"></nav>
+    <main id="content"></main>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://1984tpearson.github.io/AV/sim_engine.js"></script>
+<script src="https://1984tpearson.github.io/AV/avatar_assets.js"></script>
+<script src="https://1984tpearson.github.io/AV/sim_config_schema.js"></script>
+<script>
+
+// ── ADMIN AUTH GATE (same pattern as cpg_editor.html) ──────────────────────
+const SUPABASE_URL = 'https://befsjenbaruxqrntuhpn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
+const ADMIN_UUID = 'fe1f2d3f-2139-44ec-bbe0-14ad6bb748ac';
+const _sb = window.__avSupabaseClient || supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+if (!window.__avSupabaseClient) window.__avSupabaseClient = _sb;
+let _userSession = null;
+
+async function checkAdminAccess() {
+  const { data } = await _sb.auth.getSession();
+  const session = data.session;
+  if (!session) return denyAccess();
+  let profile = null;
+  try {
+    const profileResult = await _sb.from('profiles').select('role').eq('id', session.user.id).single();
+    profile = profileResult.data;
+  } catch (e) { /* best-effort — fall through to UUID check */ }
+  const isAdmin = (profile && profile.role === 'admin') || session.user.id === ADMIN_UUID;
+  if (!isAdmin) return denyAccess();
+  _userSession = session;
+  return true;
+}
+
+function denyAccess() {
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:Segoe UI,sans-serif;text-align:center;padding:20px">' +
+    '<div style="font-size:40px">&#128274;</div>' +
+    '<div style="font-size:16px;font-weight:700;color:#1a1a2e">Admin access required</div>' +
+    '<div style="font-size:13px;color:#888">This page is restricted to the site administrator.</div>' +
+    '<a href="index.html" style="margin-top:8px;color:#1C3A6E;font-weight:600;font-size:13px;text-decoration:none">&larr; Back to site</a>' +
+  '</div>';
+  return false;
+}
+
+async function sbFetch(path, opts = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': opts.prefer || 'return=representation',
+      ...(opts.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `Supabase error ${res.status}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function deepClone(v) { return v === undefined ? v : JSON.parse(JSON.stringify(v)); }
+
+// ── STATE ───────────────────────────────────────────────────────────────
+// SCHEMA is populated inside init() below, not here — sim_config_schema.js
+// is an external <script src>, and referencing it unguarded at top level
+// would throw before the admin-access check even runs if that one script
+// failed to load (CDN hiccup, ad blocker, etc), showing a blank page with
+// nothing but a console error instead of an actual message.
+let SCHEMA = null;
+let workingData = {};   // { sectionKey: { fieldKey: value } }
+let sectionMeta = {};   // { sectionKey: { customized, updated_at, updated_by } }
+let activeSection = null;
+
+async function loadAll() {
+  const rows = await sbFetch('sim_config?select=*').catch(() => []);
+  const bySection = {};
+  (rows || []).forEach(r => { bySection[r.section_key] = r; });
+  Object.keys(SCHEMA).forEach(sk => {
+    const data = {};
+    Object.keys(SCHEMA[sk].fields).forEach(fk => {
+      const row = bySection[sk];
+      const savedVal = row && row.value && row.value[fk];
+      data[fk] = savedVal !== undefined ? deepClone(savedVal) : deepClone(SCHEMA[sk].fields[fk].default);
+    });
+    workingData[sk] = data;
+    sectionMeta[sk] = bySection[sk]
+      ? { customized: true, updated_at: bySection[sk].updated_at, updated_by: bySection[sk].updated_by }
+      : { customized: false };
+  });
+}
+
+// ── TABS ────────────────────────────────────────────────────────────────
+function renderTabs() {
+  const nav = document.getElementById('tabs');
+  nav.innerHTML = '';
+  Object.keys(SCHEMA).forEach(sk => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-btn' + (sk === activeSection ? ' active' : '');
+    btn.innerHTML = `<span>${SCHEMA[sk].label}</span>` +
+      `<span class="tab-badge ${sectionMeta[sk].customized ? '' : 'stock'}">${sectionMeta[sk].customized ? 'customized' : 'stock'}</span>`;
+    btn.onclick = () => { activeSection = sk; renderTabs(); renderSection(); };
+    nav.appendChild(btn);
+  });
+}
+
+// ── SECTION RENDER ──────────────────────────────────────────────────────
+function renderSection() {
+  const sk = activeSection;
+  const schemaSec = SCHEMA[sk];
+  const content = document.getElementById('content');
+  content.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.innerHTML = `<h2>${schemaSec.label}</h2>`;
+  const actions = document.createElement('div');
+  actions.className = 'section-actions';
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-danger';
+  resetBtn.textContent = 'Reset section to defaults';
+  resetBtn.onclick = () => {
+    if (!confirm(`Reset all "${schemaSec.label}" fields to their shipped defaults? This does not save until you click Save.`)) return;
+    Object.keys(schemaSec.fields).forEach(fk => { workingData[sk][fk] = deepClone(schemaSec.fields[fk].default); });
+    renderSection();
+  };
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = 'Save section';
+  saveBtn.onclick = () => saveSection(sk);
+  actions.appendChild(resetBtn);
+  actions.appendChild(saveBtn);
+  header.appendChild(actions);
+  content.appendChild(header);
+
+  const ownerLine = document.createElement('div');
+  ownerLine.className = 'section-owner';
+  const meta = sectionMeta[sk];
+  ownerLine.textContent = `Owner: ${schemaSec.owner}` + (meta.customized ? ` · last saved ${new Date(meta.updated_at).toLocaleString()}${meta.updated_by ? ' by ' + meta.updated_by : ''}` : ' · using shipped defaults (never saved)');
+  content.appendChild(ownerLine);
+
+  (schemaSec.readonlyNotes || []).forEach(note => {
+    const div = document.createElement('div');
+    div.className = 'readonly-note';
+    div.textContent = '⚠ ' + note;
+    content.appendChild(div);
+  });
+
+  Object.keys(schemaSec.fields).forEach(fk => {
+    content.appendChild(renderField(sk, fk, schemaSec.fields[fk]));
+  });
+
+  const status = document.createElement('div');
+  status.id = 'save-status';
+  status.className = 'status-msg';
+  content.appendChild(status);
+}
+
+function fieldCtx() {
+  return { AvatarAssets: window.AvatarAssets, allSections: workingData };
+}
+
+function renderField(sk, fk, field) {
+  const block = document.createElement('div');
+  block.className = 'field-block';
+  const label = document.createElement('div');
+  label.className = 'field-label';
+  label.innerHTML = `${field.label || fk}` + (field.readonly ? ' <span class="readonly-pill">read-only / derived</span>' : '');
+  block.appendChild(label);
+  if (field.help) {
+    const help = document.createElement('div');
+    help.className = 'field-help';
+    help.textContent = field.help;
+    block.appendChild(help);
+  }
+
+  const body = document.createElement('div');
+  block.appendChild(body);
+
+  if (field.readonly) {
+    renderReadonly(body, sk, fk, field);
+  } else {
+    switch (field.type) {
+      case 'number': renderNumber(body, sk, fk); break;
+      case 'string': renderString(body, sk, fk); break;
+      case 'prompt_text': renderPromptText(body, sk, fk); break;
+      case 'string_list': renderStringList(body, sk, fk); break;
+      case 'number_list': renderNumberList(body, sk, fk); break;
+      case 'map_str_str': renderMap(body, sk, fk, 'text'); break;
+      case 'map_str_num': renderMap(body, sk, fk, 'number'); break;
+      case 'map_str_list': renderMapStrList(body, sk, fk); break;
+      case 'color_list': renderColorList(body, sk, fk); break;
+      case 'table': renderTable(body, sk, fk, field); break;
+      case 'nested_durations': renderNestedDurations(body, sk, fk, field); break;
+      default: body.textContent = `(no editor for type "${field.type}")`;
+    }
+  }
+  return block;
+}
+
+function renderReadonly(body, sk, fk, field) {
+  // Only one derived field exists today (timers.BP_INFLATE_MS) — computed
+  // straight from the live medications.ACTION_DURATIONS working copy so the
+  // preview always matches what would actually apply if saved right now.
+  let val = workingData[sk][fk];
+  if (field.derivedFrom) {
+    const src = workingData[field.derivedFrom.section] && workingData[field.derivedFrom.section][field.derivedFrom.field];
+    if (src && src.bp && typeof src.bp.subsequent === 'number') val = src.bp.subsequent * 1000;
+  }
+  const div = document.createElement('div');
+  div.className = 'derived-preview';
+  div.textContent = JSON.stringify(val);
+  body.appendChild(div);
+}
+
+function renderNumber(body, sk, fk) {
+  const input = document.createElement('input');
+  input.type = 'number'; input.step = 'any';
+  input.value = workingData[sk][fk];
+  input.oninput = () => { workingData[sk][fk] = input.value === '' ? 0 : parseFloat(input.value); };
+  body.appendChild(input);
+}
+
+function renderPromptText(body, sk, fk) {
+  const meta = document.createElement('div');
+  meta.className = 'field-help';
+  meta.style.margin = '0 0 6px';
+  meta.id = `promptlen-${sk}-${fk}`;
+  const updateMeta = (v) => { meta.textContent = `${v.length.toLocaleString()} characters — this is the literal SYSTEM prompt sent to the AI, edit with care (see the warning above).`; };
+  updateMeta(workingData[sk][fk]);
+  const textarea = document.createElement('textarea');
+  textarea.value = workingData[sk][fk];
+  textarea.style.cssText = 'width:100%; min-height:260px; font-family:"Courier New",monospace; font-size:12px; line-height:1.5; padding:8px; border:1px solid #cfd7de; border-radius:6px; resize:vertical;';
+  textarea.oninput = () => { workingData[sk][fk] = textarea.value; updateMeta(textarea.value); };
+  body.appendChild(meta);
+  body.appendChild(textarea);
+}
+
+function renderString(body, sk, fk) {
+  const input = document.createElement('input');
+  input.type = 'text'; input.style.width = '100%';
+  input.value = workingData[sk][fk];
+  input.oninput = () => { workingData[sk][fk] = input.value; };
+  body.appendChild(input);
+}
+
+function renderStringList(body, sk, fk) {
+  const wrap = document.createElement('div');
+  wrap.className = 'row-list';
+  function redraw() {
+    wrap.innerHTML = '';
+    (workingData[sk][fk] || []).forEach((val, i) => {
+      const row = document.createElement('div');
+      row.className = 'row-list-item';
+      const input = document.createElement('input');
+      input.type = 'text'; input.value = val;
+      input.oninput = () => { workingData[sk][fk][i] = input.value; };
+      const del = document.createElement('button');
+      del.className = 'small-btn danger'; del.textContent = '✕';
+      del.onclick = () => { workingData[sk][fk].splice(i, 1); redraw(); };
+      row.appendChild(input); row.appendChild(del);
+      wrap.appendChild(row);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'small-btn'; addBtn.textContent = '+ Add';
+    addBtn.onclick = () => { workingData[sk][fk].push(''); redraw(); };
+    wrap.appendChild(addBtn);
+  }
+  redraw();
+  body.appendChild(wrap);
+}
+
+function renderNumberList(body, sk, fk) {
+  const help = document.createElement('div');
+  help.className = 'field-help';
+  help.style.margin = '0 0 6px';
+  help.textContent = 'Comma-separated, order preserved.';
+  body.appendChild(help);
+  const input = document.createElement('input');
+  input.type = 'text'; input.style.width = '100%';
+  input.value = (workingData[sk][fk] || []).join(', ');
+  input.oninput = () => {
+    workingData[sk][fk] = input.value.split(',').map(s => s.trim()).filter(s => s !== '').map(Number).filter(n => !Number.isNaN(n));
+  };
+  body.appendChild(input);
+}
+
+function renderMap(body, sk, fk, inputType) {
+  const wrap = document.createElement('div');
+  wrap.className = 'row-list';
+  function redraw() {
+    wrap.innerHTML = '';
+    const obj = workingData[sk][fk] || {};
+    Object.keys(obj).forEach(key => {
+      const row = document.createElement('div');
+      row.className = 'map-row';
+      const keyInput = document.createElement('input');
+      keyInput.type = 'text'; keyInput.className = 'map-key'; keyInput.value = key;
+      keyInput.onchange = () => {
+        if (keyInput.value === key || !keyInput.value) { keyInput.value = key; return; }
+        const v = obj[key]; delete obj[key]; obj[keyInput.value] = v; redraw();
+      };
+      const valInput = document.createElement('input');
+      valInput.type = inputType; if (inputType === 'number') valInput.step = 'any';
+      valInput.value = obj[key];
+      valInput.oninput = () => { obj[key] = inputType === 'number' ? parseFloat(valInput.value) || 0 : valInput.value; };
+      const del = document.createElement('button');
+      del.className = 'small-btn danger'; del.textContent = '✕';
+      del.onclick = () => { delete obj[key]; redraw(); };
+      row.appendChild(keyInput); row.appendChild(valInput); row.appendChild(del);
+      wrap.appendChild(row);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'small-btn'; addBtn.textContent = '+ Add';
+    addBtn.onclick = () => { const k = 'new_key_' + Object.keys(obj).length; obj[k] = inputType === 'number' ? 0 : ''; redraw(); };
+    wrap.appendChild(addBtn);
+  }
+  redraw();
+  body.appendChild(wrap);
+}
+
+function renderMapStrList(body, sk, fk) {
+  const wrap = document.createElement('div');
+  wrap.className = 'row-list';
+  function redraw() {
+    wrap.innerHTML = '';
+    const obj = workingData[sk][fk] || {};
+    Object.keys(obj).forEach(key => {
+      const row = document.createElement('div');
+      row.className = 'map-row';
+      const keyLabel = document.createElement('div');
+      keyLabel.className = 'map-key'; keyLabel.style.fontWeight = '700'; keyLabel.style.fontSize = '12px';
+      keyLabel.textContent = key;
+      const listInput = document.createElement('input');
+      listInput.type = 'text'; listInput.style.flex = '1';
+      listInput.value = (obj[key] || []).join(', ');
+      listInput.oninput = () => { obj[key] = listInput.value.split(',').map(s => s.trim()).filter(Boolean); };
+      row.appendChild(keyLabel); row.appendChild(listInput);
+      wrap.appendChild(row);
+    });
+  }
+  redraw();
+  body.appendChild(wrap);
+}
+
+function renderColorList(body, sk, fk) {
+  const wrap = document.createElement('div');
+  wrap.className = 'color-swatch-row';
+  function redraw() {
+    wrap.innerHTML = '';
+    (workingData[sk][fk] || []).forEach((val, i) => {
+      const sw = document.createElement('div');
+      sw.className = 'color-swatch';
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color'; colorInput.value = val;
+      colorInput.oninput = () => { workingData[sk][fk][i] = colorInput.value; };
+      const del = document.createElement('button');
+      del.className = 'small-btn danger'; del.textContent = '✕';
+      del.onclick = () => { workingData[sk][fk].splice(i, 1); redraw(); };
+      sw.appendChild(colorInput); sw.appendChild(del);
+      wrap.appendChild(sw);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'small-btn'; addBtn.textContent = '+ Add colour';
+    addBtn.onclick = () => { workingData[sk][fk].push('#888888'); redraw(); };
+    wrap.appendChild(addBtn);
+  }
+  redraw();
+  body.appendChild(wrap);
+}
+
+// Generic table editor. Column types: string, number, boolean, string_list,
+// number_range ([min,max] pair). `readonly` columns render as plain text.
+function renderTable(body, sk, fk, field) {
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  const table = document.createElement('table');
+  table.className = 'editor-table';
+  const cols = field.columns;
+
+  function cellEditor(row, col) {
+    const v = row[col.name];
+    if (col.readonly) {
+      const span = document.createElement('span');
+      span.textContent = v === undefined ? '' : v;
+      return span;
+    }
+    if (col.type === 'number') {
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.step = 'any';
+      inp.value = v === undefined ? '' : v;
+      inp.oninput = () => { row[col.name] = inp.value === '' ? undefined : parseFloat(inp.value); };
+      return inp;
+    }
+    if (col.type === 'boolean') {
+      const inp = document.createElement('input');
+      inp.type = 'checkbox'; inp.checked = !!v;
+      inp.onchange = () => { row[col.name] = inp.checked; };
+      return inp;
+    }
+    if (col.type === 'string_list') {
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.style.width = '160px';
+      inp.value = (v || []).join(', ');
+      inp.oninput = () => { row[col.name] = inp.value.split(',').map(s => s.trim()).filter(Boolean); };
+      return inp;
+    }
+    if (col.type === 'number_range') {
+      const span = document.createElement('span');
+      const lo = document.createElement('input'); lo.type = 'number'; lo.step = 'any'; lo.style.width = '55px';
+      const hi = document.createElement('input'); hi.type = 'number'; hi.step = 'any'; hi.style.width = '55px';
+      const arr = Array.isArray(v) ? v : [undefined, undefined];
+      lo.value = arr[0] === undefined ? '' : arr[0];
+      hi.value = arr[1] === undefined ? '' : arr[1];
+      function commit() {
+        if (lo.value === '' && hi.value === '') { row[col.name] = undefined; return; }
+        row[col.name] = [parseFloat(lo.value) || 0, parseFloat(hi.value) || 0];
+      }
+      lo.oninput = commit; hi.oninput = commit;
+      span.appendChild(lo); span.appendChild(document.createTextNode(' – ')); span.appendChild(hi);
+      return span;
+    }
+    if (col.enum) {
+      const sel = document.createElement('select');
+      col.enum.forEach(opt => {
+        const o = document.createElement('option'); o.value = opt; o.textContent = opt;
+        if (opt === v) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = () => { row[col.name] = sel.value; };
+      return sel;
+    }
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = v === undefined ? '' : v;
+    inp.oninput = () => { row[col.name] = inp.value; };
+    return inp;
+  }
+
+  function redraw() {
+    table.innerHTML = '';
+    const thead = document.createElement('tr');
+    cols.forEach(c => { const th = document.createElement('th'); th.textContent = c.name; thead.appendChild(th); });
+    thead.appendChild(document.createElement('th'));
+    table.appendChild(thead);
+    (workingData[sk][fk] || []).forEach((row, i) => {
+      const tr = document.createElement('tr');
+      cols.forEach(c => {
+        const td = document.createElement('td');
+        td.appendChild(cellEditor(row, c));
+        tr.appendChild(td);
+      });
+      const delTd = document.createElement('td');
+      const del = document.createElement('button');
+      del.className = 'small-btn danger'; del.textContent = '✕';
+      del.onclick = () => { workingData[sk][fk].splice(i, 1); redraw(); };
+      delTd.appendChild(del);
+      tr.appendChild(delTd);
+      table.appendChild(tr);
+    });
+    const addRow = document.createElement('tr');
+    const addTd = document.createElement('td');
+    addTd.colSpan = cols.length + 1;
+    const addBtn = document.createElement('button');
+    addBtn.className = 'small-btn'; addBtn.textContent = '+ Add row';
+    addBtn.onclick = () => { workingData[sk][fk].push({}); redraw(); };
+    addTd.appendChild(addBtn);
+    addRow.appendChild(addTd);
+    table.appendChild(addRow);
+  }
+  redraw();
+  wrap.appendChild(table);
+  body.appendChild(wrap);
+}
+
+// Bespoke editor for ACTION_DURATIONS' one genuinely irregular shape: most
+// keys are a plain seconds number, ecg12lead/bp are {a,b} conditional pairs
+// (see field.conditionalKeys in sim_config_schema.js).
+function renderNestedDurations(body, sk, fk, field) {
+  const table = document.createElement('table');
+  table.className = 'editor-table';
+  const thead = document.createElement('tr');
+  ['Action', 'Seconds / A', 'B (conditional)'].forEach(h => { const th = document.createElement('th'); th.textContent = h; thead.appendChild(th); });
+  table.appendChild(thead);
+  const obj = workingData[sk][fk];
+  Object.keys(obj).forEach(key => {
+    const tr = document.createElement('tr');
+    const nameTd = document.createElement('td'); nameTd.textContent = key;
+    tr.appendChild(nameTd);
+    const cond = field.conditionalKeys && field.conditionalKeys[key];
+    if (cond) {
+      const subKeys = Object.keys(obj[key]);
+      const aTd = document.createElement('td');
+      const aInp = document.createElement('input'); aInp.type = 'number'; aInp.step = 'any';
+      aInp.value = obj[key][subKeys[0]];
+      aInp.title = cond.aLabel;
+      aInp.oninput = () => { obj[key][subKeys[0]] = parseFloat(aInp.value) || 0; };
+      aTd.appendChild(aInp);
+      aTd.appendChild(document.createTextNode(' ' + cond.aLabel));
+      tr.appendChild(aTd);
+      const bTd = document.createElement('td');
+      const bInp = document.createElement('input'); bInp.type = 'number'; bInp.step = 'any';
+      bInp.value = obj[key][subKeys[1]];
+      bInp.title = cond.bLabel;
+      bInp.oninput = () => { obj[key][subKeys[1]] = parseFloat(bInp.value) || 0; };
+      bTd.appendChild(bInp);
+      bTd.appendChild(document.createTextNode(' ' + cond.bLabel));
+      tr.appendChild(bTd);
+    } else {
+      const secTd = document.createElement('td');
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any';
+      inp.value = obj[key];
+      inp.oninput = () => { obj[key] = parseFloat(inp.value) || 0; };
+      secTd.appendChild(inp);
+      tr.appendChild(secTd);
+      const blankTd = document.createElement('td');
+      tr.appendChild(blankTd);
+    }
+    table.appendChild(tr);
+  });
+  body.appendChild(table);
+}
+
+// ── VALIDATE + SAVE ─────────────────────────────────────────────────────
+function validateSection(sk) {
+  const schemaSec = SCHEMA[sk];
+  const errors = [];
+  Object.keys(schemaSec.fields).forEach(fk => {
+    const field = schemaSec.fields[fk];
+    if (typeof field.validate === 'function') {
+      const err = field.validate(workingData[sk][fk], workingData[sk], fieldCtx());
+      if (err) errors.push(`${field.label || fk}: ${err}`);
+    }
+  });
+  return errors;
+}
+
+async function saveSection(sk) {
+  const status = document.getElementById('save-status');
+  const errors = validateSection(sk);
+  if (errors.length) {
+    status.className = 'status-msg err';
+    status.textContent = 'Not saved — ' + errors.join(' · ');
+    return;
+  }
+  status.className = 'status-msg';
+  status.textContent = 'Saving…';
+  try {
+    const payload = {
+      section_key: sk,
+      value: workingData[sk],
+      updated_at: new Date().toISOString(),
+      updated_by: (_userSession && _userSession.user && _userSession.user.email) || 'admin'
+    };
+    await sbFetch('sim_config?on_conflict=section_key', {
+      method: 'POST',
+      prefer: 'resolution=merge-duplicates,return=representation',
+      body: JSON.stringify(payload)
+    });
+    sectionMeta[sk] = { customized: true, updated_at: payload.updated_at, updated_by: payload.updated_by };
+    status.className = 'status-msg ok';
+    status.textContent = 'Saved. Live sessions pick this up on next page reload (config is fetched once at page load, not re-polled).';
+    renderTabs();
+  } catch (e) {
+    status.className = 'status-msg err';
+    status.textContent = 'Save failed: ' + e.message;
+  }
+}
+
+function denySchemaMissing() {
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:10px;font-family:Segoe UI,sans-serif;text-align:center;padding:20px">' +
+    '<div style="font-size:40px">&#9888;&#65039;</div>' +
+    '<div style="font-size:16px;font-weight:700;color:#1a1a2e">Couldn’t load the config schema</div>' +
+    '<div style="font-size:13px;color:#888;max-width:420px">sim_config_schema.js failed to load, so there’s nothing to display or edit here (this page has no built-in defaults of its own — unlike sim_control.html/sim_patient.html, which keep working even if this file is unreachable). Check your connection and reload.</div>' +
+    '<a href="index.html" style="margin-top:8px;color:#1C3A6E;font-weight:600;font-size:13px;text-decoration:none">&larr; Back to site</a>' +
+  '</div>';
+}
+
+// ── INIT ────────────────────────────────────────────────────────────────
+(async function init() {
+  if (!window.SimConfigSchema) { denySchemaMissing(); return; }
+  SCHEMA = window.SimConfigSchema.sections;
+  activeSection = Object.keys(SCHEMA)[0];
+  const ok = await checkAdminAccess();
+  if (!ok) return;
+  await loadAll();
+  document.getElementById('app').style.display = 'block';
+  renderTabs();
+  renderSection();
+})();
+</script>
+</body>
+</html>

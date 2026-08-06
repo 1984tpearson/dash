@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>12-Lead ECG Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg-outer,#060606);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-height:100vh;font-family:'Share Tech Mono',monospace;color:var(--text-bright,#00ff88);padding:16px;}
+  .monitor{width:1100px;background:var(--bg-monitor,#050f08);border:1px solid var(--monitor-border,#003318);border-radius:6px;padding:14px 18px 14px;box-shadow:0 0 0 1px #001a0c,0 0 60px rgba(0,255,100,0.04),inset 0 1px 0 rgba(0,255,100,0.04);position:relative;}
+  .monitor::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 4px);pointer-events:none;z-index:10;border-radius:6px;}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
+  .header-left{display:flex;flex-direction:column;gap:3px;}
+  .title-label{font-family:'Orbitron',monospace;font-size:11px;letter-spacing:3px;color:var(--text-mid,#00cc66);opacity:0.7;}
+  .hr-block{text-align:right;}
+  .hr-label{font-size:9px;letter-spacing:2px;color:#00aa55;opacity:0.6;display:block;}
+  .hr-value{font-family:'Orbitron',monospace;font-size:32px;font-weight:700;color:var(--text-bright,#00ff88);line-height:1;text-shadow:none;}
+  .hr-unit{font-size:9px;color:#00aa55;opacity:0.6;letter-spacing:1px;}
+  .rhythm-name{font-family:'Orbitron',monospace;font-size:9px;letter-spacing:3px;color:var(--text-bright,#00ff88);opacity:0.75;text-align:right;margin-top:2px;min-height:13px;}
+  .ecg-area{position:relative;}
+  .ecg-bg-canvas{position:absolute;top:0;left:0;z-index:1;pointer-events:none;}
+  .leads-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0;position:relative;z-index:2;}
+  .lead-cell{position:relative;background:transparent;}
+  .lead-cell:nth-child(4n){border-right:none;}
+  .lead-label-tag{position:absolute;top:3px;left:5px;font-size:12px;font-weight:bold;letter-spacing:1px;color:var(--trace,#00cc66);opacity:0.9;z-index:5;pointer-events:none;}
+  canvas.trace-c{position:absolute;top:0;left:0;z-index:2;background:transparent;width:100%;height:100%;}
+  .strip-wrapper{position:relative;z-index:2;background:transparent;}
+  .strip-label{position:absolute;top:3px;left:5px;font-size:9px;letter-spacing:1px;color:var(--text-dim,#00cc66);opacity:0.7;z-index:5;pointer-events:none;}
+  canvas.strip-grid{position:absolute;top:0;left:0;z-index:1;background:#020a04;}
+  canvas.strip-trace{position:absolute;top:0;left:0;z-index:2;background:transparent;}
+  .controls{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+  .rhythm-grid{display:flex;flex-wrap:wrap;gap:4px;}
+  .rhythm-grid .btn{flex:1 1 calc(14.28% - 4px);min-width:75px;max-width:150px;}
+  .btn{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;padding:5px 4px;background:transparent;border:1px solid #003a1a;color:#008844;cursor:pointer;border-radius:2px;transition:all .12s;text-align:center;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .btn:hover{background:var(--btn-active-bg,rgba(0,255,100,0.06));border-color:var(--text-dim,#006633);color:var(--text-mid,#00cc66);}
+  .btn.active{background:var(--btn-active-bg,rgba(0,255,100,0.10));border-color:var(--btn-active-border,#00cc66);color:var(--btn-active-text,#00ff88);box-shadow:none;}
+  .slider-row{display:flex;align-items:center;gap:12px;height:26px;}
+  .slider-label{font-size:9px;letter-spacing:2px;color:#00aa55;opacity:.7;white-space:nowrap;width:50px;}
+  .slider-bpm{font-family:'Orbitron',monospace;font-size:12px;color:var(--text-bright,#00ff88);width:58px;text-align:right;white-space:nowrap;}
+  input[type=range]{-webkit-appearance:none;flex:1;height:3px;background:#003318;border-radius:2px;outline:none;cursor:pointer;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--text-bright,#00ff88);cursor:pointer;box-shadow:none;}
+  input[type=range]:disabled{opacity:.2;cursor:default;}
+  input[type=range]:disabled::-webkit-slider-thumb{cursor:default;}
+  .slider-note{font-size:9px;color:#005522;letter-spacing:1px;white-space:nowrap;width:180px;text-align:right;}
+  .stemi-btn{border-color:#4a1500!important;color:#cc4400!important;}
+  .stemi-btn:hover{background:rgba(255,80,0,0.08)!important;border-color:#aa3300!important;color:#ff6622!important;}
+  .stemi-btn.active{background:rgba(255,80,0,0.14)!important;border-color:#ff5500!important;color:#ff7744!important;box-shadow:0 0 10px rgba(255,80,0,0.25)!important;}
+  .footer{display:flex;justify-content:space-between;margin-top:8px;font-size:9px;letter-spacing:2px;color:#003a1a;}
+  :root {
+    --bg-outer:#060606;--bg-monitor:#050f08;--bg-canvas:#020a04;
+    --trace:#00ff88;--trace-glow:rgba(0,255,136,0.20);
+    --grid-small:rgba(0,110,50,0.30);--grid-large:rgba(0,160,70,0.55);
+    --border:#003318;--text-bright:#00ff88;--text-mid:#00cc66;
+    --text-dim:#00aa55;--text-dimmer:#005522;
+    --btn-border:#003a1a;--btn-text:#008844;
+    --btn-active-bg:rgba(0,255,100,0.10);--btn-active-border:#00cc66;
+    --btn-active-text:#00ff88;--monitor-border:#003318;
+  }
+  body{background:var(--bg-outer);color:var(--text-bright);}
+  .monitor{background:var(--bg-monitor)!important;border-color:var(--monitor-border)!important;}
+  .hr-value{color:var(--text-bright)!important;text-shadow:none;}
+  .hr-label,.hr-unit,.lead-label,.title-label{color:var(--text-dim)!important;}
+  .rhythm-name{color:var(--text-bright)!important;text-shadow:none;}
+  .btn{border-color:var(--btn-border)!important;color:var(--btn-text)!important;}
+  .btn.active{background:var(--btn-active-bg)!important;border-color:var(--btn-active-border)!important;color:var(--btn-active-text)!important;box-shadow:none!important;}
+  .slider-label,.hr-unit{color:var(--text-dim)!important;}
+  .slider-bpm{color:var(--text-bright)!important;}
+  .slider-note,.footer span{color:var(--text-dimmer)!important;}
+  input[type=range]{background:var(--btn-border)!important;}
+  input[type=range]::-webkit-slider-thumb{background:var(--text-bright)!important;box-shadow:none!important;}
+  .theme-btn.active{box-shadow:0 0 8px var(--text-bright)!important;}
+</style>
+</head>
+<body>
+<div class="monitor">
+  <div class="header">
+    <div class="header-left">
+      <div class="title-label">12-LEAD ECG</div>
+    </div>
+    <div class="hr-block">
+      <span class="hr-label">HEART RATE</span>
+      <span class="hr-value" id="hrValue">72</span>
+      <span class="hr-unit"> BPM</span>
+      <div class="rhythm-name" id="rhythmName">SINUS RHYTHM</div>
+    </div>
+  </div>
+
+  <div class="ecg-area" id="ecgArea">
+    <canvas id="ecgBgGrid"></canvas>
+    <div class="leads-grid" id="leadsGrid"></div>
+    <div class="strip-wrapper" id="stripWrapper">
+      <span class="strip-label">LEAD II — RHYTHM STRIP</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="rhythm-grid">
+      <button class="btn active" id="btn-nsr"   onclick="setRhythm('nsr')">NSR</button>
+      <button class="btn"        id="btn-stach"  onclick="setRhythm('stach')">Sinus Tachy</button>
+      <button class="btn"        id="btn-sbrad"  onclick="setRhythm('sbrad')">Sinus Brady</button>
+      <button class="btn"        id="btn-svt"    onclick="setRhythm('svt')">SVT</button>
+      <button class="btn"        id="btn-af"     onclick="setRhythm('af')">Af</button>
+      <button class="btn"        id="btn-aflut"  onclick="setRhythm('aflut')">A Flutter</button>
+      <button class="btn"        id="btn-vt"     onclick="setRhythm('vt')">VT</button>
+      <button class="btn"        id="btn-vf"     onclick="setRhythm('vf')">VF</button>
+      <button class="btn"        id="btn-mob1"   onclick="setRhythm('mob1')">Mobitz I</button>
+      <button class="btn"        id="btn-mob2"   onclick="setRhythm('mob2')">Mobitz II</button>
+      <button class="btn"        id="btn-chb"    onclick="setRhythm('chb')">3° Block</button>
+      <button class="btn"        id="btn-asys"   onclick="setRhythm('asys')">Asystole</button>
+      <button class="btn"        id="btn-aivr"    onclick="setRhythm('aivr')">Idioventricular</button>
+      <button class="btn"        id="btn-vvipace" onclick="setRhythm('vvipace')">Paced — VVI</button>
+      <button class="btn"        id="btn-deg1"    onclick="setRhythm('deg1')">1° AV Block</button>
+      <button class="btn"        id="btn-junct"   onclick="setRhythm('junct')">Junctional</button>
+      <button class="btn"        id="btn-wpw"     onclick="setRhythm('wpw')">WPW</button>
+      <button class="btn"        id="btn-pvc"     onclick="setRhythm('pvc')">PVC Bigeminy</button>
+      <button class="btn"        id="btn-hyperK"  onclick="setRhythm('hyperK')">Hyperkalaemia</button>
+      <button class="btn"        id="btn-hypoK"   onclick="setRhythm('hypoK')">Hypokalaemia</button>
+      <button class="btn"        id="btn-longQT"  onclick="setRhythm('longQT')">Long QT</button>
+      <button class="btn"        id="btn-peri"    onclick="setRhythm('peri')">Pericarditis</button>
+      <button class="btn"        id="btn-nstemi"  onclick="setRhythm('nstemi')">NSTEMI</button>
+      <button class="btn"        id="btn-pe"      onclick="setRhythm('pe')">Pulm. Embolism</button>
+      <button class="btn"        id="btn-brugada" onclick="setRhythm('brugada')">Brugada</button>
+      <button class="btn"        id="btn-aaipace" onclick="setRhythm('aaipace')">Paced — AAI</button>
+      <button class="btn"        id="btn-dddpace" onclick="setRhythm('dddpace')">Paced — DDD</button>
+    </div>
+    <div class="rhythm-grid" style="margin-top:4px;">
+      <button class="btn stemi-btn" id="btn-stemi-inf"  onclick="setRhythm('stemi-inf')">STEMI — Inferior</button>
+      <button class="btn stemi-btn" id="btn-stemi-ant"  onclick="setRhythm('stemi-ant')">STEMI — Anterior</button>
+      <button class="btn stemi-btn" id="btn-stemi-lat"  onclick="setRhythm('stemi-lat')">STEMI — Lateral</button>
+      <button class="btn stemi-btn" id="btn-stemi-post" onclick="setRhythm('stemi-post')">STEMI — Posterior</button>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">RATE</span>
+      <input type="range" id="hrSlider" min="60" max="100" value="72" oninput="onSlider(this.value)">
+      <span class="slider-bpm" id="sliderBpm">72 BPM</span>
+      <span class="slider-note" id="sliderNote"></span>
+    </div>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+    <span style="font-size:9px;letter-spacing:2px;color:var(--text-dim,#00aa55);opacity:.7">BBB:</span>
+    <button class="btn" id="bbb-none" onclick="setBBB('none')">NONE</button>
+    <button class="btn" id="bbb-lbbb" onclick="setBBB('lbbb')">LBBB</button>
+    <button class="btn" id="bbb-rbbb" onclick="setBBB('rbbb')">RBBB</button>
+  </div>
+  <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+    <span style="font-size:9px;letter-spacing:2px;color:var(--text-dim);opacity:.7;white-space:nowrap;">THEME:</span>
+    <button class="btn theme-btn active" id="theme-monitor" onclick="setTheme('monitor')" style="flex:1">⬛ MONITOR</button>
+    <button class="btn theme-btn" id="theme-paper" onclick="setTheme('paper')" style="flex:1">📄 PAPER</button>
+    <button class="btn theme-btn" id="theme-random"       onclick="setTheme('random')"       style="flex:1;font-size:9px;">RANDOM DARK</button>
+    <button class="btn theme-btn" id="theme-random-paper" onclick="setTheme('random-paper')" style="flex:1;font-size:9px;">RANDOM PAPER</button>
+  </div>
+  <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+    <button id="captureBtn" class="btn" onclick="toggleCapture()"
+      style="flex:1;letter-spacing:2px;text-transform:uppercase;font-size:10px;">
+      ⏸ CAPTURE
+    </button>
+  </div>
+  <div id="captureFlash" style="position:fixed;inset:0;background:white;opacity:0;pointer-events:none;z-index:9999;transition:opacity 0.15s;"></div>
+  <div class="footer">
+    <span>25 MM/SEC</span><span>10 MM/MV</span><span>0.05–150 HZ</span>
+  </div>
+</div>
+
+<script src="https://1984tpearson.github.io/AV/ecg_engine.js"></script>
+<script>
+let _ecg = null;
+let _currentKey = 'nsr';
+let _currentBBB = 'none';
+
+window.addEventListener('DOMContentLoaded', () => {
+  const ecgArea = document.getElementById('ecgArea');
+  const monitor = document.querySelector('.monitor');
+  if (monitor && !ecgArea.clientWidth) {
+    ecgArea.style.width = (monitor.clientWidth - 36) + 'px';
+  }
+  _ecg = new ECGEngine(ecgArea, {
+    mode: '12lead',
+    theme: 'monitor',
+    showControls: false,
+  });
+  // Short delay to ensure engine _pub is fully initialised before syncing UI
+  setTimeout(() => setRhythm('nsr'), 100);
+});
+
+function setRhythm(key) {
+  if (!_ecg) return;
+  _currentKey = key;
+  const r = _ecg._pub && _ecg._pub.rhythms && _ecg._pub.rhythms[key];
+  const bpm = r ? r.defaultBpm : 72;
+  _ecg.setRhythm(key, bpm, _currentBBB);
+
+  // Update slider
+  const slider = document.getElementById('hrSlider');
+  const sliderBpm = document.getElementById('sliderBpm');
+  if (r && r.sliderMin !== null && r.sliderMin !== undefined) {
+    slider.disabled = false;
+    slider.min = r.sliderMin;
+    slider.max = r.sliderMax;
+    slider.value = bpm;
+    sliderBpm.textContent = bpm + ' BPM';
+  } else {
+    slider.disabled = true;
+    sliderBpm.textContent = '— BPM';
+  }
+
+  document.getElementById('sliderNote').textContent = r ? (r.sliderNote || '') : '';
+  document.getElementById('rhythmName').textContent = r ? r.label : '';
+  document.getElementById('hrValue').textContent = (r && r.sliderMin !== null) ? bpm : '—';
+
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + key);
+  if (btn) btn.classList.add('active');
+}
+
+function onSlider(val) {
+  if (!_ecg) return;
+  const bpm = parseInt(val);
+  _ecg.onSlider(bpm);
+  document.getElementById('sliderBpm').textContent = bpm + ' BPM';
+  document.getElementById('hrValue').textContent = bpm;
+}
+
+function setBBB(mode) {
+  if (!_ecg) return;
+  _currentBBB = mode;
+  _ecg.setBBB(mode);
+  document.querySelectorAll('[id^="bbb-"]').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('bbb-' + mode);
+  if (el) el.classList.add('active');
+}
+
+function setTheme(name) {
+  if (!_ecg) return;
+  _ecg.setTheme(name);
+  document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('theme-' + name);
+  if (el) el.classList.add('active');
+}
+
+function toggleCapture() {
+  if (!_ecg) return;
+  _ecg.toggleCapture();
+}
+</script>
+</body>
+</html>

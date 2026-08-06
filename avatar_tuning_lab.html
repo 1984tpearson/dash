@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avatar Tuning Lab</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: 'Courier New', monospace; background: #1b2634; color: #e2e8f0; display: flex; flex-wrap: wrap; min-height: 100vh; }
+#preview { flex: 1; min-width: 320px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 10px; padding: 20px; background: #0f1622; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; }
+#av-svg { width: 320px; height: 297px; background: #223047; border-radius: 12px; flex-shrink: 0; }
+#av-head-path, #av-head-bulge, #av-eye-l-lid, #av-eye-r-lid { transition: fill 0.2s ease; }
+#av-sweat path { transition: opacity 0.2s ease, transform 0.2s ease; transform-box: fill-box; transform-origin: center; }
+#av-lip-cyanosis ellipse { transition: opacity 0.2s ease; }
+#preview-note { font-size: 11px; color: #8aa; text-align: center; max-width: 320px; }
+#controls { flex: 2; min-width: 420px; padding: 16px 20px; }
+h1 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #7dd3fc; margin: 0 0 4px; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin: 20px 0 8px; border-top: 1px solid #334155; padding-top: 12px; }
+h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #7dd3fc; margin: 12px 0 4px; }
+.tune-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; }
+.tune-row label { width: 118px; flex-shrink: 0; color: #cbd5e1; }
+.tune-row input[type=range] { flex: 1; }
+.tune-row input[type=color] { width: 40px; height: 22px; padding: 0; border: none; background: none; cursor: pointer; }
+.tune-row .val { width: 46px; text-align: right; color: #7dd3fc; flex-shrink: 0; }
+.tune-pair { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; padding: 4px 6px; background: #16202e; border-radius: 4px; }
+.tune-pair .pair-label { width: 118px; flex-shrink: 0; font-size: 11px; color: #e2e8f0; font-weight: 700; }
+.tune-pair .pair-slider { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.tune-pair .pair-slider .mini-label { font-size: 9px; color: #94a3b8; }
+.tune-pair .pair-slider input { width: 100%; }
+.tune-pair .pair-slider .val { font-size: 10px; color: #7dd3fc; }
+.tune-pair .live-readout { width: 50px; text-align: right; font-size: 11px; color: #fbbf24; flex-shrink: 0; }
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.row label { width: 90px; flex-shrink: 0; color: #cbd5e1; }
+.row input[type=range] { flex: 1; }
+.row .val { width: 34px; text-align: right; color: #7dd3fc; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.swatch.active { border-color: #7dd3fc; }
+select, input[type=text] { background: #223047; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; padding: 4px 6px; font-family: inherit; font-size: 12px; }
+button { background: #0369a1; color: #fff; border: none; border-radius: 5px; padding: 6px 10px; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; margin: 2px 4px 2px 0; }
+button:hover { background: #0284c7; }
+button.secondary { background: #334155; }
+button.secondary:hover { background: #475569; }
+#presets { display: flex; flex-wrap: wrap; }
+#export-text { width: 100%; height: 260px; font-size: 10px; background: #0f1622; color: #94a3b8; border: 1px solid #334155; border-radius: 4px; padding: 8px; resize: vertical; white-space: pre; }
+.section-note { font-size: 10px; color: #94a3b8; margin-bottom: 8px; }
+details { margin-bottom: 6px; }
+summary { cursor: pointer; font-size: 11px; color: #7dd3fc; padding: 4px 0; }
+</style>
+</head>
+<body>
+<div id="preview">
+  <svg id="av-svg" viewBox="0 0 280 260" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="av-chest-clip"><rect x="0" y="199" width="280" height="81"/></clipPath>
+      <radialGradient id="av-lip-cyanosis-grad" cx="50%" cy="50%" r="55%">
+        <stop id="lip-cyan-stop1" offset="0%" stop-color="#1a5fc4" stop-opacity="0.95"/>
+        <stop id="lip-cyan-stop2" offset="100%" stop-color="#1a5fc4" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <g id="av-scale-group">
+      <g id="av-chest-group" transform="translate(8)">
+        <path id="av-chest-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#3b6ea5" clip-path="url(#av-chest-clip)"/>
+      </g>
+      <g id="av-face-group" transform="translate(8)">
+        <ellipse id="av-head-bulge" cx="132" cy="92" rx="56" ry="56" fill="#E0AC81"/>
+        <path id="av-head-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#E0AC81"/>
+        <path d="M108 180.61v8a55.79 55.79 0 0 0 24 5.39c8.59 0 16.73-1.93 24-5.39v-8a55.79 55.79 0 0 1-24 5.39 55.79 55.79 0 0 1-24-5.39Z" fill="#000" fill-opacity=".1"/>
+        <path id="av-clothes-static-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#3b6ea5" clip-path="url(#av-chest-clip)"/>
+        <g id="av-lip-cyanosis" transform="translate(78 134)" style="pointer-events:none;">
+          <ellipse cx="54" cy="22" rx="24" ry="17" fill="url(#av-lip-cyanosis-grad)" opacity="0"/>
+        </g>
+        <g id="av-mouth" transform="translate(78 134)"></g>
+        <g id="av-eyes" transform="translate(76 90)">
+          <ellipse id="av-eye-l-sclera" cx="30" cy="22" rx="14" ry="7" fill="#fff"/>
+          <circle id="av-eye-l-pupil" cx="30" cy="22" r="5.5" fill="#2b2118"/>
+          <path id="av-eye-l-lid" d="M16 22 A14 7 0 0 1 44 22 L44 25 Q30 29 16 25 Z" fill="#E0AC81" style="display:none;"/>
+          <ellipse id="av-eye-r-sclera" cx="82" cy="22" rx="14" ry="7" fill="#fff"/>
+          <circle id="av-eye-r-pupil" cx="82" cy="22" r="5.5" fill="#2b2118"/>
+          <path id="av-eye-r-lid" d="M68 22 A14 7 0 0 1 96 22 L96 25 Q82 29 68 25 Z" fill="#E0AC81" style="display:none;"/>
+          <g id="av-eyes-closed-overlay" style="display:none;"></g>
+        </g>
+        <g id="av-eyebrows" transform="translate(76 82)"></g>
+        <g id="av-top" transform="translate(-1)"></g>
+        <g id="av-sweat" style="display:none;">
+          <path id="av-sweat-r" d="M170 58 q7 10 0 17 q-7 -2 -7 -9 q0 -6 7 -8z" fill="#7ec8e3"/>
+          <path id="av-sweat-l" d="M94 60 q7 10 0 17 q-7 -2 -7 -9 q0 -6 7 -8z" fill="#7ec8e3"/>
+          <path id="av-sweat-c" d="M132 48 q6 9 0 15 q-6 -2 -6 -8 q0 -5 6 -7z" fill="#7ec8e3"/>
+        </g>
+      </g>
+    </g>
+  </svg>
+  <div class="row" style="width:100%;max-width:320px;">
+    <label style="width:70px;">Age (yrs)</label>
+    <input type="range" id="r-previewAge" min="0" max="20" step="0.25" value="0" oninput="onAgeChange()">
+    <span class="val" id="v-previewAge">0</span>
+  </div>
+  <div class="row" style="width:100%;max-width:320px;">
+    <label style="width:70px;font-size:10px;">Age unset</label>
+    <input type="checkbox" id="chk-age-null" onchange="onAgeChange()">
+    <span style="font-size:9px;color:#94a3b8;">test the null/fallback path (uses the "at 18" values directly)</span>
+  </div>
+  <div id="preview-note">
+    Avatar Tuning Lab — move sliders, watch the preview, then use "Export
+    current values" below to get a pasteable block of the constants that
+    changed. Same artwork/render approach as avatar_lab.html, extended
+    with per-element age-scale sliders and skin-severity/colour sliders.
+  </div>
+</div>
+<div id="controls">
+  <h1>Avatar Tuning Lab</h1>
+  <div style="font-size:11px;color:#94a3b8;">Drag sliders to tune age-scaling and skin-severity constants live, then export the ones you changed to paste back into chat.</div>
+
+  <h2>Presets (preview vitals)</h2>
+  <div id="presets">
+    <button onclick="applyPreset('normal')">Normal</button>
+    <button onclick="applyPreset('mild')">Mild distress</button>
+    <button onclick="applyPreset('severe')">Severe / cyanotic</button>
+    <button onclick="applyPreset('pain')">Pain 10</button>
+    <button onclick="applyPreset('unresponsive')">Unresponsive</button>
+  </div>
+  <div class="row"><label>HR</label><input type="range" id="r-HR" min="0" max="300" value="80" oninput="onSlider()"><span class="val" id="v-HR">80</span></div>
+  <div class="row"><label>RR</label><input type="range" id="r-RR" min="0" max="40" value="16" oninput="onSlider()"><span class="val" id="v-RR">16</span></div>
+  <div class="row"><label>SpO2</label><input type="range" id="r-SpO2" min="0" max="100" value="98" oninput="onSlider()"><span class="val" id="v-SpO2">98</span></div>
+  <div class="row"><label>BP sys</label><input type="range" id="r-BPsys" min="-10" max="250" value="120" oninput="onSlider()"><span class="val" id="v-BPsys">120</span></div>
+  <div class="row"><label>Pain</label><input type="range" id="r-pain" min="0" max="10" value="0" oninput="onSlider()"><span class="val" id="v-pain">0</span></div>
+  <div class="row"><label>Mood</label>
+    <select id="sel-mood" onchange="onSlider()">
+      <option value="calm">calm</option><option value="anxious">anxious</option><option value="tearful">tearful</option>
+      <option value="agitated">agitated</option><option value="angry">angry</option><option value="confused">confused</option>
+    </select>
+  </div>
+  <div class="row"><label>GCS E/V/M</label>
+    <input type="range" id="r-gcsE" min="1" max="4" value="4" oninput="onSlider()" style="flex:0.6;">
+    <input type="range" id="r-gcsV" min="1" max="5" value="5" oninput="onSlider()" style="flex:0.6;">
+    <input type="range" id="r-gcsM" min="1" max="6" value="6" oninput="onSlider()" style="flex:0.6;">
+    <span class="val" id="v-gcsTotal" style="width:auto;">15</span>
+  </div>
+
+  <h2>Build (hair/skin/eyebrows — for testing age-pool exclusions)</h2>
+  <div class="row"><label>Skin tone</label></div>
+  <div class="swatches" id="skin-swatches"></div>
+  <div class="row"><label>Hair style</label><select id="sel-hair" onchange="onBuildChange()"></select></div>
+  <div class="row"><label>Hair colour</label><select id="sel-haircolor" onchange="onBuildChange()"></select></div>
+  <div class="row"><label>Eyebrows</label><select id="sel-brow" onchange="onBuildChange()"></select></div>
+  <div class="row"><label>Clothes colour</label><select id="sel-clothescolor" onchange="onBuildChange()"></select></div>
+  <div class="row"><label>Seed</label><input type="text" id="txt-seed" value="tune-seed-1" oninput="onBuildChange()"> <button class="secondary" onclick="randomSeed()">Random</button></div>
+  <div class="row"><label>Gender</label>
+    <select id="sel-patient-gender" onchange="rebuildWithSameSeed()">
+      <option value="">unset</option><option value="male">Male</option><option value="female">Female</option>
+    </select>
+  </div>
+
+  <h2>Age-scale tuning</h2>
+  <div class="section-note">Each element ramps linearly from its "at age 0" value to its "at age 18" value — matching how sim_patient.html's ageRamp() works. The yellow number on the right shows the value actually applied at your current preview age.</div>
+  <div id="age-tune-container"></div>
+  <button class="secondary" onclick="resetAgeTunables()">Reset age-scale to shipped defaults</button>
+
+  <h2>Skin severity &amp; colour tuning</h2>
+  <div class="section-note">Thresholds are vital-sign values where an effect starts (0% amount) and where it's fully maxed (100% amount) — e.g. lip cyanosis "start 95 / full 80" means it begins fading in as SpO2 drops below 95 and is fully visible by 80. Use the SpO2/HR/BP sliders above to preview.</div>
+  <div id="skin-tune-container"></div>
+  <button class="secondary" onclick="resetSkinTunables()">Reset skin tuning to shipped defaults</button>
+
+  <h2>Export current values</h2>
+  <div class="section-note">Copy this block and paste it back in chat — it only lists constants that differ from the shipped defaults.</div>
+  <button onclick="refreshExport()">Refresh export</button>
+  <textarea id="export-text" readonly onclick="this.select()"></textarea>
+</div>
+
+<script src="https://1984tpearson.github.io/AV/sim_engine.js"></script>
+<script src="https://1984tpearson.github.io/AV/avatar_assets.js"></script>
+<script>
+// --- Copies of sim_patient.html's avatar build/render functions, same as
+// avatar_lab.html, but with every age-scale and skin-severity constant
+// promoted to a live-tunable slider (see TUNE below) instead of a fixed
+// const — purpose-built for visually dialling in these values instead of
+// describing "move it up a bit" back and forth in chat. Keep in sync with
+// sim_patient.html if the shipped defaults change; NOT meant to replace
+// avatar_lab.html (which stays focused on vitals/build/mood browsing).
+let avatarBuild = { skin: '#E0AC81', hairColour: '#3b2b20', hairStyle: 'shortFlat', eyebrowStyle: 'defaultNatural', ageBand: 'adult', ageYears: null, clothesColour: '#3b6ea5' };
+const HAIR_COLOURS = ['#1b1410', '#3b2b20', '#5a3b23', '#8a5a2b', '#c9a227', '#7a2e1d', '#8c8c8c', '#b0b0b0', '#e8e4dc'];
+const GREY_HAIR_COLOURS = new Set(['#8c8c8c', '#b0b0b0', '#e8e4dc']);
+const SKIN_TONE_SWATCHES = ['#F5D5C5', '#EFC3A3', '#E0AC81', '#C68863', '#A96C4A', '#8D5A3B', '#6B4530', '#4A2F20'];
+const HAIR_STYLE_LEAN = {
+  hat: 'n', hijab: 'f', turban: 'm', winterHat1: 'n', winterHat02: 'n', winterHat03: 'n', winterHat04: 'n',
+  bob: 'f', bun: 'f', curly: 'n', curvy: 'f', dreads: 'n', frida: 'f', fro: 'n', froBand: 'f',
+  longButNotTooLong: 'f', miaWallace: 'f', shavedSides: 'm', straight02: 'f', straight01: 'f',
+  straightAndStrand: 'f', dreads01: 'n', dreads02: 'n', frizzle: 'n', shaggy: 'm', shaggyMullet: 'm',
+  shortCurly: 'm', shortFlat: 'm', shortRound: 'm', shortWaved: 'm', sides: 'm', theCaesar: 'm',
+  theCaesarAndSidePart: 'm', bigHair: 'f'
+};
+const HEADWEAR = new Set(['hat', 'hijab', 'turban', 'winterHat1', 'winterHat02', 'winterHat03', 'winterHat04']);
+const CASUAL_HEADWEAR = new Set(['hat', 'winterHat1', 'winterHat02', 'winterHat03', 'winterHat04']);
+const FACE_FRAMING_HEADWEAR = new Set(['hijab', 'turban']);
+const ADULT_ONLY_HAIR = new Set(['theCaesar', 'theCaesarAndSidePart', 'shavedSides', 'sides']);
+const CLOTHES_COLOURS = ['#3b6ea5', '#22577a', '#5c4b8a', '#7a2e2e', '#2f6d4f', '#4a4a4a', '#8a5a2b', '#1a1a1a', '#c9a227', '#6b4c9a', '#b0392f', '#3d3d3d'];
+
+function parseAgeYears(age) {
+  if (age == null) return null;
+  if (typeof age === 'string') {
+    if (/newborn/i.test(age)) return 0;
+    const m = age.match(/(\d+(?:\.\d+)?)\s*month/i);
+    if (m) return parseFloat(m[1]) / 12;
+    const n = parseFloat(age);
+    return Number.isFinite(n) ? n : null;
+  }
+  return Number.isFinite(age) ? age : null;
+}
+function ageBandFromMeta(age) {
+  const years = parseAgeYears(age);
+  if (years == null) return 'adult';
+  if (years < 1) return 'infant';
+  if (years < 5) return 'toddler';
+  if (years < 12) return 'child';
+  if (years < 18) return 'teen';
+  return 'adult';
+}
+function greyWeight(age) {
+  const years = parseAgeYears(age);
+  if (years == null) return 0;
+  return Math.max(0, Math.min(1, (years - 40) / 35));
+}
+function ageRamp(years, atZero, atEighteen) {
+  if (years == null) return atEighteen;
+  const t = Math.max(0, Math.min(1, years / 18));
+  return atZero + (atEighteen - atZero) * t;
+}
+
+// --- Tunable values ---------------------------------------------------------
+// AGE_TUNABLES: each entry gets two sliders (zero/eighteen) in
+// applyAgeScale() below. HAIR_SCALE/HAIR_OFFSET_X/HAIR_OFFSET_Y are NEW —
+// sim_patient.html currently ties hair 1:1 to HEAD_BULGE's ratio with no
+// independent offset; exposed separately here so hair can be nudged without
+// also moving the head-bulge circle.
+const AGE_DEFAULTS = {
+  AGE_SCALE:          { zero: 0.78,  eighteen: 1, min: 0.3, max: 1.5, step: 0.01 },
+  HEAD_BULGE_RX:      { zero: 1.445, eighteen: 1, min: 1,   max: 2.5, step: 0.01 },
+  // RY independent from RX (the shipped version ties both to one HEAD_BULGE
+  // ratio, i.e. a perfect circle) — stretching RY taller lets the bulge
+  // extend further down toward the jaw/chin without also over-widening the
+  // cheeks/temples. The bulge still tapers to zero on its own (no clip/mask
+  // needed, same safe mechanism as before), so a taller ellipse is just as
+  // seam-free as the circle was — it just reaches further before doing so.
+  HEAD_BULGE_RY:      { zero: 1.445, eighteen: 1, min: 1,   max: 3.5, step: 0.01 },
+  EYE_SCALE_X:        { zero: 1.1,   eighteen: 1, min: 0.8, max: 2,   step: 0.01 },
+  EYE_SCALE_Y:        { zero: 1.6,   eighteen: 1, min: 0.8, max: 2.5, step: 0.01 },
+  FACE_LOWER_OFFSET:  { zero: 12,    eighteen: 0, min: -20, max: 30,  step: 0.5 },
+  MOUTH_LOWER_OFFSET: { zero: 4,     eighteen: 0, min: -20, max: 30,  step: 0.5 },
+  HAIR_SCALE:         { zero: 1.445, eighteen: 1, min: 1,   max: 2.5, step: 0.01 },
+  HAIR_OFFSET_X:      { zero: 0,     eighteen: 0, min: -40, max: 40,  step: 0.5 },
+  HAIR_OFFSET_Y:      { zero: 0,     eighteen: 0, min: -40, max: 40,  step: 0.5 },
+};
+const AGE_LABELS = {
+  AGE_SCALE: 'Whole figure scale', HEAD_BULGE_RX: 'Head bulge width ×', HEAD_BULGE_RY: 'Head bulge height ×', EYE_SCALE_X: 'Eye scale X',
+  EYE_SCALE_Y: 'Eye scale Y', FACE_LOWER_OFFSET: 'Eyes/brows Y offset', MOUTH_LOWER_OFFSET: 'Mouth Y offset',
+  HAIR_SCALE: 'Hair scale', HAIR_OFFSET_X: 'Hair X offset', HAIR_OFFSET_Y: 'Hair Y offset'
+};
+let AGE_TUNE = JSON.parse(JSON.stringify(AGE_DEFAULTS));
+
+// SKIN_DEFAULTS: thresholds are vital-sign values (start = 0% amount, full =
+// 100% amount); colours/amounts drive computeSkinFill()/setLipCyanosis()
+// below instead of the fixed literals sim_patient.html currently has.
+const SKIN_DEFAULTS = {
+  LIP_CYAN_SPO2_START:   { value: 95,  min: 70,  max: 100, step: 1,    group: 'Lip cyanosis', label: 'SpO2 start' },
+  LIP_CYAN_SPO2_FULL:    { value: 80,  min: 50,  max: 100, step: 1,    group: 'Lip cyanosis', label: 'SpO2 full' },
+  LIP_CYAN_COLOR:        { value: '#1a5fc4', color: true, group: 'Lip cyanosis', label: 'Colour' },
+  SKIN_CYAN_SPO2_START:  { value: 80,  min: 50,  max: 100, step: 1,    group: 'Skin cyanosis', label: 'SpO2 start' },
+  SKIN_CYAN_SPO2_FULL:   { value: 60,  min: 0,   max: 100, step: 1,    group: 'Skin cyanosis', label: 'SpO2 full' },
+  SKIN_CYAN_DESAT:       { value: 0.65, min: 0,  max: 1,   step: 0.01, group: 'Skin cyanosis', label: 'Desaturate ×' },
+  SKIN_CYAN_LIGHTEN:     { value: 0.06, min: 0,  max: 0.3, step: 0.01, group: 'Skin cyanosis', label: 'Darken (L-)' },
+  SKIN_CYAN_COLOR:       { value: '#2f5f9e', color: true, group: 'Skin cyanosis', label: 'Colour' },
+  SKIN_CYAN_BLEND_MAX:   { value: 0.6, min: 0,   max: 1,   step: 0.01, group: 'Skin cyanosis', label: 'Blend max' },
+  PALLOR_HR_START:       { value: 60,  min: 0,   max: 100, step: 1,    group: 'Pallor', label: 'HR-low start' },
+  PALLOR_HR_FULL:        { value: 0,   min: 0,   max: 100, step: 1,    group: 'Pallor', label: 'HR-low full' },
+  PALLOR_BP_START:       { value: 100, min: 0,   max: 150, step: 1,    group: 'Pallor', label: 'BP-low start' },
+  PALLOR_BP_FULL:        { value: 40,  min: 0,   max: 150, step: 1,    group: 'Pallor', label: 'BP-low full' },
+  PALLOR_DESAT:          { value: 0.75, min: 0,  max: 1,   step: 0.01, group: 'Pallor', label: 'Desaturate ×' },
+  PALLOR_LIGHTEN:        { value: 0.10, min: 0,  max: 0.3, step: 0.01, group: 'Pallor', label: 'Lighten (L+)' },
+  FLUSH_BP_START:        { value: 140, min: 100, max: 220, step: 1,    group: 'Flush', label: 'BP-high start' },
+  FLUSH_BP_FULL:         { value: 200, min: 100, max: 250, step: 1,    group: 'Flush', label: 'BP-high full' },
+  FLUSH_HUE:             { value: 355, min: 0,   max: 360, step: 1,    group: 'Flush', label: 'Hue target' },
+  FLUSH_HUE_AMOUNT:      { value: 0.55, min: 0,  max: 1,   step: 0.01, group: 'Flush', label: 'Hue rotate ×' },
+  FLUSH_SAT_BOOST:       { value: 0.3, min: 0,   max: 1,   step: 0.01, group: 'Flush', label: 'Saturation +' },
+  MOTTLED_COLOR:         { value: '#8a7590', color: true, group: 'Mottled', label: 'Colour' },
+  MOTTLED_BLEND_BASE:    { value: 0.25, min: 0,  max: 1,   step: 0.01, group: 'Mottled', label: 'Blend base' },
+  MOTTLED_BLEND_SCALE:   { value: 0.35, min: 0,  max: 1,   step: 0.01, group: 'Mottled', label: 'Blend scale' },
+};
+let SKIN_TUNE = {};
+Object.entries(SKIN_DEFAULTS).forEach(([k, spec]) => SKIN_TUNE[k] = spec.value);
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function rampFrac(value, start, full) {
+  // start->0%, full->100%, works whether start>full (dropping) or start<full (rising)
+  if (start === full) return value >= full ? 1 : 0;
+  return clamp01((start - value) / (start - full));
+}
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function weightedPick(keys, weightOf, h) {
+  const weights = keys.map(weightOf);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let target = ((h % 100000) / 100000) * total;
+  for (let i = 0; i < keys.length; i++) {
+    target -= weights[i];
+    if (target <= 0) return keys[i];
+  }
+  return keys[keys.length - 1];
+}
+function buildAvatarBase(seed, skinHex, gender, age) {
+  avatarBuild.skin = skinHex || avatarBuild.skin;
+  avatarBuild.ageBand = ageBandFromMeta(age);
+  avatarBuild.ageYears = parseAgeYears(age);
+  const s = String(seed || 'default');
+  const allowAdultHair = avatarBuild.ageBand === 'teen' || avatarBuild.ageBand === 'adult';
+  const hairKeys = Object.keys(AvatarAssets.top).filter(k =>
+    (allowAdultHair || !ADULT_ONLY_HAIR.has(k)) && (allowAdultHair || !FACE_FRAMING_HEADWEAR.has(k))
+  );
+  const browKeys = Object.keys(AvatarAssets.eyebrows);
+  const g = (gender || '').toLowerCase();
+  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.5 } : g === 'female' ? { f: 3, n: 1.5, m: 0.5 } : { m: 1, n: 1, f: 1 };
+  avatarBuild.hairStyle = avatarBuild.ageBand === 'infant' ? null : weightedPick(hairKeys, k => {
+    const base = leanWeights[HAIR_STYLE_LEAN[k] || 'n'];
+    return CASUAL_HEADWEAR.has(k) ? base * 0.3 : base;
+  }, hashStr(s));
+  const gw = HEADWEAR.has(avatarBuild.hairStyle) ? 0 : greyWeight(age);
+  avatarBuild.hairColour = weightedPick(HAIR_COLOURS, c => GREY_HAIR_COLOURS.has(c) ? (0.15 + gw * 10) : 1, hashStr(s + '|hair'));
+  avatarBuild.eyebrowStyle = browKeys[hashStr(s + '|brow') % browKeys.length];
+  avatarBuild.clothesColour = CLOTHES_COLOURS[hashStr(s + '|clothescolor') % CLOTHES_COLOURS.length];
+  renderAvatarBuild();
+  syncBuildSelectsToState();
+}
+function applyAgeScale() {
+  const years = avatarBuild.ageYears;
+  const s = ageRamp(years, AGE_TUNE.AGE_SCALE.zero, AGE_TUNE.AGE_SCALE.eighteen);
+  document.getElementById('av-scale-group').setAttribute('transform', `translate(140,36) scale(${s}) translate(-140,-36)`);
+  const dy = ageRamp(years, AGE_TUNE.FACE_LOWER_OFFSET.zero, AGE_TUNE.FACE_LOWER_OFFSET.eighteen);
+  const mouthDy = ageRamp(years, AGE_TUNE.MOUTH_LOWER_OFFSET.zero, AGE_TUNE.MOUTH_LOWER_OFFSET.eighteen);
+  const eyeScaleX = ageRamp(years, AGE_TUNE.EYE_SCALE_X.zero, AGE_TUNE.EYE_SCALE_X.eighteen);
+  const eyeScaleY = ageRamp(years, AGE_TUNE.EYE_SCALE_Y.zero, AGE_TUNE.EYE_SCALE_Y.eighteen);
+  document.getElementById('av-eyebrows').setAttribute('transform', `translate(76 ${82 + dy})`);
+  document.getElementById('av-mouth').setAttribute('transform', `translate(78 ${134 + mouthDy})`);
+  document.getElementById('av-lip-cyanosis').setAttribute('transform', `translate(78 ${134 + mouthDy})`);
+  document.getElementById('av-eyes').setAttribute('transform', `translate(76 ${90 + dy}) translate(56,22) scale(${eyeScaleX},${eyeScaleY}) translate(-56,-22)`);
+  const bulgeScaleX = ageRamp(years, AGE_TUNE.HEAD_BULGE_RX.zero, AGE_TUNE.HEAD_BULGE_RX.eighteen);
+  const bulgeScaleY = ageRamp(years, AGE_TUNE.HEAD_BULGE_RY.zero, AGE_TUNE.HEAD_BULGE_RY.eighteen);
+  const bulge = document.getElementById('av-head-bulge');
+  bulge.setAttribute('rx', (56 * bulgeScaleX).toFixed(1));
+  bulge.setAttribute('ry', (56 * bulgeScaleY).toFixed(1));
+  // Hair scale/offset are INDEPENDENT of the head bulge here (unlike the
+  // shipped version, which ties hair 1:1 to the bulge ratio) so they can be
+  // tuned separately — export will show HAIR_SCALE_AT_ZERO etc as new
+  // constants if you land on different values than the bulge's.
+  const hairScale = ageRamp(years, AGE_TUNE.HAIR_SCALE.zero, AGE_TUNE.HAIR_SCALE.eighteen);
+  const hairOffsetX = ageRamp(years, AGE_TUNE.HAIR_OFFSET_X.zero, AGE_TUNE.HAIR_OFFSET_X.eighteen);
+  const hairOffsetY = ageRamp(years, AGE_TUNE.HAIR_OFFSET_Y.zero, AGE_TUNE.HAIR_OFFSET_Y.eighteen);
+  document.getElementById('av-top').setAttribute('transform',
+    `translate(132,92) scale(${hairScale.toFixed(3)}) translate(-132,-92) translate(${(hairOffsetX - 1).toFixed(1)},${hairOffsetY.toFixed(1)})`);
+  refreshLiveReadouts();
+}
+function renderAvatarBuild() {
+  document.getElementById('av-top').innerHTML = avatarBuild.hairStyle ? AvatarAssets.top[avatarBuild.hairStyle].replace(/__HAIRCOLOR__/g, avatarBuild.hairColour) : '';
+  setEyebrows();
+  document.getElementById('av-eyes-closed-overlay').innerHTML = AvatarAssets.eyes.closed;
+  document.getElementById('av-clothes-static-path').setAttribute('fill', avatarBuild.clothesColour);
+  document.getElementById('av-chest-path').setAttribute('fill', avatarBuild.clothesColour);
+  applyAgeScale();
+  applySkinTint({ pallorFrac: 0, flushFrac: 0, skinCyanosisFrac: 0, skinColour: 'normal', skinTintAmount: 0 });
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0, s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+  }
+  return [h, s, l];
+}
+function hslToRgb([h, s, l]) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let rgb1;
+  if (h < 60) rgb1 = [c, x, 0];
+  else if (h < 120) rgb1 = [x, c, 0];
+  else if (h < 180) rgb1 = [0, c, x];
+  else if (h < 240) rgb1 = [0, x, c];
+  else if (h < 300) rgb1 = [x, 0, c];
+  else rgb1 = [c, 0, x];
+  return rgb1.map(v => Math.round((v + m) * 255));
+}
+function rotateHueToward(h, targetH, amount) {
+  const diff = ((targetH - h + 540) % 360) - 180;
+  return (h + diff * amount + 360) % 360;
+}
+function computeSkinFill(app) {
+  let [h, s, l] = rgbToHsl(hexToRgb(avatarBuild.skin));
+  if (app.pallorFrac > 0) {
+    s *= (1 - app.pallorFrac * SKIN_TUNE.PALLOR_DESAT);
+    l = Math.min(1, l + app.pallorFrac * SKIN_TUNE.PALLOR_LIGHTEN);
+  }
+  if (app.flushFrac > 0) {
+    h = rotateHueToward(h, SKIN_TUNE.FLUSH_HUE, app.flushFrac * SKIN_TUNE.FLUSH_HUE_AMOUNT);
+    s = Math.min(1, s + app.flushFrac * SKIN_TUNE.FLUSH_SAT_BOOST);
+  }
+  let [r, g, b] = hslToRgb([h, s, l]);
+  if (app.skinColour === 'mottled') {
+    const [tr, tg, tb] = hexToRgb(SKIN_TUNE.MOTTLED_COLOR);
+    const t = clamp01(SKIN_TUNE.MOTTLED_BLEND_BASE + app.perfusionFrac * SKIN_TUNE.MOTTLED_BLEND_SCALE);
+    r = Math.round(r + (tr - r) * t); g = Math.round(g + (tg - g) * t); b = Math.round(b + (tb - b) * t);
+  }
+  if (app.skinCyanosisFrac > 0) {
+    const f = app.skinCyanosisFrac;
+    [h, s, l] = rgbToHsl([r, g, b]);
+    s *= (1 - f * SKIN_TUNE.SKIN_CYAN_DESAT);
+    l = Math.max(0, l - f * SKIN_TUNE.SKIN_CYAN_LIGHTEN);
+    [r, g, b] = hslToRgb([h, s, l]);
+    const [tr, tg, tb] = hexToRgb(SKIN_TUNE.SKIN_CYAN_COLOR);
+    const t = f * SKIN_TUNE.SKIN_CYAN_BLEND_MAX;
+    r = Math.round(r + (tr - r) * t); g = Math.round(g + (tg - g) * t); b = Math.round(b + (tb - b) * t);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+function applySkinTint(app) {
+  const fill = computeSkinFill(app);
+  document.getElementById('av-head-path').setAttribute('fill', fill);
+  document.getElementById('av-head-bulge').setAttribute('fill', fill);
+  document.getElementById('av-eye-l-lid').setAttribute('fill', fill);
+  document.getElementById('av-eye-r-lid').setAttribute('fill', fill);
+}
+function setLipCyanosis(frac) {
+  const el = document.querySelector('#av-lip-cyanosis > ellipse');
+  el.style.opacity = clamp01(frac || 0).toFixed(2);
+}
+function applyLipCyanosisColor() {
+  document.getElementById('lip-cyan-stop1').setAttribute('stop-color', SKIN_TUNE.LIP_CYAN_COLOR);
+  document.getElementById('lip-cyan-stop2').setAttribute('stop-color', SKIN_TUNE.LIP_CYAN_COLOR);
+}
+function setEyeOpenness(level) {
+  const showOpen = level !== 'closed';
+  const showLid = level === 'droopy';
+  ['l', 'r'].forEach(side => {
+    document.getElementById(`av-eye-${side}-sclera`).style.display = showOpen ? '' : 'none';
+    document.getElementById(`av-eye-${side}-pupil`).style.display = showOpen ? '' : 'none';
+    document.getElementById(`av-eye-${side}-lid`).style.display = showLid ? '' : 'none';
+  });
+  document.getElementById('av-eyes-closed-overlay').style.display = showOpen ? 'none' : '';
+}
+let _restingEyeLevel = 'open';
+let _blinkTimer = null;
+function scheduleNextBlink() {
+  clearTimeout(_blinkTimer);
+  _blinkTimer = setTimeout(doBlinkAuto, 2500 + Math.random() * 3500);
+}
+function doBlinkAuto() { doBlink(); scheduleNextBlink(); }
+function doBlink() {
+  if (_restingEyeLevel === 'open') {
+    setEyeOpenness('closed');
+    setTimeout(() => setEyeOpenness(_restingEyeLevel), 130);
+  }
+}
+scheduleNextBlink();
+
+let _lastRR = 16;
+let _wobAmplitude = 0;
+let _breathAngle = 0;
+let _lastMotionTs = null;
+function idleMotionLoop(tsMs) {
+  const dt = _lastMotionTs == null ? 0 : tsMs - _lastMotionTs;
+  _lastMotionTs = tsMs;
+  if (_lastRR > 0) {
+    const periodMs = 60000 / _lastRR;
+    _breathAngle = (_breathAngle + (dt / periodMs) * 2 * Math.PI) % (2 * Math.PI);
+  }
+  const chestGroup = document.getElementById('av-chest-group');
+  const faceGroup = document.getElementById('av-face-group');
+  const breathPhase = _lastRR > 0 ? Math.sin(_breathAngle) : 0;
+  if (chestGroup) {
+    const chestY = breathPhase * (3 + _wobAmplitude * 1.5);
+    chestGroup.setAttribute('transform', `translate(8, ${chestY.toFixed(2)})`);
+  }
+  if (faceGroup) {
+    const headY = breathPhase * (0.4 + _wobAmplitude * 1.6);
+    faceGroup.setAttribute('transform', `translate(8, ${headY.toFixed(2)})`);
+  }
+  requestAnimationFrame(idleMotionLoop);
+}
+requestAnimationFrame(idleMotionLoop);
+
+function setSweat(moistureState, frac) {
+  const group = document.getElementById('av-sweat');
+  if (moistureState === 'dry') { group.style.display = 'none'; return; }
+  group.style.display = '';
+  const f = clamp01(frac || 0);
+  const opacity = 0.4 + f * 0.6;
+  const scale = 0.7 + f * 0.5;
+  const setDrop = (id, show) => {
+    const el = document.getElementById(id);
+    el.style.opacity = show ? opacity.toFixed(2) : '0';
+    el.style.transform = `scale(${scale.toFixed(2)})`;
+  };
+  setDrop('av-sweat-r', true);
+  setDrop('av-sweat-l', f >= 0.35);
+  setDrop('av-sweat-c', f >= 0.65);
+}
+const MOUTH_VARIANT = { neutral: 'default', mild: 'serious', distress: 'concerned', grimace: 'grimace', slack: 'sad', talkOpen: 'screamOpen',
+  angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief' };
+function setMouth(stateKey) {
+  const variant = MOUTH_VARIANT[stateKey] || MOUTH_VARIANT.neutral;
+  document.getElementById('av-mouth').innerHTML = AvatarAssets.mouth[variant];
+}
+const MOOD_EYEBROW = { angry: 'angryNatural', agitated: 'frownNatural', tearful: 'sadConcernedNatural', anxious: 'sadConcernedNatural', confused: 'upDownNatural' };
+function setEyebrows(styleKey) {
+  document.getElementById('av-eyebrows').innerHTML = AvatarAssets.eyebrows[styleKey || avatarBuild.eyebrowStyle];
+}
+let patientMood = 'calm';
+let _restingMouthState = 'neutral';
+let _isSpeaking = false;
+
+// Recomputes the four severity fractions LOCALLY from the tunable
+// thresholds (SKIN_TUNE), instead of sim_engine.js's hardcoded ones —
+// everything else (unresponsive/distressLevel/wob/gcsE/pain/moisture/
+// moistureFrac/skinColour/skinTintAmount) still comes straight from the
+// real engine, since those aren't part of this tuning exercise.
+function computeAppearanceOverrides(v) {
+  const app = SimEngine.getAppearanceState(v);
+  const hr = Number.isFinite(v.HR) ? v.HR : 80;
+  const bpSys = Number.isFinite(v.BPsys) ? v.BPsys : 120;
+  const spo2 = Number.isFinite(v.SpO2) ? v.SpO2 : 98;
+  const hrLowFrac = rampFrac(hr, SKIN_TUNE.PALLOR_HR_START, SKIN_TUNE.PALLOR_HR_FULL);
+  const bpLowFrac = rampFrac(bpSys, SKIN_TUNE.PALLOR_BP_START, SKIN_TUNE.PALLOR_BP_FULL);
+  app.pallorFrac = Math.max(hrLowFrac, bpLowFrac);
+  app.flushFrac = rampFrac(bpSys, SKIN_TUNE.FLUSH_BP_START, SKIN_TUNE.FLUSH_BP_FULL);
+  app.lipCyanosisFrac = rampFrac(spo2, SKIN_TUNE.LIP_CYAN_SPO2_START, SKIN_TUNE.LIP_CYAN_SPO2_FULL);
+  app.skinCyanosisFrac = rampFrac(spo2, SKIN_TUNE.SKIN_CYAN_SPO2_START, SKIN_TUNE.SKIN_CYAN_SPO2_FULL);
+  // perfusionFrac isn't returned by getAppearanceState() — reconstruct the
+  // same direction-agnostic HR/BP abnormality used for mottled depth.
+  const hrAbn = hr <= 0 ? 1 : Math.max(clamp01((60 - hr) / 60), clamp01((hr - 100) / 100));
+  const bpAbn = bpSys <= 0 ? 1 : clamp01((100 - bpSys) / 60);
+  app.perfusionFrac = Math.max(hrAbn, bpAbn);
+  return app;
+}
+function updateAvatarFace(v) {
+  const app = computeAppearanceOverrides(v);
+  // No voice-modal simulation here (this tool has no Treat/Assess/Talk) —
+  // GCS E3 always previews as droopy/half-open rather than toggling open.
+  const eyeLevel = app.gcsE <= 2 ? 'closed' : (app.gcsE === 3 ? 'droopy' : 'open');
+  _restingEyeLevel = eyeLevel;
+  setEyeOpenness(eyeLevel);
+  _lastRR = Number.isFinite(v.RR) ? v.RR : _lastRR;
+  _wobAmplitude = Math.min(1, (typeof app.wob === 'number' ? app.wob : 4) / 4);
+  applySkinTint(app);
+  setLipCyanosis(app.lipCyanosisFrac);
+  setSweat(app.moisture, app.moistureFrac);
+  const moodActive = !app.unresponsive && patientMood !== 'calm';
+  setEyebrows(moodActive ? MOOD_EYEBROW[patientMood] : null);
+  let mouthState;
+  if (app.unresponsive) mouthState = 'slack';
+  else if (app.pain >= 7) mouthState = 'grimace';
+  else if (app.distressLevel >= 2) mouthState = 'distress';
+  else if (moodActive) mouthState = patientMood;
+  else if (app.distressLevel === 1 || app.pain >= 1) mouthState = 'mild';
+  else mouthState = 'neutral';
+  _restingMouthState = mouthState;
+  if (!_isSpeaking) setMouth(mouthState);
+}
+
+// --- Lab UI wiring -----------------------------------------------------------
+function readVitals() {
+  const g = id => parseFloat(document.getElementById(id).value);
+  return { HR: g('r-HR'), RR: g('r-RR'), SpO2: g('r-SpO2'), BPsys: g('r-BPsys'), pain: g('r-pain'), gcsE: g('r-gcsE'), gcsV: g('r-gcsV'), gcsM: g('r-gcsM') };
+}
+function onSlider() {
+  ['HR','RR','SpO2','BPsys','pain'].forEach(k => {
+    document.getElementById('v-' + k).textContent = document.getElementById('r-' + k).value;
+  });
+  patientMood = document.getElementById('sel-mood').value;
+  const v = readVitals();
+  document.getElementById('v-gcsTotal').textContent = v.gcsE + v.gcsV + v.gcsM;
+  updateAvatarFace(v);
+}
+function setSliders(vals) {
+  Object.entries(vals).forEach(([k, val]) => {
+    const el = document.getElementById('r-' + k);
+    if (el) el.value = val;
+  });
+  onSlider();
+}
+function applyPreset(name) {
+  const presets = {
+    normal:       { HR: 80, RR: 16, SpO2: 98, BPsys: 120, pain: 0, gcsE: 4, gcsV: 5, gcsM: 6 },
+    mild:         { HR: 105, RR: 22, SpO2: 94, BPsys: 105, pain: 3, gcsE: 4, gcsV: 5, gcsM: 6 },
+    severe:       { HR: 135, RR: 30, SpO2: 82, BPsys: 82, pain: 5, gcsE: 3, gcsV: 4, gcsM: 6 },
+    pain:         { HR: 110, RR: 20, SpO2: 97, BPsys: 130, pain: 10, gcsE: 4, gcsV: 5, gcsM: 6 },
+    unresponsive: { HR: 45, RR: 6, SpO2: 85, BPsys: 65, pain: 0, gcsE: 1, gcsV: 1, gcsM: 4 }
+  };
+  setSliders(presets[name]);
+}
+function onBuildChange() {
+  avatarBuild.hairStyle = document.getElementById('sel-hair').value || null;
+  avatarBuild.hairColour = document.getElementById('sel-haircolor').value;
+  avatarBuild.eyebrowStyle = document.getElementById('sel-brow').value;
+  avatarBuild.clothesColour = document.getElementById('sel-clothescolor').value;
+  renderAvatarBuild();
+}
+function currentGender() { return document.getElementById('sel-patient-gender').value || null; }
+function rebuildWithSameSeed() {
+  buildAvatarBase(document.getElementById('txt-seed').value, avatarBuild.skin, currentGender(), currentAgeArg());
+}
+function randomSeed() {
+  document.getElementById('txt-seed').value = 'seed-' + Math.random().toString(36).slice(2, 8);
+  buildAvatarBase(document.getElementById('txt-seed').value, avatarBuild.skin, currentGender(), currentAgeArg());
+}
+function syncBuildSelectsToState() {
+  document.getElementById('sel-hair').value = avatarBuild.hairStyle || '';
+  document.getElementById('sel-haircolor').value = avatarBuild.hairColour;
+  document.getElementById('sel-brow').value = avatarBuild.eyebrowStyle;
+  document.getElementById('sel-clothescolor').value = avatarBuild.clothesColour;
+  refreshSkinSwatchActive();
+}
+function refreshSkinSwatchActive() {
+  document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.hex === avatarBuild.skin));
+}
+function initSwatches() {
+  const wrap = document.getElementById('skin-swatches');
+  SKIN_TONE_SWATCHES.forEach(hex => {
+    const el = document.createElement('div');
+    el.className = 'swatch';
+    el.style.background = hex;
+    el.dataset.hex = hex;
+    el.onclick = () => { avatarBuild.skin = hex; renderAvatarBuild(); refreshSkinSwatchActive(); };
+    wrap.appendChild(el);
+  });
+}
+function initSelects() {
+  const hairSel = document.getElementById('sel-hair');
+  hairSel.appendChild(new Option('(none — bald)', ''));
+  Object.keys(AvatarAssets.top).forEach(k => hairSel.appendChild(new Option(k, k)));
+  const colorSel = document.getElementById('sel-haircolor');
+  HAIR_COLOURS.forEach(hex => colorSel.appendChild(new Option(hex, hex)));
+  const browSel = document.getElementById('sel-brow');
+  Object.keys(AvatarAssets.eyebrows).forEach(k => browSel.appendChild(new Option(k, k)));
+  const clothesColorSel = document.getElementById('sel-clothescolor');
+  CLOTHES_COLOURS.forEach(hex => clothesColorSel.appendChild(new Option(hex, hex)));
+}
+
+// --- Age preview control -----------------------------------------------------
+function currentAgeArg() {
+  if (document.getElementById('chk-age-null').checked) return null;
+  return parseFloat(document.getElementById('r-previewAge').value);
+}
+function onAgeChange() {
+  document.getElementById('v-previewAge').textContent = document.getElementById('chk-age-null').checked ? 'null' : document.getElementById('r-previewAge').value;
+  avatarBuild.ageYears = currentAgeArg();
+  avatarBuild.ageBand = ageBandFromMeta(currentAgeArg());
+  applyAgeScale();
+}
+
+// --- Age-scale tunable sliders (two per element: at-0 and at-18) -----------
+function buildAgeTuneUI() {
+  const container = document.getElementById('age-tune-container');
+  Object.keys(AGE_DEFAULTS).forEach(key => {
+    const spec = AGE_DEFAULTS[key];
+    const wrap = document.createElement('div');
+    wrap.className = 'tune-pair';
+    wrap.innerHTML = `
+      <div class="pair-label">${AGE_LABELS[key]}</div>
+      <div class="pair-slider">
+        <div class="mini-label">at age 0 <span class="val" id="agev-${key}-zero">${AGE_TUNE[key].zero}</span></div>
+        <input type="range" id="age-${key}-zero" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${AGE_TUNE[key].zero}" oninput="onAgeTuneChange('${key}','zero')">
+      </div>
+      <div class="pair-slider">
+        <div class="mini-label">at age 18 <span class="val" id="agev-${key}-eighteen">${AGE_TUNE[key].eighteen}</span></div>
+        <input type="range" id="age-${key}-eighteen" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${AGE_TUNE[key].eighteen}" oninput="onAgeTuneChange('${key}','eighteen')">
+      </div>
+      <div class="live-readout" id="agelive-${key}">–</div>
+    `;
+    container.appendChild(wrap);
+  });
+}
+function onAgeTuneChange(key, which) {
+  const raw = parseFloat(document.getElementById(`age-${key}-${which}`).value);
+  AGE_TUNE[key][which] = raw;
+  document.getElementById(`agev-${key}-${which}`).textContent = raw;
+  applyAgeScale();
+}
+function refreshLiveReadouts() {
+  const years = avatarBuild.ageYears;
+  Object.keys(AGE_DEFAULTS).forEach(key => {
+    const el = document.getElementById(`agelive-${key}`);
+    if (el) el.textContent = ageRamp(years, AGE_TUNE[key].zero, AGE_TUNE[key].eighteen).toFixed(2);
+  });
+}
+function resetAgeTunables() {
+  AGE_TUNE = JSON.parse(JSON.stringify(AGE_DEFAULTS));
+  Object.keys(AGE_DEFAULTS).forEach(key => {
+    document.getElementById(`age-${key}-zero`).value = AGE_TUNE[key].zero;
+    document.getElementById(`age-${key}-eighteen`).value = AGE_TUNE[key].eighteen;
+    document.getElementById(`agev-${key}-zero`).textContent = AGE_TUNE[key].zero;
+    document.getElementById(`agev-${key}-eighteen`).textContent = AGE_TUNE[key].eighteen;
+  });
+  applyAgeScale();
+}
+
+// --- Skin severity tunable sliders ------------------------------------------
+function buildSkinTuneUI() {
+  const container = document.getElementById('skin-tune-container');
+  let lastGroup = null;
+  Object.keys(SKIN_DEFAULTS).forEach(key => {
+    const spec = SKIN_DEFAULTS[key];
+    if (spec.group !== lastGroup) {
+      const h3 = document.createElement('h3');
+      h3.textContent = spec.group;
+      container.appendChild(h3);
+      lastGroup = spec.group;
+    }
+    const row = document.createElement('div');
+    row.className = 'tune-row';
+    if (spec.color) {
+      row.innerHTML = `<label>${spec.label}</label><input type="color" id="skin-${key}" value="${SKIN_TUNE[key]}" oninput="onSkinTuneChange('${key}',true)"><span class="val" id="skinv-${key}">${SKIN_TUNE[key]}</span>`;
+    } else {
+      row.innerHTML = `<label>${spec.label}</label><input type="range" id="skin-${key}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${SKIN_TUNE[key]}" oninput="onSkinTuneChange('${key}',false)"><span class="val" id="skinv-${key}">${SKIN_TUNE[key]}</span>`;
+    }
+    container.appendChild(row);
+  });
+}
+function onSkinTuneChange(key, isColor) {
+  const el = document.getElementById(`skin-${key}`);
+  SKIN_TUNE[key] = isColor ? el.value : parseFloat(el.value);
+  document.getElementById(`skinv-${key}`).textContent = SKIN_TUNE[key];
+  if (key === 'LIP_CYAN_COLOR') applyLipCyanosisColor();
+  onSlider();
+}
+function resetSkinTunables() {
+  Object.entries(SKIN_DEFAULTS).forEach(([k, spec]) => {
+    SKIN_TUNE[k] = spec.value;
+    document.getElementById(`skin-${k}`).value = spec.value;
+    document.getElementById(`skinv-${k}`).textContent = spec.value;
+  });
+  applyLipCyanosisColor();
+  onSlider();
+}
+
+// --- Export ------------------------------------------------------------------
+function refreshExport() {
+  const lines = [];
+  lines.push('// --- Age-scale (paste into sim_patient.html / avatar_lab.html) ---');
+  Object.keys(AGE_DEFAULTS).forEach(key => {
+    const def = AGE_DEFAULTS[key], cur = AGE_TUNE[key];
+    if (cur.zero !== def.zero) lines.push(`const ${key}_AT_ZERO = ${cur.zero}; // was ${def.zero}`);
+    if (cur.eighteen !== def.eighteen) lines.push(`const ${key}_AT_EIGHTEEN = ${cur.eighteen}; // was ${def.eighteen} (shipped code assumes 1 or 0 — check ageRamp() call sites if non-default)`);
+  });
+  lines.push('');
+  lines.push('// --- Skin severity/colour (paste into computeSkinFill()/thresholds) ---');
+  Object.entries(SKIN_DEFAULTS).forEach(([key, spec]) => {
+    if (SKIN_TUNE[key] !== spec.value) lines.push(`const ${key} = ${JSON.stringify(SKIN_TUNE[key])}; // was ${JSON.stringify(spec.value)}`);
+  });
+  const changedCount = lines.length - 4;
+  if (changedCount <= 0) lines.splice(0, lines.length, '// Nothing changed from shipped defaults yet — move some sliders first.');
+  document.getElementById('export-text').value = lines.join('\n');
+}
+
+initSwatches();
+initSelects();
+buildAgeTuneUI();
+buildSkinTuneUI();
+buildAvatarBase('tune-seed-1', SKIN_TONE_SWATCHES[2]);
+onSlider();
+refreshExport();
+</script>
+</body>
+</html>

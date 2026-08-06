@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Games — Paramedic Training Tools</title>
+<script>
+(function(){const t=localStorage.getItem('av_theme');if(t&&t!=='default')document.documentElement.setAttribute('data-theme',t);})();
+</script>
+<style>
+  :root {
+    --navy: #1C3A6E; --navy-dark: #122849; --amber: #E8921A;
+    --green: #27833A; --green-light: #EAFAF1; --blue: #2E86C1; --blue-light: #EBF5FB;
+    --grey: #6C7A89; --light: #F4F6F9; --white: #FFFFFF; --text: #1A1A2E;
+    --border: #D5D8DC; --shadow: 0 2px 12px rgba(0,0,0,0.09);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--light); color: var(--text); min-height: 100vh; }
+  #topbar { background: var(--navy); color: white; padding: 0 20px; display:flex; align-items:center; gap:12px; height:56px; position:fixed; top:0; left:0; right:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.25); }
+  #topbar-title { font-size:17px; font-weight:700; }
+  .back-link { color:white; opacity:0.8; text-decoration:none; font-size:13px; margin-left:auto; }
+  #main { padding:72px 16px 32px; max-width:860px; margin:0 auto; }
+  .hero { background: var(--navy); border-radius:16px; padding:24px; color:white; margin-bottom:24px; }
+  .hero h1 { font-size:20px; font-weight:700; margin-bottom:6px; }
+  .hero p { font-size:13px; opacity:0.75; }
+  .card-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:480px) { .card-grid { grid-template-columns:1fr; } }
+  .project-card { background:var(--white); border-radius:14px; border:1px solid var(--border); box-shadow:var(--shadow); overflow:hidden; display:flex; flex-direction:column; text-decoration:none; color:inherit; }
+  .project-card:active { transform:scale(0.98); }
+  .card-accent { height:5px; }
+  .accent-amber { background:var(--amber); }
+  .accent-blue { background:var(--blue); }
+  .card-body { padding:18px 18px 14px; flex:1; display:flex; flex-direction:column; }
+  .card-icon { width:42px; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; font-size:20px; }
+  .icon-amber { background:#FEF5E7; color:var(--amber); }
+  .icon-blue { background:var(--blue-light); color:var(--blue); }
+  .card-title { font-size:15px; font-weight:700; margin-bottom:5px; }
+  .card-desc { font-size:12.5px; color:var(--grey); line-height:1.55; flex:1; margin-bottom:16px; }
+  .card-btn { display:flex; align-items:center; justify-content:center; gap:7px; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:600; width:100%; color:white; }
+  .btn-amber { background:var(--amber); }
+  .btn-blue { background:var(--blue); }
+  .card-btn svg { width:15px; height:15px; }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <div id="topbar-title">🎮 Games</div>
+  <a class="back-link" href="index.html">← Back to Tools</a>
+</div>
+<div id="main">
+  <div class="hero">
+    <h1>Clinical Games</h1>
+    <p>Host on one screen (e.g. an iPad at the front of the room) — everyone else joins from their own device to play along.</p>
+  </div>
+  <div class="card-grid">
+    <a class="project-card" href="quizotron.html">
+      <div class="card-accent accent-amber"></div>
+      <div class="card-body">
+        <div class="card-icon icon-amber">🎮</div>
+        <div class="card-title">Quizotron 5000</div>
+        <div class="card-desc">Multi-device quiz game — host on one screen, everyone else joins from their own device to play along.</div>
+        <span class="card-btn btn-amber">Open →</span>
+      </div>
+    </a>
+  </div>
+</div>
+</body>
+</html>

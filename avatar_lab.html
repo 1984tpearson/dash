@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patient Avatar Lab</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: 'Courier New', monospace; background: #1b2634; color: #e2e8f0; display: flex; flex-wrap: wrap; min-height: 100vh; }
+#preview { flex: 1; min-width: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; background: #0f1622; }
+#av-svg { width: 320px; height: 297px; background: #223047; border-radius: 12px; }
+#av-head-path, #av-head-bulge, #av-eye-l-lid, #av-eye-r-lid { transition: fill 1.1s ease; }
+#av-sweat path { transition: opacity 1.1s ease, transform 1.1s ease; transform-box: fill-box; transform-origin: center; }
+#av-lip-cyanosis ellipse { transition: opacity 1.1s ease; }
+#preview-note { font-size: 11px; color: #8aa; text-align: center; max-width: 320px; }
+#controls { flex: 1; min-width: 340px; padding: 16px 20px; overflow-y: auto; max-height: 100vh; }
+h1 { font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #7dd3fc; margin: 0 0 4px; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin: 18px 0 8px; border-top: 1px solid #334155; padding-top: 12px; }
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.row label { width: 90px; flex-shrink: 0; color: #cbd5e1; }
+.row input[type=range] { flex: 1; }
+.row .val { width: 34px; text-align: right; color: #7dd3fc; }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.swatch.active { border-color: #7dd3fc; }
+select, input[type=text] { background: #223047; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; padding: 4px 6px; font-family: inherit; font-size: 12px; }
+button { background: #0369a1; color: #fff; border: none; border-radius: 5px; padding: 6px 10px; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; margin: 2px 4px 2px 0; }
+button:hover { background: #0284c7; }
+button.secondary { background: #334155; }
+button.secondary:hover { background: #475569; }
+#presets { display: flex; flex-wrap: wrap; }
+#svg-source { width: 100%; height: 140px; font-size: 9px; background: #0f1622; color: #94a3b8; border: 1px solid #334155; border-radius: 4px; padding: 6px; resize: vertical; }
+</style>
+</head>
+<body>
+<div id="preview">
+  <svg id="av-svg" viewBox="0 0 280 260" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <clipPath id="av-chest-clip"><rect x="0" y="199" width="280" height="81"/></clipPath>
+      <radialGradient id="av-lip-cyanosis-grad" cx="50%" cy="50%" r="55%">
+        <stop offset="0%" stop-color="#1a5fc4" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#1a5fc4" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <g id="av-scale-group">
+      <g id="av-chest-group" transform="translate(8)">
+        <path id="av-chest-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#3b6ea5" clip-path="url(#av-chest-clip)"/>
+      </g>
+      <g id="av-face-group" transform="translate(8)">
+        <ellipse id="av-head-bulge" cx="132" cy="92" rx="56" ry="56" fill="#E0AC81"/>
+        <path id="av-head-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#E0AC81"/>
+        <path d="M108 180.61v8a55.79 55.79 0 0 0 24 5.39c8.59 0 16.73-1.93 24-5.39v-8a55.79 55.79 0 0 1-24 5.39 55.79 55.79 0 0 1-24-5.39Z" fill="#000" fill-opacity=".1"/>
+        <path id="av-clothes-static-path" d="M132 36a56 56 0 0 0-56 56v6.17A12 12 0 0 0 66 110v14a12 12 0 0 0 10.3 11.88 56.04 56.04 0 0 0 31.7 44.73v18.4h-4a72 72 0 0 0-72 72v9h200v-9a72 72 0 0 0-72-72h-4v-18.39a56.04 56.04 0 0 0 31.7-44.73A12 12 0 0 0 198 124v-14a12 12 0 0 0-10-11.83V92a56 56 0 0 0-56-56Z" fill="#3b6ea5" clip-path="url(#av-chest-clip)"/>
+        <g id="av-lip-cyanosis" transform="translate(78 134)" style="pointer-events:none;">
+          <ellipse cx="54" cy="22" rx="24" ry="17" fill="url(#av-lip-cyanosis-grad)" opacity="0"/>
+        </g>
+        <g id="av-mouth" transform="translate(78 134)"></g>
+        <g id="av-eyes" transform="translate(76 90)">
+          <ellipse id="av-eye-l-sclera" cx="30" cy="22" rx="14" ry="7" fill="#fff"/>
+          <circle id="av-eye-l-pupil" cx="30" cy="22" r="5.5" fill="#2b2118"/>
+          <path id="av-eye-l-lid" d="M16 22 A14 7 0 0 1 44 22 L44 25 Q30 29 16 25 Z" fill="#E0AC81" style="display:none;"/>
+          <ellipse id="av-eye-r-sclera" cx="82" cy="22" rx="14" ry="7" fill="#fff"/>
+          <circle id="av-eye-r-pupil" cx="82" cy="22" r="5.5" fill="#2b2118"/>
+          <path id="av-eye-r-lid" d="M68 22 A14 7 0 0 1 96 22 L96 25 Q82 29 68 25 Z" fill="#E0AC81" style="display:none;"/>
+          <g id="av-eyes-closed-overlay" style="display:none;"></g>
+        </g>
+        <g id="av-eyebrows" transform="translate(76 82)"></g>
+        <g id="av-top" transform="translate(-1)"></g>
+        <g id="av-sweat" style="display:none;">
+          <path id="av-sweat-r" d="M170 58 q7 10 0 17 q-7 -2 -7 -9 q0 -6 7 -8z" fill="#7ec8e3"/>
+          <path id="av-sweat-l" d="M94 60 q7 10 0 17 q-7 -2 -7 -9 q0 -6 7 -8z" fill="#7ec8e3"/>
+          <path id="av-sweat-c" d="M132 48 q6 9 0 15 q-6 -2 -6 -8 q0 -5 6 -7z" fill="#7ec8e3"/>
+        </g>
+      </g>
+    </g>
+  </svg>
+  <div id="preview-note">
+    Artwork from avatar_assets.js (DiceBear Avataaars, see its file header for
+    licensing). viewBox 280&times;260. Component offsets: hair(-1,0),
+    eyebrows(76,82), eyes(76,90), mouth(78,134) — see CLAUDE.md.
+  </div>
+</div>
+<div id="controls">
+  <h1>Patient Avatar Lab</h1>
+  <div style="font-size:11px;color:#94a3b8;">Live playground for sim_patient.html's avatar — same artwork, same rendering functions, driven by sliders instead of a real session.</div>
+
+  <h2>Presets</h2>
+  <div id="presets">
+    <button onclick="applyPreset('normal')">Normal</button>
+    <button onclick="applyPreset('mild')">Mild distress</button>
+    <button onclick="applyPreset('severe')">Severe / cyanotic</button>
+    <button onclick="applyPreset('pain')">Pain 10</button>
+    <button onclick="applyPreset('unresponsive')">Unresponsive</button>
+  </div>
+
+  <h2>Vitals</h2>
+  <div class="row"><label>HR</label><input type="range" id="r-HR" min="0" max="300" value="80" oninput="onSlider()"><span class="val" id="v-HR">80</span></div>
+  <div class="row"><label>RR</label><input type="range" id="r-RR" min="0" max="40" value="16" oninput="onSlider()"><span class="val" id="v-RR">16</span></div>
+  <div class="row"><label>SpO2</label><input type="range" id="r-SpO2" min="0" max="100" value="98" oninput="onSlider()"><span class="val" id="v-SpO2">98</span></div>
+  <div class="row"><label>BP sys</label><input type="range" id="r-BPsys" min="-10" max="250" value="120" oninput="onSlider()"><span class="val" id="v-BPsys">120</span></div>
+  <div class="row"><label>Pain</label><input type="range" id="r-pain" min="0" max="10" value="0" oninput="onSlider()"><span class="val" id="v-pain">0</span></div>
+  <div class="row"><label>Mood</label>
+    <select id="sel-mood" onchange="onSlider()">
+      <option value="calm">calm</option>
+      <option value="anxious">anxious</option>
+      <option value="tearful">tearful</option>
+      <option value="agitated">agitated</option>
+      <option value="angry">angry</option>
+      <option value="confused">confused</option>
+    </select>
+    <span style="font-size:10px;color:#94a3b8;">scenario-authored; suppressed when unresponsive</span>
+  </div>
+
+  <h2>GCS (drives eyes + mouth)</h2>
+  <div class="row"><label>Eye (E)</label><input type="range" id="r-gcsE" min="1" max="4" value="4" oninput="onSlider()"><span class="val" id="v-gcsE">4</span></div>
+  <div class="row"><label>Verbal (V)</label><input type="range" id="r-gcsV" min="1" max="5" value="5" oninput="onSlider()"><span class="val" id="v-gcsV">5</span></div>
+  <div class="row"><label>Motor (M)</label><input type="range" id="r-gcsM" min="1" max="6" value="6" oninput="onSlider()"><span class="val" id="v-gcsM">6</span></div>
+  <div class="row"><label>Total</label><span class="val" id="v-gcsTotal" style="width:auto;">15</span></div>
+  <div class="row"><label>Talking to px</label><input type="checkbox" id="chk-talking" onchange="onSlider()"> <span style="font-size:10px;color:#94a3b8;">(GCS E3 only opens with this on)</span></div>
+
+  <h2>Build (fixed per scenario)</h2>
+  <div class="row"><label>Skin tone</label></div>
+  <div class="swatches" id="skin-swatches"></div>
+  <div class="row"><label>Hair style</label>
+    <select id="sel-hair" onchange="onBuildChange()"></select>
+  </div>
+  <div class="row"><label>Hair colour</label>
+    <select id="sel-haircolor" onchange="onBuildChange()"></select>
+  </div>
+  <div class="row"><label>Eyebrows</label>
+    <select id="sel-brow" onchange="onBuildChange()"></select>
+  </div>
+  <div class="row"><label>Clothes colour</label>
+    <select id="sel-clothescolor" onchange="onBuildChange()"></select>
+  </div>
+  <div class="row"><label>Seed</label><input type="text" id="txt-seed" value="lab-seed-1" oninput="onBuildChange()"> <button class="secondary" onclick="randomSeed()">Random</button></div>
+  <div class="row"><label>Gender</label>
+    <select id="sel-patient-gender" onchange="rebuildWithSameSeed()">
+      <option value="">unset (no weighting)</option>
+      <option value="male">Male</option>
+      <option value="female">Female</option>
+    </select>
+    <span style="font-size:10px;color:#94a3b8;">soft hair-style weighting only</span>
+  </div>
+  <div class="row"><label>Age</label>
+    <select id="sel-patient-age" onchange="rebuildWithSameSeed()">
+      <option value="">unset (adult)</option>
+      <option value="newborn">newborn</option>
+      <option value="0.3">3 months</option>
+      <option value="2">2yo (toddler)</option>
+      <option value="8">8yo (child)</option>
+      <option value="15">15yo (teen)</option>
+      <option value="45">45yo (adult)</option>
+      <option value="80">80yo (elderly)</option>
+    </select>
+    <span style="font-size:10px;color:#94a3b8;">scales figure + hair pool below teen, greys hair colour above ~40</span>
+  </div>
+
+  <h2>Browse raw variants (overrides live state)</h2>
+  <div class="row"><label>Eyes</label><select id="sel-eyes-browse" onchange="browseEyes()"></select></div>
+  <div class="row"><label>Mouth</label><select id="sel-mouth-browse" onchange="browseMouth()"></select></div>
+  <button class="secondary" onclick="onSlider()">Back to vitals-driven state</button>
+
+  <h2>Animation</h2>
+  <button onclick="doBlink()">Blink now</button>
+  <button class="secondary" id="btn-talk" onclick="toggleTalkDemo()">Start talk animation</button>
+
+  <h2>SVG source (copy out to inspect/paste elsewhere)</h2>
+  <textarea id="svg-source" readonly onclick="this.select()"></textarea>
+  <button class="secondary" onclick="refreshSource()">Refresh source</button>
+</div>
+
+<script src="https://1984tpearson.github.io/AV/sim_engine.js"></script>
+<script src="https://1984tpearson.github.io/AV/avatar_assets.js"></script>
+<script>
+// --- Verbatim copies of sim_patient.html's avatar functions, restyled to
+// take slider input instead of live session vitals — see CLAUDE.md's
+// "Patient avatar" section. Keep this in sync if the real thing changes.
+let avatarBuild = { skin: '#E0AC81', hairColour: '#3b2b20', hairStyle: 'shortFlat', eyebrowStyle: 'defaultNatural', ageBand: 'adult', ageYears: null, clothesColour: '#3b6ea5' };
+const HAIR_COLOURS = ['#1b1410', '#3b2b20', '#5a3b23', '#8a5a2b', '#c9a227', '#7a2e1d', '#8c8c8c', '#b0b0b0', '#e8e4dc'];
+const GREY_HAIR_COLOURS = new Set(['#8c8c8c', '#b0b0b0', '#e8e4dc']);
+const SKIN_TONE_SWATCHES = ['#F5D5C5', '#EFC3A3', '#E0AC81', '#C68863', '#A96C4A', '#8D5A3B', '#6B4530', '#4A2F20'];
+const HAIR_STYLE_LEAN = {
+  hat: 'n', hijab: 'f', turban: 'm', winterHat1: 'n', winterHat02: 'n', winterHat03: 'n', winterHat04: 'n',
+  bob: 'f', bun: 'f', curly: 'n', curvy: 'f', dreads: 'n', frida: 'f', fro: 'n', froBand: 'f',
+  longButNotTooLong: 'f', miaWallace: 'f', shavedSides: 'm', straight02: 'f', straight01: 'f',
+  straightAndStrand: 'f', dreads01: 'n', dreads02: 'n', frizzle: 'n', shaggy: 'm', shaggyMullet: 'm',
+  shortCurly: 'm', shortFlat: 'm', shortRound: 'm', shortWaved: 'm', sides: 'm', theCaesar: 'm',
+  theCaesarAndSidePart: 'm', bigHair: 'f'
+};
+const HEADWEAR = new Set(['hat', 'hijab', 'turban', 'winterHat1', 'winterHat02', 'winterHat03', 'winterHat04']);
+const CASUAL_HEADWEAR = new Set(['hat', 'winterHat1', 'winterHat02', 'winterHat03', 'winterHat04']);
+// hijab/turban drape around the neck/shoulders — excluded below teen, see
+// sim_patient.html's copy for why.
+const FACE_FRAMING_HEADWEAR = new Set(['hijab', 'turban']);
+function parseAgeYears(age) {
+  if (age == null) return null;
+  if (typeof age === 'string') {
+    if (/newborn/i.test(age)) return 0;
+    const m = age.match(/(\d+(?:\.\d+)?)\s*month/i);
+    if (m) return parseFloat(m[1]) / 12;
+    const n = parseFloat(age);
+    return Number.isFinite(n) ? n : null;
+  }
+  return Number.isFinite(age) ? age : null;
+}
+function ageBandFromMeta(age) {
+  const years = parseAgeYears(age);
+  if (years == null) return 'adult';
+  if (years < 1) return 'infant';
+  if (years < 5) return 'toddler';
+  if (years < 12) return 'child';
+  if (years < 18) return 'teen';
+  return 'adult';
+}
+function greyWeight(age) {
+  const years = parseAgeYears(age);
+  if (years == null) return 0;
+  return Math.max(0, Math.min(1, (years - 40) / 35));
+}
+// Continuous function of exact age in years — see sim_patient.html's copy
+// for the full rationale (reaches adult value exactly at 18, no more
+// banded jumps).
+function ageRamp(years, atZero, atEighteen) {
+  if (years == null) return atEighteen;
+  const t = Math.max(0, Math.min(1, years / 18));
+  return atZero + (atEighteen - atZero) * t;
+}
+const AGE_SCALE_AT_ZERO = 0.94;
+const EYE_SCALE_X_AT_ZERO = 1.1;
+const EYE_SCALE_Y_AT_ZERO = 1.6;
+const FACE_LOWER_OFFSET_AT_ZERO = 12;
+const MOUTH_LOWER_OFFSET_AT_ZERO = 6.5;
+const HEAD_BULGE_RX_AT_ZERO = 1.16;
+const HEAD_BULGE_RY_AT_ZERO = 1.19;
+const HAIR_SCALE_AT_ZERO = 1;
+const HAIR_OFFSET_Y_AT_ZERO = -2;
+const ADULT_ONLY_HAIR = new Set(['theCaesar', 'theCaesarAndSidePart', 'shavedSides', 'sides']);
+const CLOTHES_COLOURS = ['#3b6ea5', '#22577a', '#5c4b8a', '#7a2e2e', '#2f6d4f', '#4a4a4a', '#8a5a2b', '#1a1a1a', '#c9a227', '#6b4c9a', '#b0392f', '#3d3d3d'];
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+function weightedPick(keys, weightOf, h) {
+  const weights = keys.map(weightOf);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let target = ((h % 100000) / 100000) * total;
+  for (let i = 0; i < keys.length; i++) {
+    target -= weights[i];
+    if (target <= 0) return keys[i];
+  }
+  return keys[keys.length - 1];
+}
+function buildAvatarBase(seed, skinHex, gender, age) {
+  avatarBuild.skin = skinHex || avatarBuild.skin;
+  avatarBuild.ageBand = ageBandFromMeta(age);
+  avatarBuild.ageYears = parseAgeYears(age);
+  const s = String(seed || 'default');
+  const allowAdultHair = avatarBuild.ageBand === 'teen' || avatarBuild.ageBand === 'adult';
+  const hairKeys = Object.keys(AvatarAssets.top).filter(k =>
+    (allowAdultHair || !ADULT_ONLY_HAIR.has(k)) && (allowAdultHair || !FACE_FRAMING_HEADWEAR.has(k))
+  );
+  const browKeys = Object.keys(AvatarAssets.eyebrows);
+  const g = (gender || '').toLowerCase();
+  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.5 } : g === 'female' ? { f: 3, n: 1.5, m: 0.5 } : { m: 1, n: 1, f: 1 };
+  avatarBuild.hairStyle = avatarBuild.ageBand === 'infant' ? null : weightedPick(hairKeys, k => {
+    const base = leanWeights[HAIR_STYLE_LEAN[k] || 'n'];
+    return CASUAL_HEADWEAR.has(k) ? base * 0.3 : base;
+  }, hashStr(s));
+  const gw = HEADWEAR.has(avatarBuild.hairStyle) ? 0 : greyWeight(age);
+  avatarBuild.hairColour = weightedPick(HAIR_COLOURS, c => GREY_HAIR_COLOURS.has(c) ? (0.15 + gw * 10) : 1, hashStr(s + '|hair'));
+  avatarBuild.eyebrowStyle = browKeys[hashStr(s + '|brow') % browKeys.length];
+  avatarBuild.clothesColour = CLOTHES_COLOURS[hashStr(s + '|clothescolor') % CLOTHES_COLOURS.length];
+  renderAvatarBuild();
+  syncBuildSelectsToState();
+}
+function applyAgeScale() {
+  const years = avatarBuild.ageYears;
+  const s = ageRamp(years, AGE_SCALE_AT_ZERO, 1);
+  document.getElementById('av-scale-group').setAttribute('transform', `translate(140,36) scale(${s}) translate(-140,-36)`);
+  const dy = ageRamp(years, FACE_LOWER_OFFSET_AT_ZERO, 0);
+  const mouthDy = ageRamp(years, MOUTH_LOWER_OFFSET_AT_ZERO, 0);
+  const eyeScaleX = ageRamp(years, EYE_SCALE_X_AT_ZERO, 1);
+  const eyeScaleY = ageRamp(years, EYE_SCALE_Y_AT_ZERO, 1);
+  document.getElementById('av-eyebrows').setAttribute('transform', `translate(76 ${82 + dy})`);
+  document.getElementById('av-mouth').setAttribute('transform', `translate(78 ${134 + mouthDy})`);
+  document.getElementById('av-lip-cyanosis').setAttribute('transform', `translate(78 ${134 + mouthDy})`);
+  document.getElementById('av-eyes').setAttribute('transform', `translate(76 ${90 + dy}) translate(56,22) scale(${eyeScaleX},${eyeScaleY}) translate(-56,-22)`);
+  const bulge = document.getElementById('av-head-bulge');
+  bulge.setAttribute('rx', (56 * ageRamp(years, HEAD_BULGE_RX_AT_ZERO, 1)).toFixed(1));
+  bulge.setAttribute('ry', (56 * ageRamp(years, HEAD_BULGE_RY_AT_ZERO, 1)).toFixed(1));
+  const hairScale = ageRamp(years, HAIR_SCALE_AT_ZERO, 1);
+  const hairOffsetY = ageRamp(years, HAIR_OFFSET_Y_AT_ZERO, 0);
+  document.getElementById('av-top').setAttribute('transform', `translate(132,92) scale(${hairScale.toFixed(3)}) translate(-132,-92) translate(-1,${hairOffsetY.toFixed(1)})`);
+}
+function renderAvatarBuild() {
+  document.getElementById('av-top').innerHTML = avatarBuild.hairStyle ? AvatarAssets.top[avatarBuild.hairStyle].replace(/__HAIRCOLOR__/g, avatarBuild.hairColour) : '';
+  setEyebrows();
+  document.getElementById('av-eyes-closed-overlay').innerHTML = AvatarAssets.eyes.closed;
+  document.getElementById('av-clothes-static-path').setAttribute('fill', avatarBuild.clothesColour);
+  document.getElementById('av-chest-path').setAttribute('fill', avatarBuild.clothesColour);
+  applyAgeScale();
+  applySkinTint({ pallorFrac: 0, flushFrac: 0, skinCyanosisFrac: 0, skinColour: 'normal', skinTintAmount: 0 });
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function blendHex(baseHex, targetHex, t) {
+  const [br, bg, bb] = hexToRgb(baseHex), [tr, tg, tb] = hexToRgb(targetHex);
+  const r = Math.round(br + (tr - br) * t), g = Math.round(bg + (tg - bg) * t), b = Math.round(bb + (tb - bb) * t);
+  return `rgb(${r},${g},${b})`;
+}
+// HSL composition — see sim_patient.html's copy of these functions for the
+// full rationale (complementary-hue RGB blends grey out instead of reading
+// as blue/red, so pallor/flush/cyanosis are hue rotations on the patient's
+// own base tone instead of a blend toward a fixed hex).
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0, s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+    if (h < 0) h += 360;
+  }
+  return [h, s, l];
+}
+function hslToRgb([h, s, l]) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let rgb1;
+  if (h < 60) rgb1 = [c, x, 0];
+  else if (h < 120) rgb1 = [x, c, 0];
+  else if (h < 180) rgb1 = [0, c, x];
+  else if (h < 240) rgb1 = [0, x, c];
+  else if (h < 300) rgb1 = [x, 0, c];
+  else rgb1 = [c, 0, x];
+  return rgb1.map(v => Math.round((v + m) * 255));
+}
+function rotateHueToward(h, targetH, amount) {
+  const diff = ((targetH - h + 540) % 360) - 180;
+  return (h + diff * amount + 360) % 360;
+}
+function computeSkinFill(app) {
+  let [h, s, l] = rgbToHsl(hexToRgb(avatarBuild.skin));
+  if (app.pallorFrac > 0) {
+    s *= (1 - app.pallorFrac * 0.75);
+    l = Math.min(1, l + app.pallorFrac * 0.10);
+  }
+  if (app.flushFrac > 0) {
+    h = rotateHueToward(h, 355, app.flushFrac * 0.55);
+    s = Math.min(1, s + app.flushFrac * 0.3);
+  }
+  let [r, g, b] = hslToRgb([h, s, l]);
+  if (app.skinColour === 'mottled') {
+    const [tr, tg, tb] = hexToRgb('#8a7590');
+    const t = app.skinTintAmount;
+    r = Math.round(r + (tr - r) * t); g = Math.round(g + (tg - g) * t); b = Math.round(b + (tb - b) * t);
+  }
+  if (app.skinCyanosisFrac > 0) {
+    // Not a hue rotation — see sim_patient.html's copy for why (skin-orange
+    // and cyanotic blue are near-complementary, so rotating between them
+    // passes through red/green at partial severity). Desaturate first, then
+    // blend toward a genuinely blue target.
+    const f = app.skinCyanosisFrac;
+    [h, s, l] = rgbToHsl([r, g, b]);
+    s *= (1 - f * 0.03);
+    l = Math.max(0, l - f * 0);
+    [r, g, b] = hslToRgb([h, s, l]);
+    const [tr, tg, tb] = hexToRgb('#2f5f9e');
+    const t = f * 0.6;
+    r = Math.round(r + (tr - r) * t); g = Math.round(g + (tg - g) * t); b = Math.round(b + (tb - b) * t);
+  }
+  return `rgb(${r},${g},${b})`;
+}
+function applySkinTint(app) {
+  const fill = computeSkinFill(app);
+  document.getElementById('av-head-path').setAttribute('fill', fill);
+  document.getElementById('av-head-bulge').setAttribute('fill', fill);
+  document.getElementById('av-eye-l-lid').setAttribute('fill', fill);
+  document.getElementById('av-eye-r-lid').setAttribute('fill', fill);
+}
+function setLipCyanosis(frac) {
+  const el = document.querySelector('#av-lip-cyanosis > ellipse');
+  el.style.opacity = Math.max(0, Math.min(1, frac || 0)).toFixed(2);
+}
+function setEyeOpenness(level) {
+  const showOpen = level !== 'closed';
+  const showLid = level === 'droopy';
+  ['l', 'r'].forEach(side => {
+    document.getElementById(`av-eye-${side}-sclera`).style.display = showOpen ? '' : 'none';
+    document.getElementById(`av-eye-${side}-pupil`).style.display = showOpen ? '' : 'none';
+    document.getElementById(`av-eye-${side}-lid`).style.display = showLid ? '' : 'none';
+  });
+  document.getElementById('av-eyes-closed-overlay').style.display = showOpen ? 'none' : '';
+}
+let _restingEyeLevel = 'open';
+let _blinkTimer = null;
+function scheduleNextBlink() {
+  clearTimeout(_blinkTimer);
+  _blinkTimer = setTimeout(doBlinkAuto, 2500 + Math.random() * 3500);
+}
+function doBlinkAuto() { doBlink(); scheduleNextBlink(); }
+function doBlink() {
+  if (_restingEyeLevel === 'open') {
+    setEyeOpenness('closed');
+    setTimeout(() => setEyeOpenness(_restingEyeLevel), 130);
+  }
+}
+scheduleNextBlink();
+
+let _lastRR = 16;
+let _wobAmplitude = 0;
+let _breathAngle = 0;
+let _lastMotionTs = null;
+function idleMotionLoop(tsMs) {
+  const dt = _lastMotionTs == null ? 0 : tsMs - _lastMotionTs;
+  _lastMotionTs = tsMs;
+  if (_lastRR > 0) {
+    const periodMs = 60000 / _lastRR;
+    _breathAngle = (_breathAngle + (dt / periodMs) * 2 * Math.PI) % (2 * Math.PI);
+  }
+  const chestGroup = document.getElementById('av-chest-group');
+  const faceGroup = document.getElementById('av-face-group');
+  const breathPhase = _lastRR > 0 ? Math.sin(_breathAngle) : 0;
+  if (chestGroup) {
+    const chestY = breathPhase * (3 + _wobAmplitude * 1.5);
+    chestGroup.setAttribute('transform', `translate(8, ${chestY.toFixed(2)})`);
+  }
+  if (faceGroup) {
+    const headY = breathPhase * (0.4 + _wobAmplitude * 1.6);
+    faceGroup.setAttribute('transform', `translate(8, ${headY.toFixed(2)})`);
+  }
+  requestAnimationFrame(idleMotionLoop);
+}
+requestAnimationFrame(idleMotionLoop);
+
+function setSweat(moistureState, frac) {
+  const group = document.getElementById('av-sweat');
+  if (moistureState === 'dry') { group.style.display = 'none'; return; }
+  group.style.display = '';
+  const f = Math.max(0, Math.min(1, frac || 0));
+  const opacity = 0.4 + f * 0.6;
+  const scale = 0.7 + f * 0.5;
+  const setDrop = (id, show) => {
+    const el = document.getElementById(id);
+    el.style.opacity = show ? opacity.toFixed(2) : '0';
+    el.style.transform = `scale(${scale.toFixed(2)})`;
+  };
+  setDrop('av-sweat-r', true);
+  setDrop('av-sweat-l', f >= 0.35);
+  setDrop('av-sweat-c', f >= 0.65);
+}
+// See sim_patient.html's copy for why this maps straight to the literal
+// asset keys — an earlier pass here mis-detected 'grimace'/'serious' as
+// missing and substituted the wrong shapes.
+const MOUTH_VARIANT = { neutral: 'default', mild: 'serious', distress: 'concerned', grimace: 'grimace', slack: 'sad', talkOpen: 'screamOpen',
+  angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief' };
+function setMouth(stateKey) {
+  const variant = MOUTH_VARIANT[stateKey] || MOUTH_VARIANT.neutral;
+  document.getElementById('av-mouth').innerHTML = AvatarAssets.mouth[variant];
+}
+const MOOD_EYEBROW = { angry: 'angryNatural', agitated: 'frownNatural', tearful: 'sadConcernedNatural', anxious: 'sadConcernedNatural', confused: 'upDownNatural' };
+function setEyebrows(styleKey) {
+  document.getElementById('av-eyebrows').innerHTML = AvatarAssets.eyebrows[styleKey || avatarBuild.eyebrowStyle];
+}
+let patientMood = 'calm';
+let _restingMouthState = 'neutral';
+let _isSpeaking = false;
+function updateAvatarFace(v) {
+  const app = SimEngine.getAppearanceState(v);
+  let eyeLevel;
+  if (app.gcsE <= 2) eyeLevel = 'closed';
+  else if (app.gcsE === 3) eyeLevel = document.getElementById('chk-talking').checked ? 'open' : 'droopy';
+  else eyeLevel = 'open';
+  _restingEyeLevel = eyeLevel;
+  setEyeOpenness(eyeLevel);
+  _lastRR = Number.isFinite(v.RR) ? v.RR : _lastRR;
+  _wobAmplitude = Math.min(1, (typeof app.wob === 'number' ? app.wob : 4) / 4);
+  applySkinTint(app);
+  setLipCyanosis(app.lipCyanosisFrac);
+  setSweat(app.moisture, app.moistureFrac);
+  const moodActive = !app.unresponsive && patientMood !== 'calm';
+  setEyebrows(moodActive ? MOOD_EYEBROW[patientMood] : null);
+  let mouthState;
+  if (app.unresponsive) mouthState = 'slack';
+  else if (app.pain >= 7) mouthState = 'grimace';
+  else if (app.distressLevel >= 2) mouthState = 'distress';
+  else if (moodActive) mouthState = patientMood;
+  else if (app.distressLevel === 1 || app.pain >= 1) mouthState = 'mild';
+  else mouthState = 'neutral';
+  _restingMouthState = mouthState;
+  if (!_isSpeaking) setMouth(mouthState);
+}
+let _talkAnimTimer = null;
+function toggleTalkDemo() {
+  const btn = document.getElementById('btn-talk');
+  if (_talkAnimTimer) {
+    clearInterval(_talkAnimTimer); _talkAnimTimer = null; _isSpeaking = false;
+    setMouth(_restingMouthState);
+    btn.textContent = 'Start talk animation';
+  } else {
+    _isSpeaking = true;
+    let open = false;
+    _talkAnimTimer = setInterval(() => { open = !open; setMouth(open ? 'talkOpen' : _restingMouthState); }, 160);
+    btn.textContent = 'Stop talk animation';
+  }
+}
+
+// --- Lab UI wiring (not part of sim_patient.html) -------------------------
+function readVitals() {
+  const g = id => parseFloat(document.getElementById(id).value);
+  return { HR: g('r-HR'), RR: g('r-RR'), SpO2: g('r-SpO2'), BPsys: g('r-BPsys'), pain: g('r-pain'), gcsE: g('r-gcsE'), gcsV: g('r-gcsV'), gcsM: g('r-gcsM') };
+}
+function onSlider() {
+  ['HR','RR','SpO2','BPsys','pain','gcsE','gcsV','gcsM'].forEach(k => {
+    document.getElementById('v-' + k).textContent = document.getElementById('r-' + k).value;
+  });
+  patientMood = document.getElementById('sel-mood').value;
+  const v = readVitals();
+  document.getElementById('v-gcsTotal').textContent = v.gcsE + v.gcsV + v.gcsM;
+  updateAvatarFace(v);
+}
+function setSliders(vals) {
+  Object.entries(vals).forEach(([k, val]) => {
+    const el = document.getElementById('r-' + k);
+    if (el) el.value = val;
+  });
+  onSlider();
+}
+function applyPreset(name) {
+  const presets = {
+    normal:       { HR: 80, RR: 16, SpO2: 98, BPsys: 120, pain: 0, gcsE: 4, gcsV: 5, gcsM: 6 },
+    mild:         { HR: 105, RR: 22, SpO2: 94, BPsys: 105, pain: 3, gcsE: 4, gcsV: 5, gcsM: 6 },
+    severe:       { HR: 135, RR: 30, SpO2: 82, BPsys: 82, pain: 5, gcsE: 3, gcsV: 4, gcsM: 6 },
+    pain:         { HR: 110, RR: 20, SpO2: 97, BPsys: 130, pain: 10, gcsE: 4, gcsV: 5, gcsM: 6 },
+    unresponsive: { HR: 45, RR: 6, SpO2: 85, BPsys: 65, pain: 0, gcsE: 1, gcsV: 1, gcsM: 4 }
+  };
+  setSliders(presets[name]);
+}
+function onBuildChange() {
+  const seed = document.getElementById('txt-seed').value;
+  avatarBuild.hairStyle = document.getElementById('sel-hair').value || null;
+  avatarBuild.hairColour = document.getElementById('sel-haircolor').value;
+  avatarBuild.eyebrowStyle = document.getElementById('sel-brow').value;
+  avatarBuild.clothesColour = document.getElementById('sel-clothescolor').value;
+  renderAvatarBuild();
+}
+function currentGender() {
+  return document.getElementById('sel-patient-gender').value || null;
+}
+function currentAge() {
+  const v = document.getElementById('sel-patient-age').value;
+  return v || null;
+}
+function rebuildWithSameSeed() {
+  buildAvatarBase(document.getElementById('txt-seed').value, avatarBuild.skin, currentGender(), currentAge());
+}
+function randomSeed() {
+  document.getElementById('txt-seed').value = 'seed-' + Math.random().toString(36).slice(2, 8);
+  buildAvatarBase(document.getElementById('txt-seed').value, avatarBuild.skin, currentGender(), currentAge());
+}
+function syncBuildSelectsToState() {
+  document.getElementById('sel-hair').value = avatarBuild.hairStyle || '';
+  document.getElementById('sel-haircolor').value = avatarBuild.hairColour;
+  document.getElementById('sel-brow').value = avatarBuild.eyebrowStyle;
+  document.getElementById('sel-clothescolor').value = avatarBuild.clothesColour;
+  refreshSkinSwatchActive();
+}
+function refreshSkinSwatchActive() {
+  document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.hex === avatarBuild.skin));
+}
+function initSwatches() {
+  const wrap = document.getElementById('skin-swatches');
+  SKIN_TONE_SWATCHES.forEach(hex => {
+    const el = document.createElement('div');
+    el.className = 'swatch';
+    el.style.background = hex;
+    el.dataset.hex = hex;
+    el.onclick = () => { avatarBuild.skin = hex; renderAvatarBuild(); refreshSkinSwatchActive(); };
+    wrap.appendChild(el);
+  });
+}
+function initSelects() {
+  const hairSel = document.getElementById('sel-hair');
+  hairSel.appendChild(new Option('(none — bald)', ''));
+  Object.keys(AvatarAssets.top).forEach(k => hairSel.appendChild(new Option(k, k)));
+  const colorSel = document.getElementById('sel-haircolor');
+  HAIR_COLOURS.forEach(hex => colorSel.appendChild(new Option(hex, hex)));
+  const browSel = document.getElementById('sel-brow');
+  Object.keys(AvatarAssets.eyebrows).forEach(k => browSel.appendChild(new Option(k, k)));
+  const clothesColorSel = document.getElementById('sel-clothescolor');
+  CLOTHES_COLOURS.forEach(hex => clothesColorSel.appendChild(new Option(hex, hex)));
+  const eyesSel = document.getElementById('sel-eyes-browse');
+  eyesSel.appendChild(new Option('(vitals-driven)', ''));
+  Object.keys(AvatarAssets.eyes).forEach(k => eyesSel.appendChild(new Option(k, k)));
+  const mouthSel = document.getElementById('sel-mouth-browse');
+  mouthSel.appendChild(new Option('(vitals-driven)', ''));
+  Object.keys(AvatarAssets.mouth).forEach(k => mouthSel.appendChild(new Option(k, k)));
+}
+// Eyes are normally the custom sclera/pupil elements built into the markup
+// (see setEyeOpenness()), not a raw asset-variant swap — browsing a raw
+// variant here temporarily replaces #av-eyes' contents entirely, so
+// switching back needs to restore that base markup before vitals-driven
+// rendering (which expects av-eye-l-sclera etc to still exist) resumes.
+let _eyesBaseHTML = null;
+function browseEyes() {
+  const key = document.getElementById('sel-eyes-browse').value;
+  if (!_eyesBaseHTML) _eyesBaseHTML = document.getElementById('av-eyes').innerHTML;
+  if (key) {
+    document.getElementById('av-eyes').innerHTML = AvatarAssets.eyes[key];
+  } else {
+    document.getElementById('av-eyes').innerHTML = _eyesBaseHTML;
+    onSlider();
+  }
+}
+function browseMouth() {
+  const key = document.getElementById('sel-mouth-browse').value;
+  if (key) document.getElementById('av-mouth').innerHTML = AvatarAssets.mouth[key];
+  else onSlider();
+}
+function refreshSource() {
+  document.getElementById('svg-source').value = document.getElementById('av-svg').outerHTML
+    .replace(/></g, '>\n<');
+}
+
+initSwatches();
+initSelects();
+buildAvatarBase('lab-seed-1', SKIN_TONE_SWATCHES[2]);
+onSlider();
+refreshSource();
+</script>
+</body>
+</html>

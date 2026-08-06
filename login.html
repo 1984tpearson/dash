@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Paramedic Assessment Tools — Login</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2L4 9V16C4 22.6 9.4 28.7 16 30C22.6 28.7 28 22.6 28 16V9L16 2Z' fill='%231C3A6E'/%3E%3Cpath d='M15 15H12V17H15V20H17V17H20V15H17V12H15V15Z' fill='white'/%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #122849;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 36px 28px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  text-align: center;
+}
+.logo {
+  width: 56px; height: 56px;
+  background: #E8921A;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.logo svg { width: 32px; height: 32px; }
+h1 { font-size: 22px; font-weight: 800; color: #1C3A6E; margin-bottom: 4px; }
+.subtitle { font-size: 13px; color: #6C7A89; margin-bottom: 20px; }
+.disclaimer {
+  background: #FEF5E7; border: 1px solid #F5CBA7;
+  border-radius: 8px; padding: 10px 12px;
+  margin-bottom: 24px;
+  font-size: 11px; color: #7D6608; line-height: 1.5; text-align: left;
+}
+.google-btn {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 13px 16px;
+  border: 1px solid #D5D8DC;
+  border-radius: 10px;
+  background: white;
+  font-size: 15px; font-weight: 600; color: #1A1A2E;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  transition: background 0.15s;
+}
+.google-btn:hover { background: #f5f5f5; }
+.status { margin-top: 14px; font-size: 13px; color: #6C7A89; min-height: 20px; }
+.webview-warning {
+  display: none;
+  background: #FDECEA; border: 1px solid #F5B7B1;
+  border-radius: 8px; padding: 12px 14px;
+  margin-bottom: 20px;
+  font-size: 12.5px; color: #7B241C; line-height: 1.5; text-align: left;
+}
+.webview-warning strong { display: block; margin-bottom: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 2L4 7V12C4 16.55 7.84 20.74 12 22C16.16 20.74 20 16.55 20 12V7L12 2Z" fill="white"/>
+      <path d="M11 11H9V13H11V15H13V13H15V11H13V9H11V11Z" fill="#E8921A"/>
+    </svg>
+  </div>
+  <h1>Paramedic Assessment Tools</h1>
+  <p class="subtitle">Sign in to continue</p>
+  <div class="webview-warning" id="webview-warning">
+    <strong>⚠ Open in your browser to sign in</strong>
+    Google blocks sign-in from in-app browsers (Messenger, Instagram, TikTok, etc.). Tap the ••• or share icon above and choose "Open in Safari" / "Open in Browser", then try again.
+  </div>
+  <button class="google-btn" id="google-signin-btn" onclick="signIn()" style="margin-top:8px">
+    <svg width="20" height="20" viewBox="0 0 48 48">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+    Sign in with Google
+  </button>
+  <button class="google-btn" id="guest-btn" onclick="continueAsGuest()" style="margin-top:10px;border-style:dashed;color:#6C7A89;box-shadow:none;">
+    👀 Continue as Guest
+  </button>
+  <div class="disclaimer" style="margin-top:14px;margin-bottom:0;">Guests can view scenarios and join quizzes as a player, but can't generate content or save anything.</div>
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://befsjenbaruxqrntuhpn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
+const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Detect known in-app browsers (Messenger, Instagram, Facebook, TikTok, etc.)
+// Google's OAuth blocks sign-in from these WebViews with a 403 disallowed_useragent
+// error, so warn up front instead of letting the person hit that dead end.
+function isInAppBrowser() {
+  const ua = navigator.userAgent || navigator.vendor || window.opera || '';
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|TikTok|musical_ly|BytedanceWebview|Snapchat|LinkedInApp|Pinterest|Twitter/i.test(ua);
+}
+if (isInAppBrowser()) {
+  document.getElementById('webview-warning').style.display = 'block';
+  document.getElementById('google-signin-btn').style.display = 'none';
+}
+
+// Where to go after login — passed as ?redirect=, remembered across the
+// Google round-trip via sessionStorage (since the OAuth callback always
+// comes back to THIS page, not the final destination — see below).
+const params = new URLSearchParams(window.location.search);
+const redirectParam = params.get('redirect');
+if (redirectParam) sessionStorage.setItem('av_login_redirect', redirectParam);
+
+function destinationUrl() {
+  const stored = sessionStorage.getItem('av_login_redirect') || 'index.html';
+  return new URL(stored, window.location.href).href;
+}
+
+// Always tell Supabase to send the OAuth callback back to login.html itself.
+// login.html is the one URL guaranteed to be in the Supabase Redirect URLs
+// allow-list, so this avoids depending on wildcard matching for every page.
+const oauthCallback = window.location.origin + window.location.pathname;
+
+// If already logged in, go straight to the intended destination
+(async () => {
+  const { data: { session } } = await _supabase.auth.getSession();
+  if (session && !session.user.is_anonymous) {
+    localStorage.removeItem('av_guest_mode');
+    const dest = destinationUrl();
+    sessionStorage.removeItem('av_login_redirect');
+    window.location.href = dest;
+  }
+})();
+
+async function signIn() {
+  localStorage.removeItem('av_guest_mode'); // real sign-in supersedes any prior guest session
+  document.getElementById('status').textContent = 'Redirecting to Google…';
+  await _supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: oauthCallback }
+  });
+}
+
+// Guests don't get a Supabase session at all for browsing — scenario reads are
+// already public via RLS, so this is just a client-side flag pages check to
+// skip the "please sign in" gate. A real (anonymous) Supabase session is only
+// created later, on demand, if a guest tries to join a quiz as a player —
+// see quiz_player.html.
+function continueAsGuest() {
+  localStorage.setItem('av_guest_mode', 'true');
+  window.location.href = destinationUrl();
+}
+</script>
+</body>
+</html>
