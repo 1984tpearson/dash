@@ -1,12 +1,17 @@
-# AV — Paramedic Training Simulation Tools
+# dash — Paramedic Training Simulation Tools
 
 A collection of standalone HTML/JS tools for EMS/paramedic training. No
 build step — everything is loaded either as static files (GitHub Pages,
 auto-deploys on push to `main` via `.github/workflows/static.yml`) or as
-absolute `https://1984tpearson.github.io/AV/...` `<script src>` references
+absolute `https://1984tpearson.github.io/dash/...` `<script src>` references
 between the tools themselves (not relative paths — matters when testing
 locally, since a plain `python3 -m http.server` won't serve those cross-file
 references without intercepting/redirecting them).
+
+This repo is a fresh duplicate of the old `AV` repo (single-commit history,
+duplicated deliberately to shed the Ambulance Victoria branding/name — see
+the Gotchas entry below on remaining AV references still baked into the
+content itself).
 
 Backend is Supabase (`sim_sessions`, `scenarios`, `scenario_sim_timelines`
 tables; anon key is hardcoded client-side, this is a training tool not a
@@ -582,6 +587,23 @@ editing.
 
 ## Gotchas
 
+- **This repo is being de-branded from Ambulance Victoria (AV) over time —
+  keep an eye out, don't go hunting.** No need to actively search for these,
+  but if you happen to notice a leftover "AV" / "Ambulance Victoria"
+  reference while working on something else nearby, flag it to Tim rather
+  than silently leaving it (or silently fixing it, if it's a trivial cosmetic
+  string with no coupling to anything else). Two known categories already
+  identified and NOT yet fixed, so don't re-report these specifically unless
+  asked to work on them: (1) `nav.js`'s `AV_ROLES`/`AV_LEVELS` taxonomy
+  (`NonAV`, MICA/ALS/etc — real AV rank structure) and internal `av_`-
+  prefixed identifiers (`AVNav`, `av_theme`, `av_role` Supabase column) —
+  slated to become a swappable "service pack" rather than hardcoded; (2)
+  `generator.html`'s AI system prompt and `cpg_packages_combined.js` /
+  `category_data.js` — the latter is verbatim Ambulance Victoria ALS-MICA
+  Clinical Practice Guideline content (see that file's own header comment),
+  the actual clinical backbone of scenario generation, also slated to become
+  a loadable pack rather than the only option. Don't edit either of those in
+  passing — they're substantive, planned work, not quick fixes.
 - **Backticks inside a prompt string break the JS parse.** The AI system
   prompts are themselves JS template literals (backtick-delimited) — never
   use `` ` `` for markdown-style emphasis inside that text (use single
