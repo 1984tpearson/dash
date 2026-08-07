@@ -342,10 +342,11 @@
     + '.avnav-links{padding:6px 0;border-bottom:1px solid var(--border);}'
     + '.avnav-link{display:flex;align-items:center;gap:10px;padding:12px 16px;font-size:13px;font-weight:600;color:var(--text);text-decoration:none;cursor:pointer;min-height:48px;}'
     + '.avnav-link:active{background:var(--light);}'
-    + '.avnav-link .avnav-icon{width:20px;text-align:center;flex-shrink:0;}'
     + '.avnav-bottom{margin-top:auto;padding:12px;border-top:2px solid var(--border);background:var(--light);flex-shrink:0;}'
     + '.avnav-signout-btn{width:100%;padding:12px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;background:var(--red);color:white;min-height:48px;}'
-    + '.avnav-signout-btn:active{opacity:0.85;}';
+    + '.avnav-signout-btn:active{opacity:0.85;}'
+    + '.avnav-moretools-btn{display:block;width:100%;box-sizing:border-box;text-align:center;padding:12px;margin-bottom:10px;background:var(--white);border:1px solid var(--border);border-radius:8px;font-weight:700;font-size:13px;color:var(--text);text-decoration:none;cursor:pointer;min-height:48px;line-height:24px;}'
+    + '.avnav-moretools-btn:active{background:var(--light);}';
 
   NAV_CSS += ''
     + '.avnav-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:950;align-items:center;justify-content:center;padding:16px;}'
@@ -414,26 +415,26 @@
           '<button class="avnav-settings-btn" id="avnav-settings-btn" onclick="AVNav.openSettings()" title="Settings">⚙</button>' +
         '</div>' +
         '<div class="avnav-links">' +
-          '<a class="avnav-link" href="index.html"><span class="avnav-icon">🏠</span> Home</a>' +
-          '<a class="avnav-link" href="scenario.html"><span class="avnav-icon">⚡</span> DASH</a>' +
+          '<a class="avnav-link" href="scenario.html">Home</a>' +
         '</div>' +
         '<div class="avnav-links" id="avnav-guest-notice" style="display:none">' +
-          '<div style="padding:12px 16px;font-size:12px;color:var(--grey);line-height:1.5">👀 Browsing as a guest — view only. Sign in with Google to save, rate, or generate content.</div>' +
+          '<div style="padding:12px 16px;font-size:12px;color:var(--grey);line-height:1.5">Browsing as a guest — view only. Sign in with Google to save, rate, or generate content.</div>' +
         '</div>' +
         '<div class="avnav-links" id="avnav-member-links">' +
-          '<div class="avnav-link" id="avnav-myscenarios-link" onclick="AVNav.openMyScenarios()"><span class="avnav-icon">📁</span> My Scenarios</div>' +
-          '<div class="avnav-link" id="avnav-managemine-link" onclick="AVNav.openManageMine()"><span class="avnav-icon">⚙</span> Manage My Scenarios</div>' +
-          '<div class="avnav-link" id="avnav-users-link" style="display:none" onclick="AVNav.openUsers()"><span class="avnav-icon">👥</span> Users</div>' +
-          '<div class="avnav-link" id="avnav-usage-link" style="display:none" onclick="AVNav.openUsageLog()"><span class="avnav-icon">💲</span> Usage &amp; Costs</div>' +
-          '<a class="avnav-link" id="avnav-cpg-link" href="cpg_editor.html" style="display:none"><span class="avnav-icon">📖</span> CPG Editor</a>' +
-          '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none"><span class="avnav-icon">🛠</span> Sim Config</a>' +
+          '<div class="avnav-link" id="avnav-myscenarios-link" onclick="AVNav.openMyScenarios()">My Scenarios</div>' +
+          '<div class="avnav-link" id="avnav-managemine-link" onclick="AVNav.openManageMine()">Manage My Scenarios</div>' +
+          '<div class="avnav-link" id="avnav-users-link" style="display:none" onclick="AVNav.openUsers()">Users</div>' +
+          '<div class="avnav-link" id="avnav-usage-link" style="display:none" onclick="AVNav.openUsageLog()">Usage &amp; Costs</div>' +
+          '<a class="avnav-link" id="avnav-cpg-link" href="cpg_editor.html" style="display:none">CPG Editor</a>' +
+          '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none">Sim Config</a>' +
         '</div>' +
         '<div class="avnav-bottom">' +
+          '<a class="avnav-moretools-btn" href="index.html">More Tools</a>' +
           '<div id="avnav-pack-select-wrap" style="display:none;margin-bottom:10px">' +
-            '<label style="display:block;font-size:10px;font-weight:700;color:var(--grey);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">🏥 Service Pack</label>' +
+            '<label style="display:block;font-size:10px;font-weight:700;color:var(--grey);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Service Pack</label>' +
             '<select id="avnav-pack-select" onchange="AVNav.setServicePack(this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--white);color:var(--text)">' + servicePackOptionsHtml() + '</select>' +
           '</div>' +
-          '<button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">⎋ Sign out</button>' +
+          '<button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">Sign out</button>' +
           '<div id="avnav-copyright" style="display:none;font-size:10px;color:var(--grey);line-height:1.4;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"></div>' +
         '</div>' +
       '</div>' +
@@ -539,14 +540,14 @@
     if (guestNotice) guestNotice.style.display = guest ? 'block' : 'none';
     var signoutBtn = document.getElementById('avnav-signout-btn');
     if (signoutBtn) {
-      signoutBtn.textContent = guest ? '🔑 Sign in with Google' : '⎋ Sign out';
+      signoutBtn.textContent = guest ? 'Sign in with Google' : 'Sign out';
       signoutBtn.onclick = guest
         ? function () { window.location.href = 'login.html?redirect=' + encodeURIComponent(window.location.pathname.split('/').pop() || 'index.html'); }
         : function () { signOut(); };
     }
     if (guest) {
       var avatarEl = document.getElementById('avnav-avatar');
-      if (avatarEl) avatarEl.textContent = '👀';
+      if (avatarEl) avatarEl.textContent = 'G';
     } else {
       renderAvatarInto('avnav-avatar', id);
     }
