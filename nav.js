@@ -131,18 +131,31 @@
     el.style.display = html ? 'block' : 'none';
     el.innerHTML = html;
   }
+  // Resolves which role/level to show as selected for a given pack: the
+  // per-pack memory in profiles.role_by_pack if this profile has one for
+  // that pack, else whatever the flat av_role/level columns currently
+  // hold (first time seeing this pack), else blank. See saveSettings()
+  // for where role_by_pack gets written.
+  function roleLevelForPack(packId) {
+    var perPack = _profile && _profile.role_by_pack && _profile.role_by_pack[packId];
+    if (perPack) return { role: perPack.role || '', level: perPack.level || '' };
+    return { role: (_profile && _profile.av_role) || '', level: (_profile && _profile.level) || '' };
+  }
   // Swaps which service pack is active. Rebuilds any role/level dropdown
   // currently in the DOM in place (rather than requiring a reload) so
-  // switching pack while Settings is open reflects immediately.
+  // switching pack while Settings is open reflects immediately — restored
+  // from this profile's per-pack memory rather than just keeping whatever
+  // the dropdown happened to be showing (which belonged to the old pack).
   function setServicePack(id) {
     if (!SERVICE_PACKS[id]) return;
     localStorage.setItem('av_service', id);
+    var rl = roleLevelForPack(id);
     var roleSel = document.getElementById('avnav-settings-role');
     var levelSel = document.getElementById('avnav-settings-level');
-    if (roleSel) roleSel.innerHTML = optionsHtml(activeServicePack().roles, roleSel.value);
-    if (levelSel) levelSel.innerHTML = optionsHtml(activeServicePack().levels, levelSel.value);
-    var serviceSel = document.getElementById('avnav-service-select');
-    if (serviceSel) serviceSel.value = activeServicePackId();
+    if (roleSel) roleSel.innerHTML = optionsHtml(activeServicePack().roles, rl.role);
+    if (levelSel) levelSel.innerHTML = optionsHtml(activeServicePack().levels, rl.level);
+    var packSel = document.getElementById('avnav-pack-select');
+    if (packSel) packSel.value = activeServicePackId();
     renderCopyrightFooter();
   }
 
@@ -415,7 +428,12 @@
           '<a class="avnav-link" id="avnav-cpg-link" href="cpg_editor.html" style="display:none"><span class="avnav-icon">📖</span> CPG Editor</a>' +
           '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none"><span class="avnav-icon">🛠</span> Sim Config</a>' +
         '</div>' +
-        '<div class="avnav-bottom"><button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">⎋ Sign out</button>' +
+        '<div class="avnav-bottom">' +
+          '<div id="avnav-pack-select-wrap" style="display:none;margin-bottom:10px">' +
+            '<label style="display:block;font-size:10px;font-weight:700;color:var(--grey);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">🏥 Service Pack</label>' +
+            '<select id="avnav-pack-select" onchange="AVNav.setServicePack(this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--white);color:var(--text)">' + servicePackOptionsHtml() + '</select>' +
+          '</div>' +
+          '<button class="avnav-signout-btn" id="avnav-signout-btn" onclick="AVNav.signOut()">⎋ Sign out</button>' +
           '<div id="avnav-copyright" style="display:none;font-size:10px;color:var(--grey);line-height:1.4;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"></div>' +
         '</div>' +
       '</div>' +
@@ -439,7 +457,6 @@
             '<div class="avnav-form-group"><label>Level *</label><select id="avnav-settings-level">' + optionsHtml(activeServicePack().levels, '') + '</select></div>' +
             '<div class="avnav-form-group"><label>Branch / Location</label><input type="text" id="avnav-settings-branch" maxlength="60"></div>' +
             '<div class="avnav-form-group"><label>🎨 Theme</label><div class="avnav-theme-swatches" id="avnav-theme-swatches">' + swatchesHtml() + '</div></div>' +
-            '<div class="avnav-form-group" id="avnav-service-group" style="display:none"><label>🏥 Service Pack (admin — affects role/level options for everyone using this browser)</label><select id="avnav-service-select" onchange="AVNav.setServicePack(this.value)">' + servicePackOptionsHtml() + '</select></div>' +
             '<button class="avnav-submit-btn" onclick="AVNav.saveSettings()">💾 Save Changes</button>' +
           '</div>' +
         '</div>' +
@@ -506,6 +523,10 @@
     if (cpgLink) cpgLink.style.display = isAdmin() ? 'flex' : 'none';
     var simConfigLink = document.getElementById('avnav-simconfig-link');
     if (simConfigLink) simConfigLink.style.display = isAdmin() ? 'flex' : 'none';
+    var packSelectWrap = document.getElementById('avnav-pack-select-wrap');
+    if (packSelectWrap) packSelectWrap.style.display = (isAdmin() && !guest) ? 'block' : 'none';
+    var packSelect = document.getElementById('avnav-pack-select');
+    if (packSelect) packSelect.value = activeServicePackId();
     // Guests get no writes at all — settings, avatar, my-scenarios, and manage-mine
     // all require a real account, so hide them and show a plain sign-in prompt instead.
     var settingsBtn = document.getElementById('avnav-settings-btn');
@@ -534,18 +555,15 @@
 
   function openSettings() {
     var id = identity();
+    var rl = roleLevelForPack(activeServicePackId());
     document.getElementById('avnav-settings-email').textContent = (_session && _session.user.email) || '';
     document.getElementById('avnav-settings-name').value = (_profile && _profile.display_name) || '';
     document.getElementById('avnav-settings-svcnum').value = id.svcNum;
-    document.getElementById('avnav-settings-role').innerHTML = optionsHtml(activeServicePack().roles, id.avRole);
-    document.getElementById('avnav-settings-level').innerHTML = optionsHtml(activeServicePack().levels, id.level);
+    document.getElementById('avnav-settings-role').innerHTML = optionsHtml(activeServicePack().roles, rl.role);
+    document.getElementById('avnav-settings-level').innerHTML = optionsHtml(activeServicePack().levels, rl.level);
     document.getElementById('avnav-settings-branch').value = id.branch;
     renderAvatarInto('avnav-settings-avatar-preview', id);
     updateThemeSwatches();
-    var serviceGroup = document.getElementById('avnav-service-group');
-    if (serviceGroup) serviceGroup.style.display = isAdmin() ? 'block' : 'none';
-    var serviceSel = document.getElementById('avnav-service-select');
-    if (serviceSel) serviceSel.value = activeServicePackId();
     close();
     document.getElementById('avnav-settings-modal').classList.add('open');
   }
@@ -562,10 +580,13 @@
     if (!avRole) { alert('Please select your role'); return; }
     if (!level) { alert('Please select your level'); return; }
     if (!_session) { alert('No active session — please reload'); return; }
+    var packId = activeServicePackId();
+    var newRoleByPack = Object.assign({}, (_profile && _profile.role_by_pack) || {});
+    newRoleByPack[packId] = { role: avRole, level: level };
     try {
       await sbFetch('profiles?id=eq.' + _session.user.id, {
         method: 'PATCH',
-        body: JSON.stringify({ display_name: displayName || null, svc_num: svcNum || null, av_role: avRole, level: level, branch: branch || null })
+        body: JSON.stringify({ display_name: displayName || null, svc_num: svcNum || null, av_role: avRole, level: level, branch: branch || null, role_by_pack: newRoleByPack })
       });
       if (_profile) {
         _profile.display_name = displayName || null;
@@ -573,6 +594,7 @@
         _profile.av_role = avRole;
         _profile.level = level;
         _profile.branch = branch || null;
+        _profile.role_by_pack = newRoleByPack;
       }
       renderUserCard();
       closeSettings();
