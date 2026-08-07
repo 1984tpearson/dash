@@ -4892,7 +4892,7 @@ function renderSection2(s) {
       <table class="asmt-table" data-group="impl" data-section="sec2" id="sec-implement">
         <thead><tr><th class="left">Element</th><th>Prompting</th><th>Incomplete</th><th>Complete</th></tr></thead>
         <tbody>
-          ${mkRow('mgmt', `Appropriate management as per CPGs${_primaryCpgStr ? hint(_primaryCpgStr) : ''}`)}
+          ${mkRow('mgmt', hasAvLegalPack() ? `Appropriate management as per CPGs${_primaryCpgStr ? hint(_primaryCpgStr) : ''}` : 'Appropriate management — consult your local guidelines/protocols for specific requirements')}
           ${mkRow('calcs','Calculations correct',true)}
           ${mkRow('transport','Transported to appropriate facility',true)}
           ${mkRow('monitor2','Monitor trends/timeframe/rationale',true)}
@@ -4906,9 +4906,9 @@ function renderSection2(s) {
         </tbody>
       </table>
 
-      ${treatCollapsiblesHtml || (_legacyAlsHtml ? `<div class="treatment-box"><h4>✅ ALS Management — ${getCPGLabel(s.cpg)||'Scenario'}</h4><ol>${_legacyAlsHtml}</ol></div>` : '')}
-      ${!treatCollapsiblesHtml && _legacyMicaHtml ? `<div class="treatment-mica-box"><h4>🔵 MICA Management</h4><ol>${_legacyMicaHtml}</ol></div>` : ''}
-      <button class="cpg-browse-all-btn" onclick="openCPGBrowser()">🔍 Browse all CPGs</button>
+      ${hasAvLegalPack() ? (treatCollapsiblesHtml || (_legacyAlsHtml ? `<div class="treatment-box"><h4>✅ ALS Management — ${getCPGLabel(s.cpg)||'Scenario'}</h4><ol>${_legacyAlsHtml}</ol></div>` : '')) : ''}
+      ${hasAvLegalPack() && !treatCollapsiblesHtml && _legacyMicaHtml ? `<div class="treatment-mica-box"><h4>🔵 MICA Management</h4><ol>${_legacyMicaHtml}</ol></div>` : ''}
+      ${hasAvLegalPack() ? `<button class="cpg-browse-all-btn" onclick="openCPGBrowser()">🔍 Browse all CPGs</button>` : ''}
 
       <div style="margin-top:12px">
         <table class="asmt-table">
@@ -5338,7 +5338,7 @@ async function rateKQ(index, rating) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 500,
-        system: `You write a single short-answer knowledge-recall question for Ambulance Victoria paramedic training, testing direct factual knowledge of one specific CPG. All clinical content must come exclusively from the CPG content provided — no invented facts.
+        system: `You write a single short-answer knowledge-recall question for${hasAvLegalPack() ? ' Ambulance Victoria paramedic' : ' clinical'} training, testing direct factual knowledge of one specific CPG. All clinical content must come exclusively from the CPG content provided — no invented facts.
 
 Do NOT write a clinical vignette or case presentation. Never start with a patient description (e.g. "A 65-year-old presents with..."). Ask directly for the fact instead: a dose/route, a threshold/criterion, a contraindication, an indication, a definition, or what to do in a specific named situation from the CPG (e.g. "What is the adult dose of X?", "Name two contraindications to Y.", "At what SpO2 threshold should Z be considered?"). If it's genuinely useful to pose an alternate scenario, keep it to a short clause, not a narrative (e.g. "For a 65-year-old with the same presentation, what dose applies?") — but a direct factual question is preferred by default.
 
