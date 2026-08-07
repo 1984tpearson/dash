@@ -3226,19 +3226,33 @@ function unlockRealtimeAudio() {
 // moment the socket actually opens (see socket.onopen below) marks "now" the
 // same way a phone's own dial-tone-then-beep does, instead of relying on the
 // status text alone. Same unlock-in-the-tap-handler pattern as
-// unlockRealtimeAudio() just above (AudioContext also needs a user gesture
-// on Safari/iOS) — created here in startRealtimeCall(), played later from
-// socket.onopen once the actual async work finishes.
+// unlockRealtimeAudio() just above — created here in startRealtimeCall(),
+// played later from socket.onopen once the actual async work finishes.
+//
+// The `.resume()` call has to happen HERE, synchronously inside the tap
+// handler, not deferred to playRealtimeReadyChime() — a first version called
+// it there instead (right before scheduling the tones) and produced no sound
+// at all on iOS Safari (this tool's primary device, per unlockPiperAudio()'s
+// own comment earlier in this file): unlike `new AudioContext()` itself,
+// which Chrome silently auto-resumes when constructed inside a gesture,
+// WebKit specifically requires the `resume()` call itself to be inside a
+// genuine user gesture's call stack, and socket.onopen — an async WebSocket
+// callback firing well after the tap that started it — doesn't count.
+// Calling `.resume()` here instead, synchronously inside
+// startRealtimeCall()'s tap handler, is what actually unlocks it; by the
+// time playRealtimeReadyChime() runs later the context is already running,
+// so no resume there is needed.
 let _rtChimeCtx = null;
 function unlockRealtimeChime() {
   if (_rtChimeCtx) return;
-  try { _rtChimeCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-  catch (e) { /* best-effort only — a missing chime isn't fatal */ }
+  try {
+    _rtChimeCtx = new (window.AudioContext || window.webkitAudioContext)();
+    _rtChimeCtx.resume().catch(() => {}); // best-effort — a rejection here just means the chime silently doesn't play later
+  } catch (e) { /* best-effort only — a missing chime isn't fatal */ }
 }
 function playRealtimeReadyChime() {
   if (!_rtChimeCtx) return;
   try {
-    if (_rtChimeCtx.state === 'suspended') _rtChimeCtx.resume();
     const now = _rtChimeCtx.currentTime;
     // Two short rising tones read as "ready", not an alarm — quiet
     // (peak gain 0.25) and brief (~180ms total) so it doesn't compete with
