@@ -3321,14 +3321,29 @@ function unlockRealtimeChime() {
     _rtChimeAudioEl.play().catch(() => {}); // best-effort — a rejection here just means the chime silently doesn't play later
   } catch (e) { /* best-effort only — a missing chime isn't fatal */ }
 }
+// Two independent attempts, not one, because the two mainstream mobile
+// browsers unlock autoplay by different rules and this needs to work on
+// both: WebKit (iOS Safari) ties the unlock to the SPECIFIC element that
+// played inside the gesture — reusing _rtChimeAudioEl (see
+// unlockRealtimeChime()) covers that. Chrome instead unlocks at the PAGE
+// level — once any gesture has triggered media playback anywhere on the
+// tab, a brand new element's play() is allowed too — so the fallback below
+// constructs a fresh Audio() rather than assuming the reuse trick above is
+// the only thing that can work. Only reported broken on Android Chrome so
+// far (see git history), where the reused-element path apparently isn't
+// enough on its own; kept the original path first rather than replacing it
+// since Safari genuinely does need it.
 function playRealtimeReadyChime() {
-  if (!_rtChimeAudioEl) return;
+  const tryPlay = (el) => { el.volume = 0.6; return el.play(); }; // quiet-ish — it shouldn't compete with the patient reply that usually follows within a second or two
   try {
-    _rtChimeAudioEl.pause();
-    _rtChimeAudioEl.currentTime = 0;
-    _rtChimeAudioEl.src = REALTIME_READY_CHIME_WAV_DATA_URI;
-    _rtChimeAudioEl.volume = 0.6; // quiet-ish — it shouldn't compete with the patient reply that usually follows within a second or two
-    _rtChimeAudioEl.play().catch(() => {});
+    if (_rtChimeAudioEl) {
+      _rtChimeAudioEl.src = REALTIME_READY_CHIME_WAV_DATA_URI;
+      tryPlay(_rtChimeAudioEl).catch(() => {
+        try { tryPlay(new Audio(REALTIME_READY_CHIME_WAV_DATA_URI)).catch(() => {}); } catch (e) { /* best-effort only */ }
+      });
+    } else {
+      tryPlay(new Audio(REALTIME_READY_CHIME_WAV_DATA_URI)).catch(() => {});
+    }
   } catch (e) { /* best-effort only */ }
 }
 
