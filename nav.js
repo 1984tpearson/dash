@@ -73,7 +73,8 @@
         ['Advanced', 'Advanced'],
         ['NA', 'Other/NA']
       ],
-      copyrightHtml: ''
+      copyrightHtml: '',
+      legal: null
     },
     av: {
       label: 'Ambulance Victoria',
@@ -96,7 +97,17 @@
         ['CERT', 'CERT'],
         ['NA', 'Other/NA']
       ],
-      copyrightHtml: 'Role, level, and clinical-guideline terminology in this pack are modelled on Ambulance Victoria classifications, for training purposes only. Not affiliated with or endorsed by Ambulance Victoria.'
+      copyrightHtml: 'Role, level, and clinical-guideline terminology in this pack are modelled on Ambulance Victoria classifications, for training purposes only. Not affiliated with or endorsed by Ambulance Victoria.',
+      // Longer-form legal/attribution text used by scenario.html's page
+      // footer and per-scenario footer — null on any pack without real
+      // sourced clinical content (i.e. "none") so those call sites can
+      // render nothing at all rather than a generic placeholder.
+      legal: {
+        cpgSourceLabel: 'Ambulance Victoria Clinical Practice Guidelines (CPGs) Version 3.13.0',
+        clinicalContentNoticeHtml: 'The clinical scenarios, drug doses, CPG references, and assessment criteria contained in this tool are based on <strong>Ambulance Victoria Clinical Practice Guidelines (CPGs) Version 3.13.0</strong>. Clinical content derived from AV CPGs remains the intellectual property of Ambulance Victoria. This tool reproduces CPG-based clinical content for educational and assessment purposes only. AV CPGs are publicly available documents intended to guide clinical practice; reproduction of scenario-based educational content derived from these guidelines is undertaken in good faith for non-commercial training use.',
+        affiliationNoticeHtml: 'This tool is <strong>not affiliated with, endorsed by, or approved by Ambulance Victoria</strong>. It is an independent educational aid. All clinical content should be verified against current official AV CPGs before use in formal assessment.',
+        scenarioFooterNotAffiliatedShort: 'Not an official AV product.'
+      }
     }
   };
 
@@ -1114,6 +1125,7 @@
     refreshProfile: refreshProfile,
     applyTheme: applyTheme,
     setServicePack: setServicePack,
+    getServicePack: activeServicePack,
     isAdmin: isAdmin,
     isGuest: isGuest
   };

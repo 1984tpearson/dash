@@ -1393,11 +1393,12 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
 <!-- Site Footer -->
 <footer id="site-footer">
   <div class="footer-inner">
-    <p><strong>Clinical Content Notice:</strong> The clinical scenarios, drug doses, CPG references, and assessment criteria contained in this tool are based on <strong>Ambulance Victoria Clinical Practice Guidelines (CPGs) Version 3.13.0</strong>. Clinical content derived from AV CPGs remains the intellectual property of Ambulance Victoria. This tool reproduces CPG-based clinical content for educational and assessment purposes only. AV CPGs are publicly available documents intended to guide clinical practice; reproduction of scenario-based educational content derived from these guidelines is undertaken in good faith for non-commercial training use.</p>
-    <hr>
+    <!-- AV-specific legal notices, populated (or left empty) by renderServiceLegalNotices()
+         from the active service pack — see nav.js SERVICE_PACKS. Nothing hardcoded here so
+         the "none" pack shows only Tim's own copyright paragraph below, unconditionally. -->
+    <div id="site-footer-av-notice-before" style="display:none"></div>
     <p><strong>Tool Design &amp; Purpose &copy; 2026 Tim Pearson.</strong> The design, structure, user interface, assessment framework, scoring methodology, and overall concept of this tool — including the digital adaptation of AV verbal scenario assessment processes, the RABCDE-based checklist format, the three-section scoring system, and the AI-assisted scenario generation feature — are original works. Unauthorised reproduction, redistribution, or commercial use of the tool design is prohibited.</p>
-    <hr>
-    <p>This tool is <strong>not affiliated with, endorsed by, or approved by Ambulance Victoria</strong>. It is an independent educational aid. All clinical content should be verified against current official AV CPGs before use in formal assessment. &nbsp;|&nbsp; <strong>v0.9-beta</strong> &nbsp;|&nbsp; Built for ALS Level C/D verbal scenario assessment</p>
+    <div id="site-footer-av-notice-after" style="display:none"></div>
   </div>
 </footer>
 
@@ -1546,24 +1547,14 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
       </div>
       <div class="form-group" style="margin-bottom:12px">
         <label>Role <span style="color:var(--red)">*</span></label>
-        <select id="profile-role-input" style="font-size:15px">
-          <option value="">Select your role…</option>
-          <option value="CI">Clinical Instructor (CI)</option>
-          <option value="PE">Paramedic Educator (PE)</option>
-          <option value="GAP">Graduate Ambulance Paramedic (GAP)</option>
-          <option value="CSO">Clinical Support Officer (CSO)</option>
-          <option value="Other">Other</option>
-        </select>
+        <!-- Options populated at open-time by populateProfileRoleLevelOptions()
+             from the active service pack (nav.js SERVICE_PACKS) — nothing
+             hardcoded here so a generic build shows generic roles. -->
+        <select id="profile-role-input" style="font-size:15px"></select>
       </div>
       <div class="form-group" style="margin-bottom:12px">
         <label>Level <span style="color:var(--red)">*</span></label>
-        <select id="profile-level-input" style="font-size:15px">
-          <option value="">Select your level…</option>
-          <option value="MICA">MICA</option>
-          <option value="ALS">ALS</option>
-          <option value="ACO">ACO</option>
-          <option value="CERT">CERT</option>
-        </select>
+        <select id="profile-level-input" style="font-size:15px"></select>
       </div>
       <div class="form-group" style="margin-bottom:16px">
         <label>Avatar</label>
@@ -2244,7 +2235,64 @@ function getOverallScore() {
 // ============================================================
 // INIT
 // ============================================================
+// True when the active service pack has real sourced clinical/legal content
+// (currently just "av") — used to gate the handful of smaller AV-specific
+// one-liners below that aren't worth a dedicated pack field of their own.
+function hasAvLegalPack() {
+  const pack = window.AVNav && AVNav.getServicePack && AVNav.getServicePack();
+  return !!(pack && pack.legal);
+}
+
+// Builds the per-scenario "Clinical basis" footer from the active service
+// pack's legal data — returns '' (renders nothing) when no pack with real
+// sourced clinical content is loaded, same rule as the site footer above.
+function scenarioCpgFooterHtml(s) {
+  const pack = window.AVNav && AVNav.getServicePack && AVNav.getServicePack();
+  const legal = pack && pack.legal;
+  if (!legal) return '';
+  const cpgSuffix = s.cpg ? ` (${s.cpg})` : '';
+  const verifyNote = (s.custom || s.ai_generated)
+    ? 'AI-generated — verify all clinical details against current published AV CPGs before formal assessment use.'
+    : 'Adapted for verbal assessment purposes. Always verify against the current published edition.';
+  return `<div class="scenario-cpg-footer">
+  <strong>Clinical basis:</strong> This scenario is based on <strong>${legal.cpgSourceLabel}</strong>${cpgSuffix}. ${verifyNote} &nbsp;|&nbsp; ${legal.scenarioFooterNotAffiliatedShort}
+</div>`;
+}
+
+// Populates the site-footer AV-specific paragraphs from the active service
+// pack (nav.js SERVICE_PACKS) — empty/hidden entirely when no pack with
+// `legal` content is loaded, so a generic build shows only Tim's own
+// copyright paragraph (which stays static in the HTML, untouched here).
+function renderServiceLegalNotices() {
+  const pack = window.AVNav && AVNav.getServicePack && AVNav.getServicePack();
+  const legal = pack && pack.legal;
+  const before = document.getElementById('site-footer-av-notice-before');
+  const after = document.getElementById('site-footer-av-notice-after');
+  if (before) {
+    before.style.display = legal ? 'block' : 'none';
+    before.innerHTML = legal ? `<p><strong>Clinical Content Notice:</strong> ${legal.clinicalContentNoticeHtml}</p><hr>` : '';
+  }
+  if (after) {
+    after.style.display = legal ? 'block' : 'none';
+    after.innerHTML = legal ? `<hr><p>${legal.affiliationNoticeHtml} &nbsp;|&nbsp; <strong>v0.9-beta</strong> &nbsp;|&nbsp; Built for ALS Level C/D verbal scenario assessment</p>` : '';
+  }
+}
+
+// Rebuilds the profile-completion modal's Role/Level <option> lists from
+// the active service pack instead of a hardcoded list, same source nav.js's
+// own Settings modal reads from — see SERVICE_PACKS in nav.js.
+function populateProfileRoleLevelOptions(selectedRole, selectedLevel) {
+  const pack = window.AVNav && AVNav.getServicePack && AVNav.getServicePack();
+  const roles = (pack && pack.roles) || [['', 'Select your role…'], ['Other', 'Other']];
+  const levels = (pack && pack.levels) || [['', 'Select your level…'], ['NA', 'Other/NA']];
+  const roleSel = document.getElementById('profile-role-input');
+  const levelSel = document.getElementById('profile-level-input');
+  if (roleSel) roleSel.innerHTML = roles.map(([v, l]) => `<option value="${v}"${v === (selectedRole || '') ? ' selected' : ''}>${l}</option>`).join('');
+  if (levelSel) levelSel.innerHTML = levels.map(([v, l]) => `<option value="${v}"${v === (selectedLevel || '') ? ' selected' : ''}>${l}</option>`).join('');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  renderServiceLegalNotices();
   const { data: { session } } = await _supabaseClient.auth.getSession();
   if (!session) {
     if (window.localStorage.getItem('av_guest_mode') === 'true') {
@@ -2262,6 +2310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { data: profileData } = await _supabaseClient.from('profiles').select('*').eq('id', session.user.id).single();
   _authProfile = profileData;
   if (!_authProfile || !_authProfile.svc_num || !_authProfile.av_role || !_authProfile.level) {
+    populateProfileRoleLevelOptions(_authProfile?.av_role, _authProfile?.level);
     const nameEl = document.getElementById('svcnum-modal-name');
     if (nameEl) nameEl.textContent = session.user.user_metadata?.full_name || session.user.email;
     const avEl = document.getElementById('svcnum-avatar-preview');
@@ -4101,7 +4150,7 @@ function renderScenario(s) {
         <div class="sh-creator-text">Created by <strong>${s.creator_name || 'Unknown'}</strong>${meta ? ` — ${meta}` : ''}</div>
       </div>`;
     })() : ''}
-    ${isCustom?'<div class="ai-disclaimer">⚠️ Custom scenario — verify all clinical content against current AV CPGs before use.</div>':''}
+    ${isCustom && hasAvLegalPack()?'<div class="ai-disclaimer">⚠️ Custom scenario — verify all clinical content against current AV CPGs before use.</div>':''}
   </div>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
     <button id="fav-toggle-btn" onclick="toggleFavourite('${s.id}')" title="${_myFavourites.has(s.id)?'Remove from favourites':'Add to favourites'}" style="background:${_myFavourites.has(s.id)?'rgba(255,205,60,0.28)':'rgba(255,255,255,0.15)'};border:1px solid ${_myFavourites.has(s.id)?'rgba(255,205,60,0.55)':'rgba(255,255,255,0.3)'};color:white;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap">${_myFavourites.has(s.id)?'⭐ Favourited':'☆ Favourite'}</button>
@@ -4223,9 +4272,7 @@ function renderScenario(s) {
   </div>
 
 </div>
-<div class="scenario-cpg-footer">
-  <strong>Clinical basis:</strong> This scenario is based on <strong>Ambulance Victoria Clinical Practice Guidelines Version 3.13.0</strong>${s.cpg ? ` (${s.cpg})` : ''}. ${s.custom || s.ai_generated ? 'AI-generated — verify all clinical details against current published AV CPGs before formal assessment use.' : 'Adapted for verbal assessment purposes. Always verify against the current published edition.'} &nbsp;|&nbsp; Not an official AV product.
-</div>`;
+${scenarioCpgFooterHtml(s)}`;
 }
 
 // ============================================================
@@ -5815,7 +5862,7 @@ function showSummary() {
   </div>
 
   <div style="text-align:center;font-size:10px;color:var(--grey);margin-top:12px">
-    Verbal Scenario Assessment Tool · Not an official AV product · AI-generated content may not be clinically accurate — verify against current AV CPGs · ${new Date().toLocaleDateString('en-AU')}
+    Verbal Scenario Assessment Tool${hasAvLegalPack() ? ' · Not an official AV product · AI-generated content may not be clinically accurate — verify against current AV CPGs' : ''} · ${new Date().toLocaleDateString('en-AU')}
   </div>`;
 
   document.getElementById('summary-inner').innerHTML = html;
