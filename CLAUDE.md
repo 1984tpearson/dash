@@ -587,23 +587,70 @@ editing.
 
 ## Gotchas
 
-- **This repo is being de-branded from Ambulance Victoria (AV) over time —
-  keep an eye out, don't go hunting.** No need to actively search for these,
-  but if you happen to notice a leftover "AV" / "Ambulance Victoria"
-  reference while working on something else nearby, flag it to Tim rather
-  than silently leaving it (or silently fixing it, if it's a trivial cosmetic
-  string with no coupling to anything else). Two known categories already
-  identified and NOT yet fixed, so don't re-report these specifically unless
-  asked to work on them: (1) `nav.js`'s `AV_ROLES`/`AV_LEVELS` taxonomy
-  (`NonAV`, MICA/ALS/etc — real AV rank structure) and internal `av_`-
-  prefixed identifiers (`AVNav`, `av_theme`, `av_role` Supabase column) —
-  slated to become a swappable "service pack" rather than hardcoded; (2)
-  `generator.html`'s AI system prompt and `cpg_packages_combined.js` /
-  `category_data.js` — the latter is verbatim Ambulance Victoria ALS-MICA
-  Clinical Practice Guideline content (see that file's own header comment),
-  the actual clinical backbone of scenario generation, also slated to become
-  a loadable pack rather than the only option. Don't edit either of those in
-  passing — they're substantive, planned work, not quick fixes.
+- **Service-pack de-branding from Ambulance Victoria (AV) — status and the
+  IP reasoning behind what did/didn't change.** This repo was duplicated
+  from the old `AV` repo specifically to shed Ambulance Victoria's
+  branding/IP while keeping AV's content available as an optional,
+  explicitly-loaded pack (`nav.js`'s `SERVICE_PACKS`, `'none'` vs `'av'`,
+  persisted per-browser in `localStorage.av_service`). Still keep an eye
+  out for leftover unconditional "AV"/"Ambulance Victoria" text while
+  working nearby — don't go hunting for it — and flag anything found to
+  Tim rather than silently leaving or silently fixing it.
+  Three-tier IP analysis this was all built on, decided directly with Tim,
+  worth not re-litigating without a reason to revisit it:
+  1. **Condition/category taxonomy** (`category_pack_*.js`'s `CATEGORIES`
+     etc) — NOT an IP concern. Standard, industry-wide EMS categorization
+     (Cardiac Arrest / Respiratory / Trauma / etc), not a distinctive AV
+     creative arrangement. Left as-is for both packs.
+  2. **The verbal assessment STRUCTURE itself** (RABCDE primary survey,
+     pre-arrival → primary → life threats → history → vitals → secondary
+     survey → focused assessments → risk/DDx → care pathway → implement,
+     the three-section division and its scoring skeleton, all in
+     `scenario.html`) — also left identical between packs, deliberately.
+     RABCDE/primary-secondary-survey sequencing is standard clinical
+     practice taught broadly, not AV's invention, and a 3-section
+     (assessment / diagnosis+treatment / knowledge check) split is a
+     generic, low-distinctiveness way to organize any clinical
+     assessment — low risk, and Tim didn't want to rebuild it without a
+     real reason to. What DOES differ per pack is the AV-*sourced content*
+     living inside that shared structure — see `hasAvLegalPack()` in both
+     `scenario.html` and `generator.html`, which gates: Section 2's
+     CPG-derived management-detail box/hint/Browse-CPGs button (generic
+     pack shows a plain "consult your local guidelines/protocols" row
+     instead, using the same tick mechanism as every other row); the AI
+     system prompts' wording (Ambulance Victoria phrasing, CPG source
+     labels, the `AV CPG A0108` flags reference); and Section 3 knowledge
+     questions (AV pack: exactly 3, `cpgCode`-tagged; generic pack: 5,
+     untagged, explicitly told to avoid paramedic-specific phrasing since
+     Tim wants the generic content usable for nursing/medical training
+     too — narrower per-profession targeting deferred to future packs).
+  3. **The CPG clinical content itself** (`cpg_pack_av.js` — verbatim
+     Ambulance Victoria ALS-MICA guideline text, see that file's own
+     header) — clearly AV's IP, and per Tim: genuinely less central to
+     what the tool does over time anyway, more a "here's what the site
+     thinks should apply, you as assessor decide if that's right" aid
+     than the core mechanism. `cpg_pack_none.js`/`category_pack_none.js`
+     are the generic pack's placeholder equivalent — explicitly NOT
+     copied/derived from AV's text (that would remove the very
+     attribution that makes AV's own content reproduction defensible,
+     not just relabel it), ordinary general clinical knowledge in plain
+     wording, deliberately small, and explicitly marked in both files'
+     headers as a placeholder Tim intends to properly rebuild later —
+     don't mistake its current size/depth for the intended end state, and
+     don't hold it to `cpg_pack_av.js`'s verbatim-accuracy bar.
+  Also worth knowing: `cpg_editor.html` always loads/patches
+  `cpg_pack_av.js`/`category_pack_av.js` directly, never through
+  `cpg_pack_loader.js` — it's an authoring tool for the real AV content
+  specifically, so its own AI prompts staying AV-worded is correct, not a
+  leftover to fix.
+  Architecture note for whoever adds a second real service pack later:
+  the generic pack was built as the *same* assessment-view template/
+  renderer with pack-supplied content swapped in (branching on
+  `hasAvLegalPack()`/`AVNav.getServicePack()`), not a genuinely pluggable
+  per-pack renderer — deliberate, to avoid over-engineering a plugin
+  system before a second pack actually exists that needs a different
+  section skeleton. If that day comes, the `hasAvLegalPack()` branches are
+  the seams to generalize into a real per-pack renderer choice.
 - **Backticks inside a prompt string break the JS parse.** The AI system
   prompts are themselves JS template literals (backtick-delimited) — never
   use `` ` `` for markdown-style emphasis inside that text (use single
