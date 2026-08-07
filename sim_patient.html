@@ -190,10 +190,6 @@ body.mode-avatar #monitor-col { display: none !important; }
 #voice-mic-indicator.listening { display: flex; animation: micBlink 1s steps(1) infinite; }
 @keyframes micBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
-/* Trend arrows next to the avatar — see updateTrendIndicator(). A plain
-   flex column (top-to-bottom in DOM order); which end pulses first is
-   controlled entirely by animation-delay (see trendArrowMarkup()), not by
-   reversing the DOM order, so the same markup works for both directions. */
 /* No min-height:0 here, deliberately — unlike #head-wrap (which needs that
    override to counteract ITS OWN intrinsic SVG size fighting max-height),
    this row has no such conflict, so its natural auto min-height is exactly
@@ -207,16 +203,37 @@ body.mode-avatar #monitor-col { display: none !important; }
    into — without this, #head-wrap's own height:100% above has nothing to
    resolve against, so it stays pinned to the SVG's small intrinsic size
    with unused white space filling the rest of #patient-graphic (the "too
-   small" complaint). align-self:center on #trend-indicator opts it back
-   out of the stretch — it's a couple of small fixed-size arrow icons, not
-   something that should stretch tall just because its sibling now does. */
-#avatar-row { display: flex; flex-direction: row; align-items: stretch; justify-content: center; gap: 4px; flex: 1; min-height: 0; width: 100%; }
-#trend-indicator { display: none; flex-direction: column; gap: 1px; flex-shrink: 0; align-self: center; }
-#trend-indicator svg { width: 16px; height: 16px; display: block; }
+   small" complaint). */
+#avatar-row { display: flex; flex-direction: row; align-items: stretch; justify-content: center; flex: 1; min-height: 0; width: 100%; }
+/* Trend arrows — see updateTrendIndicator(). Deliberately `position:fixed`
+   rather than a flex sibling sitting next to the avatar: they only exist
+   some of the time (count===0 hides them entirely), and living in normal
+   flow next to #head-wrap meant every appear/disappear nudged the avatar's
+   own width in #avatar-row's centered row — a visible "wobble" each time a
+   trend crossed a threshold. Floating them out of flow entirely on the
+   right edge of the viewport means the avatar's box never depends on
+   whether they're showing. Applies to every display mode that shows the
+   avatar (Standard and Avatar Only alike) — not gated behind a mode class
+   or a mobile media query, since the wobble it fixes happens everywhere,
+   not just on phones. A plain flex column (top-to-bottom in DOM order);
+   which end pulses first is controlled entirely by animation-delay (see
+   trendArrowMarkup()), not by reversing the DOM order, so the same markup
+   works for both directions. `pointer-events:none` since it's purely
+   informational and shouldn't steal taps from whatever's underneath it. */
+#trend-indicator { display: none; position: fixed; top: 50%; right: 14px; transform: translateY(-50%); flex-direction: column; gap: 6px; z-index: 40; pointer-events: none; }
+#trend-indicator svg { width: 34px; height: 34px; display: block; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); }
 #trend-indicator.up svg { fill: #16a34a; }
 #trend-indicator.down svg { fill: #dc2626; }
 #trend-indicator .trend-arrow { animation: trendPulse 1.3s ease-in-out infinite; }
 @keyframes trendPulse { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1.08); } }
+/* Bigger again on a phone-sized viewport — "significantly bigger" was
+   specifically called out for mobile, where the arrows are the only
+   at-a-glance trend cue once the graph (sim_control.html-only) isn't on
+   screen. */
+@media (max-width: 600px) {
+  #trend-indicator { right: 8px; gap: 8px; }
+  #trend-indicator svg { width: 48px; height: 48px; }
+}
 
 /* Voice UI takes over the "Patient / Scene Info" panel while active (a
    speech-bubble sits right above the patient graphic anyway), instead of a
@@ -263,6 +280,40 @@ body.mode-avatar #monitor-col { display: none !important; }
 .voice-btn-primary:disabled { opacity: 0.4; }
 .topbar-logo-img { height: 26px; width: auto; max-width: 150px; object-fit: contain; flex-shrink: 0; display: block; }
 #topbar #avnav-hamburger { width: 34px; height: 34px; font-size: 15px; }
+
+/* Avatar Only on a phone-sized screen — scoped to mode-avatar specifically
+   (not Standard/Monitor), since Avatar Only is the mode built for handing a
+   student's own phone the patient role (see the #info-col comment up top),
+   and with #monitor-col hidden this panel + the voice UI/talk buttons ARE
+   the entire screen. Sizes elsewhere in this file are tuned for that panel
+   sitting next to a wide monitor on a tablet, which reads as too small once
+   it's the only thing on a much narrower phone screen. The talk buttons
+   keep their existing row layout (Treat/Assess/Talk side by side) — only
+   scaled up, not restructured. */
+@media (max-width: 600px) {
+  body.mode-avatar #patient-info-normal h2 { font-size: 15px; }
+  body.mode-avatar #patient-info .row { font-size: 16px; margin-bottom: 6px; }
+
+  body.mode-avatar #voice-modal-title { font-size: 15px; }
+  body.mode-avatar #voice-modal-status { font-size: 15px; min-height: 18px; }
+  body.mode-avatar #voice-modal-transcript { font-size: 17px; padding: 10px 12px; min-height: 26px; }
+  body.mode-avatar #patient-reply-display { font-size: 21px; }
+  body.mode-avatar #input-mode-toggle-btn { width: 36px; height: 36px; font-size: 17px; }
+  /* 16px floor on the typed-input fallback specifically stops iOS Safari's
+     auto-zoom-on-focus (it zooms any input under 16px), on top of just
+     being easier to read/type into. */
+  body.mode-avatar #type-input-row input { font-size: 16px; padding: 10px 12px; }
+  body.mode-avatar .voice-btn { min-height: 50px; font-size: 16px; }
+
+  /* Talk/Assess/Treat strip — same 3-across row, just bigger: the request
+     was specifically "keep their same layout but increase their size to
+     fit the screen", so width grows to the full panel (no more 240px cap)
+     and every dimension inside scales with it. */
+  body.mode-avatar #voice-fab-strip { max-width: 100%; gap: 10px; }
+  body.mode-avatar .voice-fab { min-height: 58px; font-size: 16px; gap: 8px; border-radius: 10px; padding: 8px 10px; }
+  body.mode-avatar .voice-fab svg { width: 22px; height: 22px; }
+  body.mode-avatar #wake-word-toggle-btn { max-width: 100%; min-height: 46px; font-size: 14px; margin-top: 8px; }
+}
 </style>
 </head>
 <body>
