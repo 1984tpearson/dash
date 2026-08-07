@@ -11,6 +11,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2L4 9V16C4 22.6 9.4 28.7 16 30C22.6 28.7 28 22.6 28 16V9L16 2Z' fill='%231C3A6E'/%3E%3Cpath d='M15 15H12V17H15V20H17V17H20V15H17V12H15V15Z' fill='white'/%3E%3C/svg%3E">
 
 <script src="cpg_pack_loader.js"></script>
+<script src="pack_overlay.js"></script>
 <style>
 :root {
   --navy:#1C3A6E;--navy-dark:#122849;--navy-light:#2A4F8F;
@@ -792,9 +793,31 @@ function toRow(s){
     creator_avatar_url:s.creator_avatar_url||id.avatarUrl||'',
     creator_role:s.creator_role||id.avRole||'',
     creator_level:s.creator_level||id.level||'',
-    ai_generated:!!s.ai_generated,is_builtin:false};
+    ai_generated:!!s.ai_generated,is_builtin:false,
+    origin_pack:s.origin_pack||'none',pack_overlays:s.pack_overlays||{}};
+}
+// Dual-build: when a real pack (one with actual CPG content) is active at
+// generation time, also build a generic-flavoured knowledge-question set
+// and stash it as that scenario's 'none' overlay — so opening it later
+// under the generic pack shows proper generic content instead of the
+// AV-tagged questions it was actually generated with. See pack_overlay.js
+// and CLAUDE.md's service-pack Gotchas entry for the overall design.
+// Best-effort: failure here never blocks saving the scenario itself.
+async function _attachOriginAndOverlay(scenario){
+  const pack = (window.AVNav && AVNav.getServicePack) ? AVNav.getServicePack() : null;
+  const isRealPack = !!(pack && pack.legal);
+  scenario.origin_pack = isRealPack ? 'av' : 'none';
+  if (isRealPack && window.PackOverlay) {
+    try {
+      const genericKQ = await PackOverlay.buildGenericKQ(scenario);
+      if (genericKQ.length) scenario.pack_overlays = Object.assign({}, scenario.pack_overlays, { none: { kq: genericKQ } });
+    } catch (e) {
+      console.error('Dual-build generic overlay failed (non-blocking):', e.message);
+    }
+  }
 }
 async function saveAndNavigate(scenario){
+  await _attachOriginAndOverlay(scenario);
   await sbFetch('scenarios',{method:'POST',prefer:'return=minimal',body:JSON.stringify(toRow(scenario))});
   window.location.href=`scenario.html?id=${encodeURIComponent(String(scenario.id))}`;
 }

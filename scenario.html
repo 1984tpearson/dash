@@ -1205,6 +1205,7 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
 /* home-random-btn defined in HOME section above */
 </style>
 <script src="cpg_pack_loader.js"></script>
+<script src="pack_overlay.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://1984tpearson.github.io/dash/ecg_engine.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2099,7 +2100,9 @@ function fromRow(r) {
     ai_generated: r.ai_generated,
     is_builtin:   r.is_builtin,
     custom:       !r.is_builtin,
-    created_at:   r.created_at
+    created_at:   r.created_at,
+    origin_pack:  r.origin_pack || 'av',
+    pack_overlays: r.pack_overlays || {}
   };
 }
 
@@ -3622,8 +3625,89 @@ function filterScenarios(q) {
 }
 
 // ============================================================
-// LOAD SCENARIO
+// LOAD SCENARIO — cross-pack overlay resolution
 // ============================================================
+// currentScenario always stays the true, canonical scenario object
+// (native fields + origin_pack + pack_overlays intact, unchanged by any
+// of this) — never overwrite it with a pack-resolved copy, or editing/
+// saving would corrupt origin_pack semantics by writing an overlay's
+// fields back as if they were the scenario's own native ones. Only the
+// RENDERED view uses the resolved copy — see applyPackOverlay() below.
+//
+// See pack_overlay.js and CLAUDE.md's service-pack Gotchas entry for the
+// overall design.
+
+// Synchronous — no AI call. Returns a NEW object with cpg/kq replaced by
+// the active pack's cached overlay when one exists and applies; returns
+// `s` unchanged otherwise (native pack, or no overlay cached yet).
+function applyPackOverlay(s) {
+  const activePackId = localStorage.getItem('av_service') || 'none';
+  const originPack = s.origin_pack || 'av';
+  if (activePackId === originPack) return s;
+  const overlay = s.pack_overlays && s.pack_overlays[activePackId];
+  if (!overlay) return s;
+  return Object.assign({}, s, overlay);
+}
+
+// True when the scenario needs an overlay generated for the active pack
+// (mismatched origin, nothing cached yet).
+function needsPackOverlay(s) {
+  const activePackId = localStorage.getItem('av_service') || 'none';
+  const originPack = s.origin_pack || 'av';
+  if (activePackId === originPack) return false;
+  return !(s.pack_overlays && s.pack_overlays[activePackId]);
+}
+
+function showPackOverlayBanner(show) {
+  let el = document.getElementById('pack-overlay-banner');
+  if (show) {
+    if (el) return;
+    el = document.createElement('div');
+    el.id = 'pack-overlay-banner';
+    el.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:500;background:var(--navy);color:white;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);white-space:nowrap';
+    el.textContent = '⏳ Adapting this scenario for the active pack…';
+    document.body.appendChild(el);
+  } else if (el) {
+    el.remove();
+  }
+}
+
+// Kicks off on-demand overlay generation for `s` against the currently
+// active pack, PATCHes the result back to Supabase, and re-renders — only
+// if the user is still looking at this same scenario when it completes.
+// Best-effort: silently gives up on failure (renders keep using whatever
+// data they already had; nothing blocks on this).
+async function generateAndApplyPackOverlay(s) {
+  if (!window.PackOverlay) return;
+  const activePackId = localStorage.getItem('av_service') || 'none';
+  showPackOverlayBanner(true);
+  try {
+    let overlay = null;
+    if (activePackId === 'none') {
+      const kq = await PackOverlay.buildGenericKQ(s);
+      if (kq.length) overlay = { kq };
+    } else {
+      overlay = await PackOverlay.buildRealPackOverlay(s);
+    }
+    if (!overlay) return;
+    const newOverlays = Object.assign({}, s.pack_overlays || {}, { [activePackId]: overlay });
+    await sbFetch(`scenarios?id=eq.${encodeURIComponent(String(s.id))}`, {
+      method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({ pack_overlays: newOverlays })
+    });
+    s.pack_overlays = newOverlays;
+    if (!currentScenario || String(currentScenario.id) !== String(s.id)) return;
+    const view = document.getElementById('scenario-view');
+    const patched = applyCorrectionsToScenario(applyPackOverlay(s));
+    view.innerHTML = renderScenario(patched);
+    injectFlagButtons();
+    updateScoreSheet(); showStickyBar(patched); applyLevel(currentLevel);
+  } catch (e) {
+    console.error('Pack overlay generation failed (non-blocking):', e.message);
+  } finally {
+    showPackOverlayBanner(false);
+  }
+}
+
 function loadScenario(id) {
   const all = getAllScenarios();
   const s = all.find(x => String(x.id) === String(id));
@@ -3640,18 +3724,21 @@ function loadScenario(id) {
   const view = document.getElementById('scenario-view');
   // Render immediately with uncorrected data, then reload corrections and re-render
   _corrections = [];
-  view.innerHTML = renderScenario(s);
+  view.innerHTML = renderScenario(applyPackOverlay(s));
   showScreen('scenario-view');
   // Open key sections immediately (will be re-opened after corrections load too)
   ['sec-dispatch','sec-patient-assessment','sec-diagnosis','sec-implement'].forEach(sid => {
     const b0 = document.getElementById(sid); const h0 = b0 && b0.previousElementSibling;
     if (b0) b0.classList.add('open'); if (h0) h0.classList.add('open');
   });
-  updateScoreSheet(); showStickyBar(s); applyLevel(currentLevel);
+  updateScoreSheet(); showStickyBar(applyPackOverlay(s)); applyLevel(currentLevel);
+  // If this scenario has no cached content for the active pack, generate
+  // it in the background (fire-and-forget — re-renders itself on success).
+  if (needsPackOverlay(s)) generateAndApplyPackOverlay(s);
   // Load corrections async and re-render with them applied
   loadCorrectionsForScenario(s.id).then(() => {
     if (!currentScenario || String(currentScenario.id) !== String(s.id)) return;
-    const patched = applyCorrectionsToScenario(s);
+    const patched = applyCorrectionsToScenario(applyPackOverlay(s));
     view.innerHTML = renderScenario(patched);
     injectFlagButtons();
     // Re-open key sections, update score, sticky bar
