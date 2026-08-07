@@ -3204,6 +3204,47 @@ function unlockRealtimeAudio() {
   } catch (e) { /* best-effort unlock only */ }
 }
 
+// "Now listening" chime -----------------------------------------------------
+// The gap between tapping Talk and startRealtimeCapture()'s socket.onopen
+// (Deepgram key fetch, then getUserMedia permission, then the WS handshake
+// itself) is real and can run a second or more — genuinely necessary setup,
+// not something to eliminate, but silent, so anything said into that gap
+// went uncaptured with no cue why. A short two-tone chime fired at the exact
+// moment the socket actually opens (see socket.onopen below) marks "now" the
+// same way a phone's own dial-tone-then-beep does, instead of relying on the
+// status text alone. Same unlock-in-the-tap-handler pattern as
+// unlockRealtimeAudio() just above (AudioContext also needs a user gesture
+// on Safari/iOS) — created here in startRealtimeCall(), played later from
+// socket.onopen once the actual async work finishes.
+let _rtChimeCtx = null;
+function unlockRealtimeChime() {
+  if (_rtChimeCtx) return;
+  try { _rtChimeCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch (e) { /* best-effort only — a missing chime isn't fatal */ }
+}
+function playRealtimeReadyChime() {
+  if (!_rtChimeCtx) return;
+  try {
+    if (_rtChimeCtx.state === 'suspended') _rtChimeCtx.resume();
+    const now = _rtChimeCtx.currentTime;
+    // Two short rising tones read as "ready", not an alarm — quiet
+    // (peak gain 0.25) and brief (~180ms total) so it doesn't compete with
+    // whatever the assessor/patient is about to say next.
+    [[880, now], [1320, now + 0.09]].forEach(([freq, at]) => {
+      const osc = _rtChimeCtx.createOscillator();
+      const gain = _rtChimeCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.25, at + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
+      osc.connect(gain).connect(_rtChimeCtx.destination);
+      osc.start(at);
+      osc.stop(at + 0.1);
+    });
+  } catch (e) { /* best-effort only */ }
+}
+
 // --- Live call lifecycle ------------------------------------------------
 let _rtActive = false;
 let _rtCallId = 0; // bumped on every start/end — every async callback checks this before touching shared state, so a stale call (ended or superseded) can't act after the fact
@@ -3252,6 +3293,7 @@ function startRealtimeCall() {
   if (_patientDisplayMode === 'monitor') return; // this device's mic is intentionally never used in Monitor Only mode — see setDisplayMode()
   unlockSpeechSynthesis(); // the TTS-failure fallback in speakRealtimeReply() still needs this unlocked
   unlockRealtimeAudio(); // must happen here, inside the tap handler, to count as a user gesture
+  unlockRealtimeChime(); // same reason — see its own comment
   stopWakeListening();
   hideWakePanel();
   _rtCallId++;
@@ -3380,6 +3422,7 @@ async function startRealtimeCapture() {
     if (callId !== _rtCallId) { try { socket.close(); } catch (e) {} return; }
     statusEl.textContent = 'Listening… (you can interrupt anytime)';
     document.getElementById('voice-mic-indicator').classList.add('listening'); // same red badge legacy hold-to-talk uses — removed in stopRealtimeCapture()
+    playRealtimeReadyChime(); // the setup gap above (key fetch, mic permission, WS handshake) just ended — this is the actual "you can talk now" instant
     const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
     _rtRecorder = recorder;
     recorder.ondataavailable = (ev) => {
