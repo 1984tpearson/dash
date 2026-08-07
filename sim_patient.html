@@ -291,8 +291,21 @@ body.mode-avatar #monitor-col { display: none !important; }
    keep their existing row layout (Treat/Assess/Talk side by side) — only
    scaled up, not restructured. */
 @media (max-width: 600px) {
-  body.mode-avatar #patient-info-normal h2 { font-size: 15px; }
-  body.mode-avatar #patient-info .row { font-size: 16px; margin-bottom: 6px; }
+  /* Demographics/dispatch/complaint/scene-time is screen real estate the
+     avatar needs more than this info does on a phone — it's still one tap
+     away in sim_control.html for the assessor, and nothing here reads it
+     back to the student. Hidden outright (not just shrunk) rather than
+     sized down like everything else in this block, and `!important` since
+     openVoiceModal()/hideWakePanel()/closeVoiceModal() all set its inline
+     `style.display` directly (see those functions) and would otherwise win
+     over a plain override here. The OUTER #patient-info panel still needs
+     to appear, though — #patient-info-voice (the Talk/Assess/Treat
+     modal) lives in the same panel and takes over on voice interactions;
+     `.voice-active` is the class those same functions toggle on #patient-info
+     for exactly this — collapse the panel to nothing while neither child
+     has anything to show, appear again the instant one does. */
+  body.mode-avatar #patient-info-normal { display: none !important; }
+  body.mode-avatar #patient-info:not(.voice-active) { display: none; }
 
   body.mode-avatar #voice-modal-title { font-size: 15px; }
   body.mode-avatar #voice-modal-status { font-size: 15px; min-height: 18px; }
@@ -3746,6 +3759,7 @@ function openVoiceModal(mode, opts) {
   document.getElementById('patient-reply-display').textContent = '';
   document.getElementById('patient-info-normal').style.display = 'none';
   document.getElementById('patient-info-voice').style.display = 'block';
+  document.getElementById('patient-info').classList.add('voice-active'); // see the mobile Avatar Only rule in the CSS for why this exists
   _voiceModalOpen = true;
   syncInputModeUI();
   syncFabArmedUI();
@@ -3986,6 +4000,7 @@ function showWakePanel(mode, opts) {
   document.getElementById('patient-info-voice').classList.add('wake-auto');
   document.getElementById('patient-info-normal').style.display = 'none';
   document.getElementById('patient-info-voice').style.display = 'block';
+  document.getElementById('patient-info').classList.add('voice-active'); // see the mobile Avatar Only rule in the CSS for why this exists
   document.getElementById('voice-mic-indicator').classList.toggle('listening', opts.state === 'hearing');
 }
 
@@ -4010,6 +4025,7 @@ function hideWakePanel() {
   document.getElementById('patient-info-voice').classList.remove('wake-auto');
   document.getElementById('patient-info-voice').style.display = 'none';
   document.getElementById('patient-info-normal').style.display = 'block';
+  document.getElementById('patient-info').classList.remove('voice-active');
 }
 
 // Reported on the toggle button itself rather than kept internal: the first
@@ -4352,6 +4368,7 @@ function closeVoiceModal() {
   if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
   document.getElementById('patient-info-voice').style.display = 'none';
   document.getElementById('patient-info-normal').style.display = 'block';
+  document.getElementById('patient-info').classList.remove('voice-active');
   syncFabArmedUI();
   startWakeListening(); // hand the mic back to auto-listen, if it's on
 }
