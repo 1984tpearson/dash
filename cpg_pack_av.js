@@ -1,6 +1,11 @@
 /**
- * AV Scenario Trainer — CPG Packages
+ * The "av" service pack's CPG package data (formerly cpg_packages_combined.js).
  * Source: Ambulance Victoria ALS-MICA Clinical Practice Guidelines v3.13.1 (December 2025)
+ *
+ * Loaded only when the AV service pack is active (see cpg_pack_loader.js and
+ * nav.js's SERVICE_PACKS) — cpg_pack_none.js is the generic default this
+ * file supersedes. Always loaded together with category_pack_av.js as one
+ * atomic pack, never independently.
  *
  * ============================================================
  * ⚠️  CRITICAL WARNING — READ BEFORE MODIFYING THIS FILE ⚠️

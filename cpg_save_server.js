@@ -2,14 +2,16 @@
  * CPG Editor Save Server
  * Run with: node cpg_save_server.js
  * Listens on http://localhost:3456
- * Receives updated CPG package objects and writes them into cpg_packages_combined.js
+ * Receives updated CPG package objects and writes them into cpg_pack_av.js
+ * (the AV service pack's data — this tool is only ever for editing that one,
+ * see cpg_pack_av.js's own header).
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const CPG_FILE = path.join(__dirname, 'cpg_packages_combined.js');
+const CPG_FILE = path.join(__dirname, 'cpg_pack_av.js');
 const PORT = 3456;
 
 const server = http.createServer((req, res) => {

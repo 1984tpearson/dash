@@ -1,6 +1,9 @@
 /**
- * AV Scenario Trainer -- Shared Category / CPG mapping data
- * Single source of truth for generator.html, scenario.html, and cpg_editor.html.
+ * The "av" service pack's category/CPG mapping data (formerly category_data.js).
+ * Loaded only when the AV service pack is active (see cpg_pack_loader.js and
+ * nav.js's SERVICE_PACKS) — category_pack_none.js is the generic default
+ * this file supersedes. Always loaded together with cpg_pack_av.js as one
+ * atomic pack, never independently.
  *
  * CATEGORIES         -- Quick Build / Custom Build condition picker (category > subcategory > condition names)
  * CATEGORY_TO_CPG     -- category|subcategory -> CPG package keys (drives AI prompt content injection + browse-tree rows)
