@@ -306,6 +306,31 @@ body.mode-avatar #monitor-col { display: none !important; }
      has anything to show, appear again the instant one does. */
   body.mode-avatar #patient-info-normal { display: none !important; }
   body.mode-avatar #patient-info:not(.voice-active) { display: none; }
+  /* The voice modal (Talk/Assess/Treat status/transcript/reply) still lives
+     in this same panel — see the comment above #patient-info-voice — and
+     while it's showing (.voice-active), #patient-info sat in normal flow
+     above #main, so every time it popped up or closed it changed #main's
+     own height and, with it, the avatar's: the exact "avatar size changes"
+     this is fixing. `position:fixed` takes it out of flow entirely so it
+     floats as an overlay card instead — same idea as the trend arrows
+     floating on the right edge (see #trend-indicator above), just anchored
+     near the top here since that's this panel's own natural reading
+     position (title/status first). `top:50px` clears the topbar at this
+     breakpoint rather than being measured live — if the topbar's own
+     height changes, revisit this. `!important` on margin overrides the
+     inline `style="margin:10px 10px 0;"` set in the HTML, which a plain
+     declaration here can't outrank. */
+  body.mode-avatar #patient-info.voice-active {
+    position: fixed;
+    top: 50px;
+    left: 10px;
+    right: 10px;
+    margin: 0 !important;
+    z-index: 30;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.4);
+  }
 
   body.mode-avatar #voice-modal-title { font-size: 15px; }
   body.mode-avatar #voice-modal-status { font-size: 15px; min-height: 18px; }
