@@ -630,14 +630,24 @@ editing.
      what the tool does over time anyway, more a "here's what the site
      thinks should apply, you as assessor decide if that's right" aid
      than the core mechanism. `cpg_pack_none.js`/`category_pack_none.js`
-     are the generic pack's placeholder equivalent — explicitly NOT
-     copied/derived from AV's text (that would remove the very
-     attribution that makes AV's own content reproduction defensible,
-     not just relabel it), ordinary general clinical knowledge in plain
-     wording, deliberately small, and explicitly marked in both files'
-     headers as a placeholder Tim intends to properly rebuild later —
-     don't mistake its current size/depth for the intended end state, and
-     don't hold it to `cpg_pack_av.js`'s verbatim-accuracy bar.
+     are the generic pack's equivalent, but NOT symmetrically placeholder
+     — `category_pack_none.js`'s taxonomy (CATEGORIES/CATEGORY_TO_CPG/
+     COND_TO_CPG_KEY/CPG_SUBTYPE_LABELS) is a full, deliberate copy of
+     `category_pack_av.js`'s, same ~69-condition breadth, because the
+     condition list itself is standard industry categorization, not AV's
+     IP (see tier 1 above) — no reason for the generic pack to offer a
+     reduced picker. `cpg_pack_none.js`'s actual clinical CONTENT is the
+     part that's still a genuine placeholder (currently only 6 of those
+     ~69 keys have an entry) — explicitly NOT copied/derived from AV's
+     text (that would remove the very attribution that makes AV's own
+     content reproduction defensible, not just relabel it), ordinary
+     general clinical knowledge in plain wording, marked in its own
+     header as a placeholder Tim intends to properly fill out over time.
+     A condition selected in the generic pack that doesn't have a
+     matching `cpg_pack_none.js` entry yet just falls back to the AI's
+     general knowledge at generation time (`buildCPGContext` returns
+     empty for it) rather than injected CPG text — not broken, just less
+     tightly grounded until more entries get written.
   Also worth knowing: `cpg_editor.html` always loads/patches
   `cpg_pack_av.js`/`category_pack_av.js` directly, never through
   `cpg_pack_loader.js` — it's an authoring tool for the real AV content

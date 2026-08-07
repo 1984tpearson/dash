@@ -8,13 +8,17 @@
  * paramedic/EMS clinical knowledge, written in plain generic terms, just
  * enough breadth to keep scenario generation functional out of the box.
  *
- * THIS IS A PLACEHOLDER, not a finished generic dataset — deliberately
- * small (six common conditions, adult-only). Tim intends to properly
- * rebuild this later with broader, more carefully-authored generic
- * content; don't treat its current size/depth as the intended end state,
- * and don't hold it to the same accuracy bar as cpg_pack_av.js — that
- * file's content must stay verbatim from its real source; this one is
- * general knowledge and can be freely edited/expanded by hand.
+ * THIS IS A PLACEHOLDER, not a finished generic dataset — currently only
+ * six of the ~69 conditions category_pack_none.js's taxonomy covers have
+ * an entry here (the rest fall back to the AI's general knowledge at
+ * generation time — see category_pack_none.js's own header). Tim intends
+ * to properly fill this out over time; don't treat the current count as
+ * the intended end state, and don't hold it to the same accuracy bar as
+ * cpg_pack_av.js — that file's content must stay verbatim from its real
+ * source; this one is general knowledge and can be freely edited/
+ * expanded by hand, key-by-key, matching cpg_pack_av.js's key names so
+ * category_pack_none.js's mapping (shared with the AV pack) keeps
+ * resolving correctly regardless of which pack is active.
  *
  * Same shape as cpg_pack_av.js (CPG_PACKAGES keyed object: cpg, title,
  * careObjectives, management, management_mica, notes) so nothing that
