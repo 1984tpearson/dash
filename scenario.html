@@ -4466,13 +4466,14 @@ function renderSection1(s, isTrauma) {
       </td>
     </tr>`;
 
-  // Life threat rows — use AI-generated life_threats field if present, otherwise generic RABCDE placeholders
+  // Life threat rows — only ever what the AI actually generated. No
+  // fabricated generic placeholder rows when the field is empty (a
+  // scenario genuinely can have no immediate life threat) — see
+  // CLAUDE.md's service-pack Gotchas entry.
   const _ltSteps = (s.life_threats || []).filter(Boolean);
   const ltRows = _ltSteps.length
     ? _ltSteps.map((t, i) => mkRow(`lt${i+1}`, t)).join('')
-    : mkRow('lt1', 'Airway — positioning / adjunct as indicated')
-      + mkRow('lt2', 'Breathing — oxygen therapy as indicated')
-      + mkRow('lt3', 'Circulation / Haemorrhage — control as indicated');
+    : '<tr><td colspan="4" style="padding:10px;font-size:12px;color:var(--grey);font-style:italic">No immediate life threats identified for this scenario.</td></tr>';
 
   const _ss = s.secondary_survey || {};
   const ssRow = (id, key, label, indent=false) => {
