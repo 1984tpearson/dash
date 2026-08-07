@@ -1128,6 +1128,19 @@ function buildCPGContext(catVal1, catVal2) {
 
   if (allKeys.length === 0) return '';
 
+  const _isAvPackCtx = !!(window.AVNav && AVNav.getServicePack && AVNav.getServicePack().legal);
+
+  if (!_isAvPackCtx) {
+    // Default pack: no real CPG clinical content is injected for generation at all
+    // (cpg_pack_none.js is now an intentionally empty placeholder — see its header).
+    // The only thing surfaced here is the specific named subtype/condition that got
+    // selected above (e.g. which toxidrome), purely so downstream prompt text can
+    // name it — CPG_SUBTYPE_LABELS is generic taxonomy text from
+    // category_pack_none.js, not clinical guideline content.
+    const labels = allKeys.map(k => (typeof CPG_SUBTYPE_LABELS !== 'undefined' && CPG_SUBTYPE_LABELS[k]) || '').filter(Boolean);
+    return labels.length ? `\n\nSELECTED CONDITION: ${labels.join(', ')}` : '';
+  }
+
   const packageSections = allKeys.map(k => {
     const pkg = CPG_PACKAGES[k];
     if (!pkg) return '';
@@ -1181,9 +1194,8 @@ function buildCPGContext(catVal1, catVal2) {
     }
   }
 
-  const _isAvPackCtx = !!(window.AVNav && AVNav.getServicePack && AVNav.getServicePack().legal);
-  const _ctxLabel = _isAvPackCtx ? 'RELEVANT AV CPG CONTENT (v3.13.1)' : 'RELEVANT CPG CONTENT';
-  return `\n\n${_ctxLabel} — use these exact doses and thresholds:\n${packageSections}${comboNote}`;
+  // (Default pack already returned above — everything below only runs for AV pack.)
+  return `\n\nRELEVANT AV CPG CONTENT (v3.13.1) — for CPG code selection and knowledge-question grounding only, do NOT use this to determine vitals or severity:\n${packageSections}${comboNote}`;
 }
 
 // Build a compact catalogue of all available CPG codes + titles, for the AI to
@@ -1393,7 +1405,7 @@ async function generateAIScenario() {
   const _pack = (window.AVNav && AVNav.getServicePack) ? AVNav.getServicePack() : null;
   const _isAvPack = !!(_pack && _pack.legal);
   const _kqCount = _isAvPack ? 3 : 5;
-  const _cpgSourceLabel = _isAvPack ? 'AV Clinical Practice Guidelines v3.13.1 (December 2025)' : 'the clinical practice guideline content provided';
+  const _cpgSourceLabel = _isAvPack ? 'AV Clinical Practice Guidelines v3.13.1 (December 2025)' : 'standard, widely-recognised paramedic/EMS clinical practice';
   const _roleFraming = _isAvPack ? 'Ambulance Victoria (AV) paramedic education' : 'clinical training use across paramedic, nursing, and medical education';
   const _kqTaggingSentence = _isAvPack
     ? ` each item in "kq" must include a "cpgCode" field set to the exact CPG code (e.g. "A0402") of the guideline that specific question is testing, taken from the "--- CPG: title (code) ---" headers in the context provided — never leave it blank or invent a code that isn't shown. KQ QUESTION COUNT:`
@@ -1404,11 +1416,11 @@ async function generateAIScenario() {
   const _antiAmericanismLine = _isAvPack ? 'This is an Ambulance Victoria scenario' : 'This is an Australian clinical scenario';
   const _kqFramingNote = _isAvPack ? '' : ' Phrase questions in general clinical language, not paramedic-specific jargon (e.g. avoid "pre-hospital"/"on-scene"/ambulance-specific phrasing) — this generic content may be used for nursing or medical training as well as paramedic training.';
 
-  const cpgInstruction = cpgContext
-    ? `You MUST use the exact drug doses, thresholds, and management steps from the CPG content provided below. Do not invent doses or deviate from the provided protocol.${cpgContext}`
-    : `Use your knowledge of ${_cpgSourceLabel} to generate an accurate scenario.`;
+  const cpgInstruction = (_isAvPack && cpgContext)
+    ? `The CPG content below exists ONLY so you can (1) select the correct "cpg" code and any genuinely relevant "additional_cpgs", and (2) write the ${_kqCount} knowledge questions/answers grounded in real guideline content. Do NOT use it to determine vitals, presentation severity, thresholds, or any other clinical field — those must come from realistic clinical judgement, not from matching figures in the text below.${cpgContext}`
+    : `Use your knowledge of ${_cpgSourceLabel} to generate an accurate, clinically realistic scenario — vitals and presentation should reflect sound clinical judgement, not a specific guideline document.`;
 
-  const systemPrompt = `You are a clinical scenario writer for ${_roleFraming}. Write accurate ALS (Level C/D) verbal assessment scenarios based strictly on ${_cpgSourceLabel}. Respond with valid JSON only — no markdown, no preamble. CRITICAL RULE: All clinical content (treatment, drug doses, management steps, assessment criteria, key questions and answers) must be drawn exclusively from the CPG content provided. Do NOT add management steps, drug doses, or clinical guidance that are not explicitly stated in the CPGs — not even if they are standard clinical practice. The ONLY exception is the "life_threats" field, which contains immediate pre-assessment physical actions — these must always be populated and are exempt from the CPG-only rule. KQ CPG TAGGING:${_kqTaggingSentence} the "kq" array must contain EXACTLY ${_kqCount} questions — never more, never fewer, regardless of how much CPG content is available to draw on. KQ CPG COVERAGE: ${_kqCoverageNote} KQ QUESTION STYLE: knowledge questions must be direct short-answer recall questions, NOT clinical vignettes or case presentations — never start a question with a patient description (e.g. "A 65-year-old presents with..."). Ask directly for the fact instead: a dose/route, a threshold/criterion, a contraindication, an indication, a definition, or what to do in a specific named situation from the CPG (e.g. "What is the adult dose of GTN sublingually?", "Name two contraindications to X.", "At what SpO2 threshold should oxygen be considered?"). Do not reference this specific patient, scenario, or any detail from it in the questions — these test the student's broader knowledge of the same guideline content beyond just this one case.${_kqFramingNote} Answers should be short and direct, not paragraphs. GCS FORMAT: vitals.GCS must always be a JSON object with four fields: E (eyes, integer 1–4), V (verbal, integer 1–5), M (motor, integer 1–6), total (integer, must equal E+V+M exactly), and description (a short clinical sentence describing the patient's observable behaviour matching those scores, e.g. "eyes open to pain only, inappropriate words, localising to pain"). A fully alert patient is E4 V5 M6 total 15. Never return GCS as a plain string or number. AUSTRALIAN TERMINOLOGY: Use Australian medical terminology and drug names throughout (e.g. adrenaline not epinephrine, paracetamol not acetaminophen, salbutamol not albuterol). Use mmol/L for BGL. Use Australian English spelling. ${_antiAmericanismLine} — do not use US EMS terminology, ACLS protocols, or American drug names anywhere in the output. ${cpgInstruction}`;
+  const systemPrompt = `You are a clinical scenario writer for ${_roleFraming}. Write accurate ALS (Level C/D) verbal assessment scenarios grounded in ${_cpgSourceLabel}. Respond with valid JSON only — no markdown, no preamble. CRITICAL RULE: never invent or output any treatment/management steps or drug doses anywhere in the JSON — leave treatment_als and treatment_mica out entirely. The only field describing any kind of intervention is "life_threats", and only when a genuine immediate life threat is present — most scenarios should return an empty array there (see below), that is the correct, expected result, not an exception to populate around. KQ CPG TAGGING:${_kqTaggingSentence} the "kq" array must contain EXACTLY ${_kqCount} questions — never more, never fewer, regardless of how much CPG content is available to draw on. KQ CPG COVERAGE: ${_kqCoverageNote} KQ QUESTION STYLE: knowledge questions must be direct short-answer recall questions, NOT clinical vignettes or case presentations — never start a question with a patient description (e.g. "A 65-year-old presents with..."). Ask directly for the fact instead: a dose/route, a threshold/criterion, a contraindication, an indication, a definition, or what to do in a specific named situation${_isAvPack ? ' from the CPG' : ''} (e.g. "What is the adult dose of GTN sublingually?", "Name two contraindications to X.", "At what SpO2 threshold should oxygen be considered?"). Do not reference this specific patient, scenario, or any detail from it in the questions — these test the student's broader knowledge${_isAvPack ? ' of the same guideline content' : ''} beyond just this one case.${_kqFramingNote} Answers should be short and direct, not paragraphs. GCS FORMAT: vitals.GCS must always be a JSON object with four fields: E (eyes, integer 1–4), V (verbal, integer 1–5), M (motor, integer 1–6), total (integer, must equal E+V+M exactly), and description (a short clinical sentence describing the patient's observable behaviour matching those scores, e.g. "eyes open to pain only, inappropriate words, localising to pain"). A fully alert patient is E4 V5 M6 total 15. Never return GCS as a plain string or number. AUSTRALIAN TERMINOLOGY: Use Australian medical terminology and drug names throughout (e.g. adrenaline not epinephrine, paracetamol not acetaminophen, salbutamol not albuterol). Use mmol/L for BGL. Use Australian English spelling. ${_antiAmericanismLine} — do not use US EMS terminology, ACLS protocols, or American drug names anywhere in the output. ${cpgInstruction}`;
 
   const seedSection = complaint
     ? `\n== SCENARIO SEED (non-negotiable anchors) ==\n${complaint}\nThese details MUST appear in the scenario. Use them as a creative brief — build a rich, realistic backstory and narrative around them. Any name given must appear in the dispatch and subtitle. Any demographics given (age, gender) must be used exactly. Any clinical details (e.g. choking on watermelon, also septic, patient is blind) must be woven naturally into the relevant fields (dispatch, caller_hx, arrival_hx, medical_conditions, vitals, etc.). Do NOT invent contradictory details. Write a specific, believable scenario grounded in these anchors, not generic placeholder text.\n== END SEED ==\n`
@@ -1418,10 +1430,10 @@ async function generateAIScenario() {
 Category: ${categoryLabel}
 ${seedSection}${complaint ? '' : complaintLine + '\n'}${complexityNote}
 ${patientNote}
-Do NOT generate treatment or management steps — these are supplied from official CPG data. Leave treatment_als and treatment_mica out of the JSON entirely. Focus on generating an accurate, realistic scenario with correct vitals, flags, ddx, provisional diagnosis, and knowledge questions.
-For the "cpg" field: set this to the CPG code(s) for this scenario. If multiple CPGs were provided in the context above, list all of them comma-separated (e.g. "A0401, A0408"). The correct codes are always shown in the CPG context headers in the format "--- CPG: Title (CODE) ---". Use those codes exactly — do NOT invent or guess CPG codes.
+Do NOT generate treatment or management steps anywhere in this scenario. Leave treatment_als and treatment_mica out of the JSON entirely. Focus on generating an accurate, realistic scenario with correct vitals, flags, ddx, provisional diagnosis, and knowledge questions.
+${_isAvPack ? `For the "cpg" field: set this to the CPG code(s) for this scenario. If multiple CPGs were provided in the context above, list all of them comma-separated (e.g. "A0401, A0408"). The correct codes are always shown in the CPG context headers in the format "--- CPG: Title (CODE) ---". Use those codes exactly — do NOT invent or guess CPG codes.
 For the "additional_cpgs" field: return an array of CPG codes (e.g. ["A0301"]) for any OTHER guideline from the catalogue below that a paramedic would genuinely also need to consult for this specific patient — for example, a burns patient would very likely also need Pain Relief. Only include a code if it is clearly and specifically relevant to this patient's presentation, not just generically associated with the category. If nothing else is clearly relevant, return an empty array []. Every code returned must appear exactly as written in this catalogue, do NOT invent a code:
-${buildAdditionalCPGCatalogue(_lastPrimaryCPGKeys)}
+${buildAdditionalCPGCatalogue(_lastPrimaryCPGKeys)}` : `For the "cpg" and "additional_cpgs" fields: leave "cpg" as an empty string and "additional_cpgs" as an empty array — this pack does not use CPG code references.`}
 For the "dispatch" field: write a SHORT pager-style dispatch message — the brief alert a paramedic receives before attending. Format: "Priority [1/2/3] — [age]yo [Male/Female] — [chief complaint in 3–5 words]". Do NOT reveal the diagnosis or give clinical detail. Examples: "Priority 1 — 71yo Male — difficulty breathing", "Priority 1 — 34yo Female — unresponsive", "Priority 2 — 58yo Male — chest pain". The patient's name must NOT appear in the dispatch.
 ${_isAvPack ? `For the "flags" field: after generating the scenario's vitals and presentation, check them against AV CPG A0108 (Clinical Flags / Patient Safety) and populate red/yellow ONLY with flags actually met — this is a post-hoc consistency check, not mandatory content. Return {"red":[],"yellow":[]}. Leave either or both arrays empty if no criteria are met — most scenarios should have few or no flags. Each entry must state the specific criterion met, prefixed with the matching symbol: red entries start with "🔴 ", yellow entries start with "🟡 ".
 RED FLAGS (mandate transport) — any of: HR >120, RR >30, SBP <90, SpO2 <90% (unless known chronic hypoxaemia), GCS <13, stridor, first presentation seizure, anaphylaxis (including resolved/post-adrenaline), ACS (even if resolved), ectopic pregnancy, primary obstetric issue, stroke/TIA, sudden onset headache, unable to walk (when usually able), post-tonsillectomy bleeding ≤14 days post-op.
