@@ -188,6 +188,19 @@ body.mode-avatar #monitor-col { display: none !important; }
 #voice-mic-indicator { display: none; position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; align-items: center; justify-content: center; background: #fff; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
 #voice-mic-indicator svg { width: 13px; height: 13px; fill: #dc2626; }
 #voice-mic-indicator.listening { display: flex; animation: micBlink 1s steps(1) infinite; }
+/* "Connecting…" state — see showRealtimeConnectingIndicator(). Same badge
+   position as the red mic icon above (reusing it rather than adding a new
+   floating element elsewhere), swapped for a spinning ring instead: the mic
+   icon means "you're being heard right now", which isn't true yet during
+   Realtime Voice's connect gap, so it shouldn't show until socket.onopen
+   actually confirms that (see revealRealtimeModal()). The two icons are
+   mutually exclusive (JS only ever sets one class at a time), so no
+   specificity fight between these rules and .listening above. */
+#voice-mic-indicator.connecting { display: flex; }
+#voice-mic-indicator.connecting svg.mic-icon { display: none; }
+#voice-mic-indicator .spinner-icon { display: none; }
+#voice-mic-indicator.connecting .spinner-icon { display: block; fill: none; stroke: #0369a1; stroke-width: 2.5; stroke-linecap: round; animation: micSpin 0.8s linear infinite; }
+@keyframes micSpin { to { transform: rotate(360deg); } }
 @keyframes micBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 
 /* No min-height:0 here, deliberately — unlike #head-wrap (which needs that
@@ -515,7 +528,10 @@ body.mode-avatar #monitor-col { display: none !important; }
           </g>
         </g>
       </svg>
-      <span id="voice-mic-indicator" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15zm5.5-3.5a5.5 5.5 0 0 1-11 0H5a7 7 0 0 0 6 6.93V21h2v-2.57a7 7 0 0 0 6-6.93h-1.5z"/></svg></span>
+      <span id="voice-mic-indicator" aria-hidden="true">
+        <svg class="mic-icon" viewBox="0 0 24 24"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-6a3.5 3.5 0 0 0-7 0v6A3.5 3.5 0 0 0 12 15zm5.5-3.5a5.5 5.5 0 0 1-11 0H5a7 7 0 0 0 6 6.93V21h2v-2.57a7 7 0 0 0 6-6.93h-1.5z"/></svg>
+        <svg class="spinner-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="34 22"/></svg>
+      </span>
     </div>
     <div id="trend-indicator" aria-hidden="true"></div>
     </div>
@@ -2503,6 +2519,21 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { tick(); pollSession(); }
+  // Mobile Safari/Chrome bug, not this page's own logic misbehaving: an
+  // utterance that's speaking (or merely queued) via the standard
+  // window.speechSynthesis voice when the tab gets backgrounded doesn't
+  // reliably pick back up normally on returning — seen in practice either
+  // continuing well past where the on-screen reply text says it should
+  // have finished, or restarting the same line from the beginning. Piper
+  // (HQ Voice) and Realtime Voice's Deepgram Aura-2 reply both play
+  // through real <audio> elements instead, which don't have this problem —
+  // only the plain "computerized" browser voice does. Cancelling the
+  // instant the tab actually goes into the background means there's
+  // nothing left queued in the engine for it to misbehave with once the
+  // tab returns; the reply text stays on screen either way, only the
+  // audio is lost, same as if speechSynthesis had simply failed outright
+  // (already a handled case elsewhere in this file).
+  else if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
 });
 
 // --- Voice capture: "Give Treatment" / "Talk to Patient" ------------------
@@ -2597,6 +2628,23 @@ function unlockSpeechSynthesis() {
 // as still covered by the original gesture, unlike a freshly-constructed
 // Audio() later.
 const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAGAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+
+// Short two-tone "ready" chime — see unlockRealtimeChime()/playRealtimeReadyChime()
+// below. A real embedded WAV (not a Web Audio oscillator) for the same
+// reason SILENT_WAV_DATA_URI above is a real <audio> element and not, say,
+// an AudioContext beep: a raw AudioContext oscillator's resume() call needs
+// to happen synchronously in the tap handler, and — even having fixed that
+// — never reliably produced audible sound in practice on this tool's
+// primary device (iOS Safari). This <audio>-element approach reuses the
+// EXACT mechanism already proven to work for real patient-voice playback
+// (see unlockPiperAudio()/unlockRealtimeAudio() above) — an already-
+// activated element's later src changes + play() calls still count as
+// covered by the original unlocking gesture. Two rising sine tones
+// (880Hz/1320Hz, ~200ms total), generated offline, not decorative-only:
+// short and quiet enough not to compete with the patient reply that
+// usually follows it within a second or two.
+const REALTIME_READY_CHIME_WAV_DATA_URI = 'data:audio/wav;base64,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';
+
 let _piperAudioEl = null;
 let _piperAudioUnlocked = false;
 function unlockPiperAudio() {
@@ -3250,50 +3298,37 @@ function unlockRealtimeAudio() {
 // went uncaptured with no cue why. A short two-tone chime fired at the exact
 // moment the socket actually opens (see socket.onopen below) marks "now" the
 // same way a phone's own dial-tone-then-beep does, instead of relying on the
-// status text alone. Same unlock-in-the-tap-handler pattern as
-// unlockRealtimeAudio() just above — created here in startRealtimeCall(),
-// played later from socket.onopen once the actual async work finishes.
+// status text alone.
 //
-// The `.resume()` call has to happen HERE, synchronously inside the tap
-// handler, not deferred to playRealtimeReadyChime() — a first version called
-// it there instead (right before scheduling the tones) and produced no sound
-// at all on iOS Safari (this tool's primary device, per unlockPiperAudio()'s
-// own comment earlier in this file): unlike `new AudioContext()` itself,
-// which Chrome silently auto-resumes when constructed inside a gesture,
-// WebKit specifically requires the `resume()` call itself to be inside a
-// genuine user gesture's call stack, and socket.onopen — an async WebSocket
-// callback firing well after the tap that started it — doesn't count.
-// Calling `.resume()` here instead, synchronously inside
-// startRealtimeCall()'s tap handler, is what actually unlocks it; by the
-// time playRealtimeReadyChime() runs later the context is already running,
-// so no resume there is needed.
-let _rtChimeCtx = null;
+// A real <audio> element playing REALTIME_READY_CHIME_WAV_DATA_URI (see its
+// own comment), not a Web Audio oscillator — a first version used
+// AudioContext + createOscillator(), which never produced audible sound in
+// practice on iOS Safari (this tool's primary device) even after moving its
+// resume() call into the tap handler where WebKit requires it. Same
+// unlock-in-the-tap-handler pattern as unlockRealtimeAudio()/
+// unlockPiperAudio() just above instead — created and played (silently,
+// via SILENT_WAV_DATA_URI) here in startRealtimeCall(), then the SAME
+// element gets its src swapped to the real chime and played again later
+// from socket.onopen, which is the exact mechanism already proven to carry
+// an unlock across into an async callback for real patient-voice playback.
+let _rtChimeAudioEl = null;
+let _rtChimeUnlocked = false;
 function unlockRealtimeChime() {
-  if (_rtChimeCtx) return;
+  if (_rtChimeUnlocked) return;
+  _rtChimeUnlocked = true;
   try {
-    _rtChimeCtx = new (window.AudioContext || window.webkitAudioContext)();
-    _rtChimeCtx.resume().catch(() => {}); // best-effort — a rejection here just means the chime silently doesn't play later
+    _rtChimeAudioEl = new Audio(SILENT_WAV_DATA_URI);
+    _rtChimeAudioEl.play().catch(() => {}); // best-effort — a rejection here just means the chime silently doesn't play later
   } catch (e) { /* best-effort only — a missing chime isn't fatal */ }
 }
 function playRealtimeReadyChime() {
-  if (!_rtChimeCtx) return;
+  if (!_rtChimeAudioEl) return;
   try {
-    const now = _rtChimeCtx.currentTime;
-    // Two short rising tones read as "ready", not an alarm — quiet
-    // (peak gain 0.25) and brief (~180ms total) so it doesn't compete with
-    // whatever the assessor/patient is about to say next.
-    [[880, now], [1320, now + 0.09]].forEach(([freq, at]) => {
-      const osc = _rtChimeCtx.createOscillator();
-      const gain = _rtChimeCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, at);
-      gain.gain.exponentialRampToValueAtTime(0.25, at + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
-      osc.connect(gain).connect(_rtChimeCtx.destination);
-      osc.start(at);
-      osc.stop(at + 0.1);
-    });
+    _rtChimeAudioEl.pause();
+    _rtChimeAudioEl.currentTime = 0;
+    _rtChimeAudioEl.src = REALTIME_READY_CHIME_WAV_DATA_URI;
+    _rtChimeAudioEl.volume = 0.6; // quiet-ish — it shouldn't compete with the patient reply that usually follows within a second or two
+    _rtChimeAudioEl.play().catch(() => {});
   } catch (e) { /* best-effort only */ }
 }
 
@@ -3341,6 +3376,15 @@ let _rtBargeInArmedAt = null; // Date.now() a SpeechStarted armed a possible bar
 // however much longer the current sentence has left to play.
 let _rtMicClosed = false;
 
+// The voice modal panel (status/transcript/patient reply) is deliberately
+// NOT opened here — see revealRealtimeModal()/showRealtimeConnectingIndicator()
+// below. Opening it immediately, with nothing but a static "Connecting…"
+// line in it, used to read as the mic already being live before it
+// actually was (the real setup gap — key fetch, mic permission, WS
+// handshake — is covered in detail over startRealtimeCapture()). A small
+// spinner on the avatar's own mic badge stands in for that instead, and the
+// panel itself only appears once startRealtimeCapture() actually knows
+// whether it succeeded or failed.
 function startRealtimeCall() {
   if (_patientDisplayMode === 'monitor') return; // this device's mic is intentionally never used in Monitor Only mode — see setDisplayMode()
   unlockSpeechSynthesis(); // the TTS-failure fallback in speakRealtimeReply() still needs this unlocked
@@ -3351,10 +3395,33 @@ function startRealtimeCall() {
   _rtCallId++;
   _rtActive = true;
   _rtMicClosed = false;
-  openVoiceModal('chat', { skipCapture: true }); // reuses the shared modal shell; skipCapture=true means it does NOT also start legacy SpeechRecognition
-  document.getElementById('voice-modal-title').textContent = '⚡ Realtime Voice';
+  showRealtimeConnectingIndicator();
   startRealtimeCapture();
   syncFabArmedUI();
+}
+
+// See startRealtimeCall()'s comment. Reuses #voice-mic-indicator — the same
+// floating badge that shows the red "listening" mic once connected — for a
+// spinner instead, rather than adding a whole separate loading element:
+// they're mutually exclusive states of the one "is my mic doing anything
+// right now" cue, so sharing its position keeps that obvious at a glance.
+function showRealtimeConnectingIndicator() {
+  document.getElementById('voice-mic-indicator').classList.add('connecting');
+}
+function hideRealtimeConnectingIndicator() {
+  document.getElementById('voice-mic-indicator').classList.remove('connecting');
+}
+
+// Reveals the voice modal panel — called exactly once per call attempt,
+// either from socket.onopen on success or from one of
+// startRealtimeCapture()'s earlier failure branches (unsupported browser /
+// key fetch failed / mic permission denied / connect timeout), so whichever
+// status text that branch sets is actually visible instead of being
+// written into a still-hidden panel.
+function revealRealtimeModal() {
+  hideRealtimeConnectingIndicator();
+  openVoiceModal('chat', { skipCapture: true }); // reuses the shared modal shell; skipCapture=true means it does NOT also start legacy SpeechRecognition
+  document.getElementById('voice-modal-title').textContent = '⚡ Realtime Voice';
 }
 
 // The "closes mic, lets the patient finish whatever they were saying" half
@@ -3392,6 +3459,7 @@ function stopRealtimeCapture() {
   if (_rtRecorder) { try { _rtRecorder.stop(); } catch (e) {} _rtRecorder = null; }
   if (_rtStream) { _rtStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} }); _rtStream = null; }
   document.getElementById('voice-mic-indicator').classList.remove('listening');
+  hideRealtimeConnectingIndicator(); // covers Stop being tapped mid-connect, before socket.onopen/a failure branch ever got to reveal the modal and clear this itself
 }
 
 function endRealtimeCall() {
@@ -3426,20 +3494,23 @@ async function startRealtimeCapture() {
   const statusEl = document.getElementById('voice-modal-status');
   const transcriptEl = document.getElementById('voice-modal-transcript');
   if (!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))) {
+    revealRealtimeModal();
     statusEl.textContent = 'Realtime Voice needs Chrome (MediaRecorder isn’t available here).';
     return;
   }
-  statusEl.textContent = 'Connecting…';
+  // No "Connecting…" status set here — the panel itself stays hidden this
+  // whole stretch (see revealRealtimeModal()/showRealtimeConnectingIndicator()
+  // above), so there's nothing to show it to yet.
   let dgKey;
   try { dgKey = await getDeepgramKey(); }
-  catch (e) { if (callId === _rtCallId) statusEl.textContent = e.message; return; }
+  catch (e) { if (callId === _rtCallId) { revealRealtimeModal(); statusEl.textContent = e.message; } return; }
   if (callId !== _rtCallId) return; // call ended/superseded while the key fetch was in flight
 
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) {
-    if (callId === _rtCallId) statusEl.textContent = 'Microphone permission is required for Realtime Voice.';
+    if (callId === _rtCallId) { revealRealtimeModal(); statusEl.textContent = 'Microphone permission is required for Realtime Voice.'; }
     return;
   }
   if (callId !== _rtCallId) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -3466,12 +3537,14 @@ async function startRealtimeCapture() {
   const connectTimer = setTimeout(() => {
     if (callId !== _rtCallId) return;
     try { socket.close(); } catch (e) {}
+    revealRealtimeModal();
     statusEl.textContent = 'Couldn’t connect (timed out) — this can happen on networks with security filtering that blocks realtime voice traffic. Try Standard Voice instead, or check with IT if this keeps happening.';
   }, RT_CONNECT_TIMEOUT_MS);
 
   socket.onopen = () => {
     clearTimeout(connectTimer);
     if (callId !== _rtCallId) { try { socket.close(); } catch (e) {} return; }
+    revealRealtimeModal();
     statusEl.textContent = 'Listening… (you can interrupt anytime)';
     document.getElementById('voice-mic-indicator').classList.add('listening'); // same red badge legacy hold-to-talk uses — removed in stopRealtimeCapture()
     playRealtimeReadyChime(); // the setup gap above (key fetch, mic permission, WS handshake) just ended — this is the actual "you can talk now" instant
