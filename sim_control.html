@@ -141,6 +141,36 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
 #ai-thinking-indicator .ai-thinking-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex-shrink: 0; animation: ai-thinking-dot 1.1s ease-in-out infinite; }
 @keyframes ai-thinking-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(125,60,152,0.55); } 50% { box-shadow: 0 0 0 6px rgba(125,60,152,0); } }
 @keyframes ai-thinking-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.7); } }
+
+/* ===================== Debrief overlay — see showDebrief()/closeDebrief().
+   Mirrors scenario.html's #summary-overlay pattern (full-screen white
+   overlay, window.print() for PDF/print, @media print hides everything
+   else) rather than a new page/library — same convention that tool
+   already established for "generate a printable end-of-run report". */
+#debrief-overlay { display: none; position: fixed; inset: 0; z-index: 200; background: #fff; overflow-y: auto; -webkit-overflow-scrolling: touch; color: #1e2a36; font-family: 'Courier New', monospace; }
+#debrief-overlay.open { display: block; }
+#debrief-inner { max-width: 820px; margin: 0 auto; padding: 20px 16px 40px; }
+.deb-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.deb-topbar h2 { font-size: 16px; font-weight: 800; color: var(--navy); }
+.deb-topbar-actions { display: flex; gap: 8px; }
+.deb-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 16px; font-size: 12px; padding: 10px 14px; background: var(--light); border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--border); }
+.deb-meta-item { display: flex; gap: 6px; }
+.deb-meta-item .ml { font-weight: 700; color: var(--grey); white-space: nowrap; }
+.deb-meta-item .mv { font-weight: 600; color: var(--text); }
+.deb-section { margin-bottom: 16px; }
+.deb-section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--navy); padding: 6px 0 4px; border-bottom: 2px solid var(--navy); margin-bottom: 6px; }
+.deb-list-item { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; border-bottom: 1px solid #f0f0f0; }
+.deb-list-item .dl-time { color: var(--grey); white-space: nowrap; font-size: 11px; }
+.deb-empty { font-size: 11px; color: var(--grey); padding: 4px 0; }
+.deb-graph-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 10px; margin-top: 6px; }
+.deb-graph-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.deb-graph-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+@media print {
+  body > *:not(#debrief-overlay) { display: none !important; }
+  #debrief-overlay { position: static !important; overflow: visible !important; }
+  #debrief-inner { padding: 0 !important; max-width: none; }
+  .deb-topbar-actions { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -225,6 +255,8 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
           <h2>Management / Controls</h2>
           <div class="row">
             <button class="btn btn-start" id="run-btn" onclick="toggleRun()">Start Scenario</button>
+            <button class="btn" id="end-scenario-btn" style="background:var(--red);display:none;" onclick="endScenario()">End Scenario</button>
+            <button class="btn btn-secondary" id="view-debrief-btn" style="display:none;" onclick="showDebrief()">View Debrief</button>
             <label style="margin:0;"><input type="checkbox" id="instant-toggle" onchange="updateInstantMode()"> Instant Mode</label>
           </div>
           <div class="row" style="margin-top:12px;flex-wrap:wrap;">
@@ -245,7 +277,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
               <label for="action-input">Drug / Action</label>
               <input type="text" id="action-input" placeholder="e.g. Adrenaline 0.5mg IM, Apply tourniquet left thigh" style="width:100%;" onkeydown="if(event.key==='Enter'){event.preventDefault();giveTreatment();}">
             </div>
-            <button class="btn" onclick="giveTreatment()">Give</button>
+            <button class="btn" id="give-treatment-btn" onclick="giveTreatment()">Give</button>
           </div>
           <div id="treatment-status" class="muted"></div>
 
@@ -255,7 +287,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
               <label for="event-command-input">Command</label>
               <input type="text" id="event-command-input" placeholder="e.g. Put patient into cardiac arrest in 5 minutes" style="width:100%;" onkeydown="if(event.key==='Enter'){event.preventDefault();runAssessorCommand();}">
             </div>
-            <button class="btn" onclick="runAssessorCommand()">Run</button>
+            <button class="btn" id="run-command-btn" onclick="runAssessorCommand()">Run</button>
           </div>
           <div id="event-command-status" class="muted"></div>
         </div>
@@ -394,6 +426,13 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
   </div>
 </div>
 
+<!-- Populated by showDebrief()/closeDebrief() — a factual, non-judgmental
+     end-of-run record (what was said to the patient / what was assessed /
+     what management was given, plus the full trajectory graph). See the
+     comment above showDebrief() for why nothing here implies right/wrong. -->
+<div id="debrief-overlay">
+  <div id="debrief-inner"></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -1079,7 +1118,8 @@ async function createSession() {
         isPaused: true,
         pausedAtMs: startMs,
         totalPausedMs: 0,
-        patientConnected: false
+        patientConnected: false,
+        endedAt: null
       };
       _joinInfoManuallyShown = false;
       treatments = [];
@@ -1167,21 +1207,219 @@ async function toggleRun() {
 function renderRunControls() {
   const btn = document.getElementById('run-btn');
   const status = document.getElementById('run-status');
-  if (!liveConfig.hasStarted) {
+  const ended = !!(liveConfig && liveConfig.endedAt);
+  if (ended) {
     btn.textContent = 'Start Scenario';
     btn.className = 'btn btn-start';
+    btn.disabled = true;
+    status.textContent = '\u25a0 ENDED';
+    status.style.color = '#f87171';
+  } else if (!liveConfig.hasStarted) {
+    btn.textContent = 'Start Scenario';
+    btn.className = 'btn btn-start';
+    btn.disabled = false;
     status.textContent = '';
   } else if (liveConfig.isPaused) {
     btn.textContent = 'Resume';
     btn.className = 'btn btn-start';
+    btn.disabled = false;
     status.textContent = '\u23f8 PAUSED';
     status.style.color = '#fbbf24';
   } else {
     btn.textContent = 'Pause';
     btn.className = 'btn btn-pause';
+    btn.disabled = false;
     status.textContent = '\u25cf RUNNING';
     status.style.color = '#4ade80';
   }
+  document.getElementById('end-scenario-btn').style.display = (liveConfig.hasStarted && !ended) ? 'inline-block' : 'none';
+  document.getElementById('view-debrief-btn').style.display = ended ? 'inline-block' : 'none';
+  applyEndedLockdown(ended);
+}
+
+// Once a scenario has been ended there's nothing left to script \u2014 every
+// control that mutates the session (treatments, events, CPR/defib/arrest
+// quick actions, Edit Mode) gets disabled here rather than scattering an
+// `if (liveConfig.endedAt) return;` guard through each handler individually.
+// The handlers themselves still early-return too (see e.g. giveTreatment) as
+// a second line of defence against anything triggered other than a click on
+// one of these exact buttons (Enter-to-submit on the text inputs, etc).
+function applyEndedLockdown(ended) {
+  if (!ended) return; // never un-disables anything \u2014 ending is one-way, and each of these has its own enable logic elsewhere (e.g. lma-btn via renderCprStatus) that already governs the not-ended case
+  ['cpr-toggle-btn', 'lma-btn', 'arrest-btn', 'seizure-btn', 'edit-mode-btn', 'action-input', 'give-treatment-btn', 'event-command-input', 'run-command-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+}
+
+// One-way: ends the run, freezes the clock, and opens the debrief. Freezing
+// re-uses the ordinary pause fields (is_paused/paused_at_ms) exactly like
+// toggleRun()'s own pause branch \u2014 so simNow() (and everything downstream
+// of it: the graph, the debrief's own duration figure) stops advancing at
+// this instant instead of continuing to tick while the debrief sits open.
+// If the session was already paused, time is already frozen there and this
+// only needs to set ended_at.
+async function endScenario() {
+  if (!sessionCode || !liveConfig || liveConfig.endedAt) return;
+  if (!confirm('End this scenario? This locks further treatments/events and opens the debrief. It cannot be resumed.')) return;
+  const nowRaw = Date.now();
+  const endedAtIso = new Date(nowRaw).toISOString();
+  const patch = { ended_at: endedAtIso };
+  const freezing = liveConfig.hasStarted && !liveConfig.isPaused;
+  if (freezing) { patch.is_paused = true; patch.paused_at_ms = nowRaw; }
+  try {
+    await sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
+      method: 'PATCH', prefer: 'return=minimal',
+      body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() })
+    });
+  } catch (e) {
+    alert('Could not end the scenario \u2014 check the connection and try again.');
+    return;
+  }
+  liveConfig.endedAt = endedAtIso;
+  if (freezing) { liveConfig.isPaused = true; liveConfig.pausedAtMs = nowRaw; }
+  renderRunControls();
+  showDebrief();
+}
+
+// --- Debrief ---------------------------------------------------------------
+// A deliberately flat, factual record — three chronological lists (said to
+// the patient / assessed / management given) plus the full trajectory graph
+// with management markers overlaid, so the crew can read effectiveness for
+// themselves off the actual vitals lines. No AI commentary anywhere, and
+// treatments' `assumptions` field (which the live on-screen Log shows on
+// tap — see renderLog/toggleTreatmentExpanded) is deliberately left out of
+// this view: the debrief isn't meant to imply anything was right or wrong.
+// Recomputed fresh from `treatments`/`actionLog` every time it's opened
+// (View Debrief re-opens it just as well as the moment End Scenario fires)
+// rather than built once and cached, same as this page's other derived
+// state (e.g. rebuildSeriesArray).
+function renderDebriefListHtml(items) {
+  if (!items.length) return '<div class="deb-empty">Nothing logged.</div>';
+  return items.map(it => `<div class="deb-list-item"><span>${escapeHtml(it.text)}</span><span class="dl-time">t+${it.atMin.toFixed(1)} min</span></div>`).join('');
+}
+
+function showDebrief() {
+  if (!currentScenario || !liveConfig) return;
+  const s = currentScenario;
+  const meta = s.patient_meta || {};
+  const talkItems = actionLog.filter(a => a.kind === 'talk').sort((a, b) => a.atMin - b.atMin);
+  const assessItems = actionLog.filter(a => a.kind === 'assess').sort((a, b) => a.atMin - b.atMin);
+  const mgmtItems = treatments.map(t => ({ text: t.action, atMin: t.givenAtMin })).sort((a, b) => a.atMin - b.atMin);
+  const durationMin = liveConfig.hasStarted ? (simNow() - liveConfig.startTimeMs) / 60000 : 0;
+  const endedLabel = liveConfig.endedAt ? new Date(liveConfig.endedAt).toLocaleString() : 'Not ended yet — live view';
+
+  const html = `
+  <div class="deb-topbar">
+    <h2>\u{1F4CB} Debrief</h2>
+    <div class="deb-topbar-actions">
+      <button class="btn btn-secondary" onclick="closeDebrief()">← Back</button>
+      <button class="btn" onclick="window.print()">\u{1F5A8} Print / PDF</button>
+    </div>
+  </div>
+  <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:2px">${escapeHtml(s.title || '')}</div>
+  <div style="font-size:12px;color:var(--grey);margin-bottom:8px">${escapeHtml(s.subtitle || '')}</div>
+  <div class="deb-meta">
+    <div class="deb-meta-item"><span class="ml">Patient:</span><span class="mv">${escapeHtml(meta.name || '—')}</span></div>
+    <div class="deb-meta-item"><span class="ml">Age:</span><span class="mv">${escapeHtml(meta.age != null ? String(meta.age) : '—')}</span></div>
+    <div class="deb-meta-item"><span class="ml">Gender:</span><span class="mv">${escapeHtml(meta.gender || '—')}</span></div>
+    <div class="deb-meta-item"><span class="ml">Session:</span><span class="mv">${escapeHtml(sessionCode || '—')}</span></div>
+    <div class="deb-meta-item"><span class="ml">Ended:</span><span class="mv">${escapeHtml(endedLabel)}</span></div>
+    <div class="deb-meta-item"><span class="ml">Scenario duration:</span><span class="mv">${durationMin.toFixed(1)} min</span></div>
+  </div>
+
+  <div class="deb-section">
+    <div class="deb-section-title">Said to the Patient</div>
+    ${renderDebriefListHtml(talkItems)}
+  </div>
+  <div class="deb-section">
+    <div class="deb-section-title">Assessed</div>
+    ${renderDebriefListHtml(assessItems)}
+  </div>
+  <div class="deb-section">
+    <div class="deb-section-title">Management Given</div>
+    ${renderDebriefListHtml(mgmtItems)}
+  </div>
+
+  <div class="deb-section">
+    <div class="deb-section-title">Vitals Trajectory</div>
+    <div id="debrief-graph-wrap" style="width:100%;height:260px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;"></div>
+    <div class="deb-graph-legend" id="debrief-graph-legend"></div>
+  </div>
+
+  <div style="text-align:center;font-size:10px;color:var(--grey);margin-top:16px">
+    Live Scenario Debrief · ${new Date().toLocaleDateString()}
+  </div>`;
+
+  document.getElementById('debrief-inner').innerHTML = html;
+  document.getElementById('debrief-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  renderDebriefGraph();
+}
+
+function closeDebrief() {
+  document.getElementById('debrief-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// Static, full-duration, non-interactive rendering of the same trajectory
+// data renderGraph() shows live — no playhead/ghosts/edit catchers, the
+// whole run from 0 to however long the scenario ran, with a vertical marker
+// at each management entry's time (same visual language as renderGraph()'s
+// own rhythm markers, see its "Rhythm markers" comment) so the vitals lines
+// and the moments management was given sit on one picture — letting the
+// crew read effect for themselves; the tool doesn't assert anything about it.
+function renderDebriefGraph() {
+  const wrap = document.getElementById('debrief-graph-wrap');
+  const legendEl = document.getElementById('debrief-graph-legend');
+  if (!wrap || !legendEl || !liveConfig) return;
+  const W = 800, H = 260, padL = 6, padR = 34, padT = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const viewStart = 0;
+  const viewEnd = Math.max(1, liveConfig.hasStarted ? (simNow() - liveConfig.startTimeMs) / 60000 : 1);
+  const xForMin = (m) => padL + ((m - viewStart) / (viewEnd - viewStart)) * plotW;
+  const yFor = (s, val) => padT + (1 - Math.min(1, Math.max(0, (val - s.min) / ((s.plotMax !== undefined ? s.plotMax : s.max) - s.min)))) * plotH;
+  const SAMPLES = 80;
+
+  let grid = '';
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (plotH * i / 4);
+    grid += `<line x1="${padL}" y1="${y}" x2="${padL + plotW}" y2="${y}" stroke="#eef2f6" stroke-width="1" />`;
+  }
+
+  let paths = '';
+  let legend = '';
+  GRAPH_SERIES.forEach(s => {
+    if (!graphSeriesOn[s.key]) return;
+    const pts = [];
+    for (let i = 0; i <= SAMPLES; i++) {
+      const m = viewStart + (viewEnd - viewStart) * (i / SAMPLES);
+      const tMs = liveConfig.startTimeMs + m * 60000;
+      const val = s.get(SimEngine.getVitalsRaw(liveConfig, tMs), liveConfig, tMs);
+      pts.push([xForMin(m), yFor(s, val)]);
+    }
+    paths += `<path d="${pointsToSmoothPath(pts)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linecap="round" />`;
+    legend += `<span><i style="background:${s.color}"></i>${escapeHtml(s.label)}</span>`;
+  });
+
+  // Management markers — one dashed vertical line per treatment, same
+  // visual language renderGraph() uses for rhythm-change markers.
+  let mgmtUI = '';
+  treatments.forEach(t => {
+    if (t.givenAtMin < viewStart || t.givenAtMin > viewEnd) return;
+    const x = xForMin(t.givenAtMin);
+    mgmtUI += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="#0369a1" stroke-width="1.5" stroke-dasharray="3,3" opacity="0.55" />`;
+  });
+
+  let axisUI = '';
+  const stepMin = niceStep((viewEnd - viewStart) / 6);
+  for (let m = 0; m <= viewEnd + 1e-6; m += stepMin) {
+    const x = xForMin(m);
+    axisUI += `<text x="${x}" y="${padT + plotH + 14}" font-size="8" fill="#6b8299" text-anchor="middle">${Math.round(m)}m</text>`;
+  }
+
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">${grid}${mgmtUI}${paths}${axisUI}</svg>`;
+  legendEl.innerHTML = legend + (treatments.length ? `<span><i style="background:#0369a1"></i>Management given</span>` : '');
 }
 
 function updatePatientStatus() {
@@ -1225,7 +1463,7 @@ function detectActionLogTransitions(newPatientActions) {
       const label = newPatientActions[key].label || key;
       const wasSkipped = _recentlySkippedKeys.has(key);
       _recentlySkippedKeys.delete(key);
-      actionLog.push({ text: wasSkipped ? `${label} \u2014 skipped by assessor` : (ACTION_LOG_VERB[key] || `${label} completed`), atMin: nowMin });
+      actionLog.push({ text: wasSkipped ? `${label} \u2014 skipped by assessor` : (ACTION_LOG_VERB[key] || `${label} completed`), atMin: nowMin, kind: 'assess' });
     }
     _prevPatientActionsStatus[key] = cur;
   });
@@ -1259,7 +1497,7 @@ function confirmResumeFromPrompt() {
 async function pollSession() {
   if (!sessionCode || !liveConfig) return;
   try {
-    const rows = await sbFetch(`sim_sessions?session_code=eq.${sessionCode}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,patient_connected,patient_actions,action_controls,student_queue,student_queue_ack_id`, { method: 'GET' });
+    const rows = await sbFetch(`sim_sessions?session_code=eq.${sessionCode}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,patient_connected,patient_actions,action_controls,student_queue,student_queue_ack_id,ended_at`, { method: 'GET' });
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1287,6 +1525,7 @@ function applySessionRow(row) {
   liveConfig.isPaused = row.is_paused;
   liveConfig.pausedAtMs = row.paused_at_ms;
   liveConfig.totalPausedMs = row.total_paused_ms;
+  liveConfig.endedAt = row.ended_at || null;
   const wasConnected = liveConfig.patientConnected;
   liveConfig.patientConnected = row.patient_connected;
   if (!wasConnected && liveConfig.patientConnected) {
@@ -1564,6 +1803,7 @@ function closeFullGraphModal() {
 }
 
 function toggleVitalsEditMode() {
+  if (liveConfig.endedAt) return;
   vitalsEditMode = !vitalsEditMode;
   document.getElementById('edit-mode-btn').classList.toggle('active', vitalsEditMode);
   document.getElementById('edit-tool-selector').style.display = vitalsEditMode ? 'flex' : 'none';
@@ -3498,7 +3738,7 @@ Reply as the patient.`;
 async function answerPatientQuestion(question, forId) {
   if (!currentScenario) return;
   const nowMin = (simNow() - liveConfig.startTimeMs) / 60000;
-  actionLog.push({ text: `\u{1F399}\uFE0F Crew asked: "${question}"`, atMin: nowMin });
+  actionLog.push({ text: `\u{1F399}\uFE0F Crew asked: "${question}"`, atMin: nowMin, kind: 'talk' });
   renderLog();
 
   const v = SimEngine.getVitalsRaw(liveConfig, simNow());
@@ -3529,7 +3769,7 @@ async function answerPatientQuestion(question, forId) {
     speak = true;
   }
 
-  actionLog.push({ text: `\u{1F5E3}\uFE0F Patient: ${speak ? `"${replyText}"` : replyText}`, atMin: nowMin });
+  actionLog.push({ text: `\u{1F5E3}\uFE0F Patient: ${speak ? `"${replyText}"` : replyText}`, atMin: nowMin, kind: 'talk' });
   renderLog();
   try {
     await sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
@@ -3555,7 +3795,7 @@ async function answerPatientQuestion(question, forId) {
 async function answerExamFinding(question, forId) {
   if (!currentScenario) return;
   const nowMin = (simNow() - liveConfig.startTimeMs) / 60000;
-  actionLog.push({ text: `\u{1FA7A} Crew assessed: "${question}"`, atMin: nowMin });
+  actionLog.push({ text: `\u{1FA7A} Crew assessed: "${question}"`, atMin: nowMin, kind: 'assess' });
   renderLog();
 
   let replyText = "...unable to determine — try again.";
@@ -3587,7 +3827,7 @@ Report the finding.`;
     }
   } catch (e) { /* fall through with the apologetic default reply */ }
 
-  actionLog.push({ text: `\u{1FA7A} Finding: ${replyText}`, atMin: nowMin });
+  actionLog.push({ text: `\u{1FA7A} Finding: ${replyText}`, atMin: nowMin, kind: 'assess' });
   renderLog();
   try {
     await sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
@@ -3650,6 +3890,7 @@ function cprState() {
 
 async function applyCprAction(mode, actionLabel) {
   if (!sessionCode || !currentScenario) return;
+  if (liveConfig.endedAt) return;
   snapshotForUndo();
   maybeHandleActionInitiated();
   const givenAtMs = simNow();
@@ -3815,6 +4056,7 @@ async function resetDivergedFutureIfNeeded(givenAtMs) {
 async function giveTreatment(providedText, opts) {
   opts = opts || {};
   if (!sessionCode) return;
+  if (liveConfig.endedAt) { if (!opts.silent) alert('This scenario has ended.'); return; }
   const inputEl = document.getElementById('action-input');
   const action = (providedText !== undefined ? providedText : inputEl.value).trim();
   if (!action) { if (!opts.silent) alert('Enter a drug or management action.'); return; }
@@ -4132,6 +4374,7 @@ Project how this patient's vitals change from here, given this specific action.`
 // assessor commands" to fuzzy-match against).
 async function runAssessorCommand(providedText) {
   if (!sessionCode) return;
+  if (liveConfig.endedAt) return;
   const inputEl = document.getElementById('event-command-input');
   const command = (providedText !== undefined ? providedText : inputEl.value).trim();
   if (!command) { alert('Enter a command describing the event.'); return; }

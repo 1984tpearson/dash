@@ -406,6 +406,17 @@ body.mode-avatar #monitor-col { display: none !important; }
     <div id="gate-error" style="color:#b91c1c;font-size:11px;margin-top:8px;"></div>
   </div>
 </div>
+<!-- Shown by showEncounterEndedScreen(), once tick() sees testConfig.endedAt
+     — replaces the live monitor entirely rather than overlaying a dimmed
+     version of it, same idea as #session-gate pre-connect. z-index sits
+     above the voice modal/wake-mic UI (110) too, since ending should
+     supersede a mid-interaction voice modal, not sit behind it. -->
+<div id="encounter-ended-screen" style="position:fixed;inset:0;background:rgba(20,30,45,0.94);z-index:120;display:none;align-items:center;justify-content:center;">
+  <div class="panel" style="width:300px;text-align:center;">
+    <h2 style="margin-bottom:8px;">Encounter Ended</h2>
+    <p style="font-size:12px;color:#6b8299;">The assessor has ended this scenario. Nothing further will happen on this screen.</p>
+  </div>
+</div>
 <div id="hq-voice-prompt" style="position:fixed;inset:0;background:rgba(20,30,45,0.92);z-index:110;display:none;align-items:center;justify-content:center;">
   <div class="panel" style="width:300px;text-align:center;">
     <h2 style="margin-bottom:10px;">Patient Voice Quality</h2>
@@ -1504,7 +1515,8 @@ async function connectSession(code) {
       isPaused: row.is_paused,
       pausedAtMs: row.paused_at_ms,
       totalPausedMs: row.total_paused_ms,
-      spontaneousLines: row.spontaneous_lines || []
+      spontaneousLines: row.spontaneous_lines || [],
+      endedAt: row.ended_at || null
     };
     instantMode = row.instant_mode;
     actionControls = row.action_controls || {};
@@ -1574,7 +1586,7 @@ const _processedSkipEpoch = {};
 async function pollSession() {
   if (!sessionCode || !testConfig) return;
   try {
-    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines`);
+    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,ended_at`);
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1601,6 +1613,7 @@ function applySessionRow(row) {
   testConfig.isPaused = row.is_paused;
   testConfig.pausedAtMs = row.paused_at_ms;
   testConfig.totalPausedMs = row.total_paused_ms;
+  testConfig.endedAt = row.ended_at || null;
   instantMode = row.instant_mode;
   actionControls = row.action_controls || {};
   testConfig.spontaneousLines = row.spontaneous_lines || [];
@@ -2330,8 +2343,25 @@ async function handleShockBtn() {
 updateDefibButtons();
 
 let _lastTickMs = Date.now();
+// Called every tick once testConfig.endedAt is set instead of the normal
+// render path — swaps the live monitor for a static screen and stops
+// anything that would otherwise keep running unattended (wake-word mic,
+// any in-flight TTS). Idempotent (tick() calls it once a second for as
+// long as the page stays open post-end) via _endedScreenShown so the
+// stop calls below only fire once, not every tick.
+let _endedScreenShown = false;
+function showEncounterEndedScreen() {
+  document.getElementById('encounter-ended-screen').style.display = 'flex';
+  if (_endedScreenShown) return;
+  _endedScreenShown = true;
+  try { stopWakeListening(); } catch (e) {}
+  try { stopAnyPatientAudio(); } catch (e) {}
+  try { closeVoiceModal(); } catch (e) {} // in case a crew member was mid Treat/Assess/Talk when this landed
+}
+
 function tick() {
   if (!testConfig) return;
+  if (testConfig.endedAt) { showEncounterEndedScreen(); return; }
   const now = Date.now();
   const dtMs = now - _lastTickMs;
   _lastTickMs = now;
