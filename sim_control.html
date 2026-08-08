@@ -906,7 +906,9 @@ Scenario: ${scenario.title || ''}
 Provisional diagnosis: ${scenario.provisional || 'unspecified'}
 CPG: ${scenario.cpg || 'unspecified'}
 Category: ${scenario.category || ''} / ${scenario.subcategory || ''}
-Key history: ${scenario.key_hx || ''}
+Medical history: ${(scenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(scenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${scenario.allergies || 'none documented'}
 Flags: ${JSON.stringify(scenario.flags || [])}
 Patient: ${(scenario.patient_meta && scenario.patient_meta.name) || 'unnamed'}, mood: ${(scenario.patient_meta && scenario.patient_meta.mood) || 'not specified'}
 Starting vitals at arrival (minute 0): ${JSON.stringify(startingVitals)}
@@ -3468,7 +3470,10 @@ async function callPatientAI(question, v, gcsV) {
 Scenario: ${currentScenario.title || ''}
 Patient name: ${patientName}
 Provisional diagnosis (do not reveal): ${currentScenario.provisional || 'unspecified'}
-Key history: ${currentScenario.key_hx || ''}
+Medical history: ${(currentScenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(currentScenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${currentScenario.allergies || 'none documented'}
+What the patient told the crew on scene: ${currentScenario.arrival_hx || ''}
 Current approximate condition: HR ${v.HR}, RR ${v.RR}, SpO2 ${v.SpO2}%, GCS ${(v.gcsE||0)+(v.gcsV||0)+(v.gcsM||0)}/15 (Verbal component: ${gcsV}/5), pain ${v.pain != null ? v.pain + '/10' : 'unspecified'}
 Treatments given so far: ${treatments.length ? treatments.map(t => t.action).join('; ') : 'none yet'}
 
@@ -3565,7 +3570,9 @@ async function answerExamFinding(question, forId) {
     const systemPrompt = EXAM_FINDING_PROMPT;
     const userPrompt = `Scenario: ${currentScenario.title || ''}
 Provisional diagnosis (do not reveal): ${currentScenario.provisional || 'unspecified'}
-Key history: ${currentScenario.key_hx || ''}
+Medical history: ${(currentScenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(currentScenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${currentScenario.allergies || 'none documented'}
 Flags: ${JSON.stringify(currentScenario.flags || {})}
 Authored secondary survey findings: ${JSON.stringify(currentScenario.secondary_survey || {})}
 Appearance data: ${JSON.stringify({ rsa: currentScenario.rsa || null, ra: currentScenario.ra || null })}
@@ -4034,7 +4041,9 @@ async function regenerateTimelineAfterTreatment(action, givenAtMs, opts) {
 Scenario: ${currentScenario.title || ''}
 Provisional diagnosis: ${currentScenario.provisional || 'unspecified'}
 CPG: ${currentScenario.cpg || 'unspecified'}
-Key history: ${currentScenario.key_hx || ''}
+Medical history: ${(currentScenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(currentScenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${currentScenario.allergies || 'none documented'}
 Flags: ${JSON.stringify(currentScenario.flags || [])}
 
 Prior treatments already given in this encounter, in order (factor in their cumulative effect — this action doesn't happen in isolation): ${treatments.length > 1 ? treatments.slice(0, -1).map(t => `${t.action} (at minute ${t.givenAtMin.toFixed(1)})`).join('; ') : 'none — this is the first treatment given'}
@@ -4215,7 +4224,9 @@ async function regenerateTimelineForScriptedEvent(command, givenAtMs, opts) {
 Scenario: ${currentScenario.title || ''}
 Provisional diagnosis: ${currentScenario.provisional || 'unspecified'}
 CPG: ${currentScenario.cpg || 'unspecified'}
-Key history: ${currentScenario.key_hx || ''}
+Medical history: ${(currentScenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(currentScenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${currentScenario.allergies || 'none documented'}
 Flags: ${JSON.stringify(currentScenario.flags || [])}
 
 Treatments given so far in this encounter, in order: ${treatments.filter(t => t.source !== 'assessor_command').length ? treatments.filter(t => t.source !== 'assessor_command').map(t => `${t.action} (at minute ${t.givenAtMin.toFixed(1)})`).join('; ') : 'none'}
