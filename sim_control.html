@@ -170,6 +170,10 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
   #debrief-overlay { position: static !important; overflow: visible !important; }
   #debrief-inner { padding: 0 !important; max-width: none; }
   .deb-topbar-actions { display: none !important; }
+  /* Verbal Transcript reads long and is the least "at a glance" section —
+     starting it on its own page keeps the clinical-record sections
+     (assessed/management/graph) together on page 1. */
+  .deb-pagebreak { break-before: page; page-break-before: always; }
 }
 </style>
 </head>
@@ -1329,10 +1333,6 @@ function showDebrief() {
   </div>
 
   <div class="deb-section">
-    <div class="deb-section-title">Said to the Patient</div>
-    ${renderDebriefListHtml(talkItems)}
-  </div>
-  <div class="deb-section">
     <div class="deb-section-title">Assessed</div>
     ${renderDebriefListHtml(assessItems)}
   </div>
@@ -1345,6 +1345,11 @@ function showDebrief() {
     <div class="deb-section-title">Vitals Trajectory</div>
     <div id="debrief-graph-wrap" style="width:100%;height:260px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;"></div>
     <div class="deb-graph-legend" id="debrief-graph-legend"></div>
+  </div>
+
+  <div class="deb-section deb-pagebreak">
+    <div class="deb-section-title">Verbal Transcript</div>
+    ${renderDebriefListHtml(talkItems)}
   </div>
 
   <div style="text-align:center;font-size:10px;color:var(--grey);margin-top:16px">
