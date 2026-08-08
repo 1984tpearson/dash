@@ -344,9 +344,7 @@
     + '.avnav-link:active{background:var(--light);}'
     + '.avnav-bottom{margin-top:auto;padding:12px;border-top:2px solid var(--border);background:var(--light);flex-shrink:0;}'
     + '.avnav-signout-btn{width:100%;padding:12px;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;background:var(--red);color:white;min-height:48px;}'
-    + '.avnav-signout-btn:active{opacity:0.85;}'
-    + '.avnav-moretools-btn{display:block;width:100%;box-sizing:border-box;text-align:center;padding:12px;margin-bottom:10px;background:var(--white);border:1px solid var(--border);border-radius:8px;font-weight:700;font-size:13px;color:var(--text);text-decoration:none;cursor:pointer;min-height:48px;line-height:24px;}'
-    + '.avnav-moretools-btn:active{background:var(--light);}';
+    + '.avnav-signout-btn:active{opacity:0.85;}';
 
   NAV_CSS += ''
     + '.avnav-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:950;align-items:center;justify-content:center;padding:16px;}'
@@ -428,8 +426,10 @@
           '<a class="avnav-link" id="avnav-cpg-link" href="cpg_editor.html" style="display:none">CPG Editor</a>' +
           '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none">Sim Config</a>' +
         '</div>' +
+        '<div class="avnav-links">' +
+          '<a class="avnav-link" href="index.html">More Tools</a>' +
+        '</div>' +
         '<div class="avnav-bottom">' +
-          '<a class="avnav-moretools-btn" href="index.html">More Tools</a>' +
           '<div id="avnav-pack-select-wrap" style="display:none;margin-bottom:10px">' +
             '<label style="display:block;font-size:10px;font-weight:700;color:var(--grey);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Service Pack</label>' +
             '<select id="avnav-pack-select" onchange="AVNav.setServicePack(this.value)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--white);color:var(--text)">' + servicePackOptionsHtml() + '</select>' +
