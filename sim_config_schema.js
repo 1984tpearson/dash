@@ -682,7 +682,7 @@
             type: 'string',
             label: 'Confused-patient note (GCS-Verbal 4 only)',
             help: 'Appended into {{confusedNote}} in the prompt above only when the patient\'s GCS-Verbal score is exactly 4 (confused conversation) — empty string otherwise.',
-            default: "This patient’s GCS Verbal score is 4 (confused conversation) — they are disoriented. Every reply must be rambling, tangential, and only loosely connected to what was actually asked (may drift to an unrelated memory, misidentify the crew, or answer a different question than the one asked) — never a clear, accurate, on-topic answer, no matter what is asked."
+            default: "This patient’s GCS Verbal score is 4 (confused conversation) — they can hold a real back-and-forth conversation and will engage with whatever’s actually asked, but they’re disoriented: confused about the date/time, where they are, what’s happened, or who they’re talking to (may misidentify the crew as someone else, e.g. a relative or hospital staff). Let that disorientation show up as specific wrong or uncertain details woven into an otherwise coherent, on-topic reply — not as rambling that ignores the question or drifts onto an unrelated tangent, and never a fully accurate, correctly-oriented answer."
           },
           EXAM_FINDING_PROMPT: {
             type: 'prompt_text',
