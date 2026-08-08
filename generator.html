@@ -36,22 +36,11 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--
 .topbar-back{margin-left:auto;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:white;padding:7px 13px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:5px}
 .topbar-back:active{background:rgba(255,255,255,.3)}
 
-/* TAB BAR */
-.tab-bar{background:var(--navy);display:flex;padding:0 16px;gap:2px;flex-shrink:0}
-.tab-btn{padding:12px 18px;font-size:13px;font-weight:600;color:rgba(255,255,255,.55);background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap}
-.tab-btn:hover{color:rgba(255,255,255,.85)}
-.tab-btn.active{color:white;border-bottom-color:var(--amber)}
-
 /* CONTENT */
 .content{flex:1;display:flex;flex-direction:column;min-height:0}
 .tab-panel{display:none}
 .tab-panel.active{display:flex;flex-direction:column;flex:1;min-height:0}
 .tab-panel-scroll{flex:1;overflow-y:auto;padding:16px;max-width:680px;margin:0 auto;width:100%}
-
-/* QUICK GEN BAR */
-.quick-gen-bar{background:white;border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:0 2px 4px rgba(28,58,110,.07);max-width:100%}
-.quick-gen-label{font-size:13px;font-weight:600;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.quick-gen-label.placeholder{color:var(--grey);font-weight:400}
 
 /* CAT ACCORDION */
 .cat-accordion{background:white;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow)}
@@ -179,19 +168,6 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .usage-bar.warn{background:var(--amber-light);border-color:#f5cba7;color:#784212}
 .usage-bar.maxed{background:var(--red-light);border-color:#f5b7b1;color:var(--red)}
 
-/* DIVIDER */
-.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
-/* ── STREAMING DISPLAY ── */
-.stream-card{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;margin-top:10px;font-size:13px;line-height:1.7;min-height:60px}
-.stream-field{margin-bottom:8px}
-.stream-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#484f58;margin-bottom:2px}
-.stream-value{color:#c9d1d9;font-size:13px;min-height:18px}
-.stream-value.pager{font-family:monospace;color:#79c0ff;font-size:12px}
-.stream-value.provisional-val{color:#7ee787;font-weight:600}
-.stream-value.flag-val{color:#ffa657}
-.stream-cursor{display:inline-block;width:2px;height:14px;background:#58a6ff;margin-left:2px;vertical-align:middle;animation:blink-cursor .7s step-end infinite}
-@keyframes blink-cursor{0%,100%{opacity:1}50%{opacity:0}}
-
 /* ── MODE TILES ── */
 .mode-tile{background:white;border:2px solid var(--border);border-radius:12px;padding:14px 10px;cursor:pointer;text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:4px}
 .mode-tile:active{transform:scale(.97)}
@@ -203,21 +179,17 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 
 /* ── iOS TOGGLE SWITCH ── */
 .toggle-switch-wrap{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;flex-shrink:0}
-.toggle-switch-label{font-size:12px;font-weight:700;color:var(--grey)}
 .toggle-switch{width:44px;height:26px;border-radius:13px;background:#d1d5db;border:none;position:relative;transition:background .2s;flex-shrink:0}
 .toggle-switch.on{background:#27833A}
 .toggle-switch-thumb{width:20px;height:20px;border-radius:50%;background:white;position:absolute;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .toggle-switch.on .toggle-switch-thumb{transform:translateX(18px)}
-/* ── MULTI TOGGLE ── */
-.multi-toggle{background:white;border:1.5px solid var(--border);border-radius:7px;padding:7px 11px;font-size:12px;font-weight:700;color:var(--grey);cursor:pointer;transition:all .15s;white-space:nowrap}
-.multi-toggle:hover{border-color:var(--navy);color:var(--navy)}
-.multi-toggle.on{background:var(--navy);border-color:var(--navy);color:white}
+/* ── QUICK MULTI TAG ── */
 .quick-multi-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--navy);color:white;border-radius:12px;font-size:11px;font-weight:600}
 .quick-multi-tag .rtag{cursor:pointer;opacity:.7;margin-left:2px}
 .quick-multi-tag .rtag:hover{opacity:1}
 
 /* ── STREAM CARD ── */
-.stream-card{background:#1e2530;border:1px solid #2d3748;border-radius:0;padding:16px 18px;font-size:13px;line-height:1.7}
+.stream-card{background:#1e2530;border:1px solid #2d3748;border-radius:0;padding:16px 18px;margin-top:10px;font-size:13px;line-height:1.7;min-height:60px}
 .stream-field{margin-bottom:10px}
 .stream-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#64748b;margin-bottom:3px}
 .stream-value{color:#cbd5e1;font-size:13px;min-height:18px}
@@ -850,7 +822,8 @@ function showStatus(elId,type,msg){
 }
 
 // ── CPG subtype labels for the presentation-type dropdown ──────────────────
-// (CATEGORIES / CATEGORY_TO_CPG / COND_TO_CPG_KEY / CPG_SUBTYPE_LABELS now live in category_data.js)
+// (CATEGORIES / CATEGORY_TO_CPG / COND_TO_CPG_KEY / CPG_SUBTYPE_LABELS come from
+//  the active pack's category_pack_*.js, loaded via cpg_pack_loader.js)
 
 const CATEGORY_SCENARIO_CPGS = {
   // Cardiac Arrest — exclude rosc_management and withholding_resuscitation from random
@@ -1091,16 +1064,14 @@ let _overrideSubtypeKey = null;
 let _overrideSubtypeKeys = []; // all CPG keys for multi-condition
 let _lastPrimaryCPGKeys = []; // set by buildCPGContext — the primary CPG keys actually injected, used to exclude from the additional-CPG catalogue
 
-function buildCPGContext(catVal1, catVal2) {
+function buildCPGContext(catVal1) {
   // Use overrides set by generator UI if available
   if (_overrideCatVal) catVal1 = _overrideCatVal;
 
   const keys1 = CATEGORY_TO_CPG[catVal1] || [];
-  const keys2 = catVal2 ? (CATEGORY_TO_CPG[catVal2] || []) : [];
 
   // Restrict random pool to scenario-appropriate CPGs where defined
   const scenarioPool1 = CATEGORY_SCENARIO_CPGS[catVal1] || keys1;
-  const scenarioPool2 = catVal2 ? (CATEGORY_SCENARIO_CPGS[catVal2] || keys2) : keys2;
 
   // For single-category calls: use override key if set, otherwise DOM select, otherwise random
   let selectedKeys1 = keys1;
@@ -1179,23 +1150,8 @@ function buildCPGContext(catVal1, catVal2) {
       (pkg.notes ? `Additional clinical context (use this to help generate more varied, specific knowledge questions — do not treat as management steps): ${pkg.notes}\n` : '');
   }).filter(Boolean).join('\n');
 
-  // Check for a combination note
-  const CPG_COMBINATIONS = {}; // Reserved for future use — no predefined combinations
-  let comboNote = '';
-  if (catVal2 && keys1.length && keys2.length) {
-    const comboKey = Object.keys(CPG_COMBINATIONS).find(k => {
-      const combo = CPG_COMBINATIONS[k];
-      return keys1.some(a => combo.cpgs?.some(c => CPG_PACKAGES[a]?.cpg === c)) &&
-             keys2.some(b => combo.cpgs?.some(c => CPG_PACKAGES[b]?.cpg === c));
-    });
-    if (comboKey) {
-      const combo = CPG_COMBINATIONS[comboKey];
-      comboNote = `\n--- COMBINATION GUIDANCE ---\n${combo.note}\nManagement priority: ${combo.priority}\n`;
-    }
-  }
-
   // (Default pack already returned above — everything below only runs for AV pack.)
-  return `\n\nRELEVANT AV CPG CONTENT (v3.13.1) — for CPG code selection and knowledge-question grounding only, do NOT use this to determine vitals or severity:\n${packageSections}${comboNote}`;
+  return `\n\nRELEVANT AV CPG CONTENT (v3.13.1) — for CPG code selection and knowledge-question grounding only, do NOT use this to determine vitals or severity:\n${packageSections}`;
 }
 
 // Build a compact catalogue of all available CPG codes + titles, for the AI to
@@ -1315,8 +1271,6 @@ function parseFirstJSON(raw) {
 
 async function generateAIScenario() {
   const catVal = document.getElementById('gen-category').value;
-  const catVal2El = document.getElementById('gen-category-2');
-  const catVal2 = catVal2El && catVal2El.value !== '__none__' ? catVal2El.value : null;
   const [category, subcategory] = catVal.includes('|') ? catVal.split('|') : [catVal, catVal];
   const complaint = document.getElementById('gen-complaint').value.trim();
   const complexity = document.getElementById('gen-complexity').value;
@@ -1341,14 +1295,9 @@ async function generateAIScenario() {
   }
 
   // Build CPG context for prompt injection
-  const cpgContext = buildCPGContext(catVal, catVal2);
+  const cpgContext = buildCPGContext(catVal);
 
-  // Determine effective category label (single or combo)
-  let categoryLabel = `${category} — ${subcategory}`;
-  if (catVal2) {
-    const [cat2, sub2] = catVal2.includes('|') ? catVal2.split('|') : [catVal2, catVal2];
-    categoryLabel += ` + ${cat2} — ${sub2}`;
-  }
+  const categoryLabel = `${category} — ${subcategory}`;
 
   // Name the specific CPG subtype to prevent the AI defaulting to opioids
   // First check if user explicitly selected a subtype; otherwise infer from injected CPG context
@@ -1376,21 +1325,14 @@ async function generateAIScenario() {
     : toxSubtypeHint
       ? `The scenario must be a ${toxSubtypeHint} presentation — this is the toxicology type provided in the CPG context. Do NOT default to opioids unless the CPG context specifies opioid toxicity.`
       : `Choose a realistic and educationally valuable ${categoryLabel} presentation.`;
-  // Use the most specific patient category for age generation
-  // (Paediatric/Newborn/Maternity override Adult if present in combo)
-  const SPECIFIC_CATS = ['Paediatric', 'Newborn', 'Maternity'];
-  const cat2ForPatient = catVal2 ? (catVal2.includes('|') ? catVal2.split('|')[0] : catVal2) : null;
-  const patientCategory = SPECIFIC_CATS.includes(cat2ForPatient) ? cat2ForPatient
-    : SPECIFIC_CATS.includes(category) ? category
-    : category;
   const explicitDemo = parseExplicitDemographicsFromComplaint(complaint);
-  const patient = randomAustralianPatient(patientCategory, explicitDemo.age, explicitDemo.gender);
+  const patient = randomAustralianPatient(category, explicitDemo.age, explicitDemo.gender);
   const complexityNote = {
     standard:     'Standard, core presentation with typical management.',
     complex:      'Include a complicating factor — comorbidity, atypical feature, or medication interaction.',
     'high-acuity':'High acuity, time-critical, multi-system with at least one life-threatening element.'
   }[complexity];
-  const ageStr = (patientCategory === 'Newborn') ? 'newborn'
+  const ageStr = (category === 'Newborn') ? 'newborn'
     : (typeof patient.age === 'string' && patient.age.includes('month')) ? `${patient.age} old`
     : `${patient.age}yo`;
   const patientNote = complaint
@@ -1845,19 +1787,6 @@ function _updateStreamCard(card, json) {
     return end === -1 ? inner : inner.slice(0, end);
   }
 
-  function extractFirst(key) {
-    const idx = json.indexOf('"' + key + '"');
-    if (idx === -1) return null;
-    const rest = json.slice(idx + key.length + 2);
-    const arrStart = rest.indexOf('[');
-    if (arrStart === -1) return null;
-    const afterBracket = rest.slice(arrStart + 1).trimStart();
-    if (!afterBracket.startsWith('"')) return null;
-    const inner = afterBracket.slice(1);
-    const end = inner.indexOf('"');
-    return end === -1 ? inner : inner.slice(0, end);
-  }
-
   // Set field by querying WITHIN the card (not document-wide)
   function set(cls, val, partial) {
     const el = card.querySelector('.' + cls);
@@ -1875,7 +1804,6 @@ function _updateStreamCard(card, json) {
   const bp    = extract('BP');
   const spo2  = extract('SpO2');
   const rr    = extract('RR');
-  const gcs   = extractFirst('GCS') || extract('total'); // GCS is nested
 
   const vitalParts = [];
   if (hr)   vitalParts.push('HR ' + hr);
@@ -1921,8 +1849,6 @@ let _activeGenBtn = 'quick-gen-btn';
 function _setGenCategory(catKey) {
   const sel = document.getElementById('gen-category');
   if (sel) sel.value = catKey;
-  const sel2 = document.getElementById('gen-category-2');
-  if (sel2) sel2.value = '__none__';
   const sub = document.getElementById('gen-cpg-subtype');
   if (sub) sub.value = '__random__';
 }
@@ -2405,11 +2331,10 @@ function switchTab(id, btn) {
   btn.classList.add('active');
 }
 
-function populateCategorySelect(selectId, prefixOption) {
+function populateCategorySelect(selectId) {
   const el = document.getElementById(selectId);
   if (!el) return;
   let html = '';
-  if (prefixOption) html += `<option value="__none__">${prefixOption}</option>`;
   CATEGORIES.forEach(cat => {
     const subs = Object.keys(cat.subcats);
     html += `<optgroup label="${cat.key}">`;
@@ -2470,7 +2395,6 @@ function disableGenerationForGuest() {
   });
 }
 populateCategorySelect('gen-category');
-populateCategorySelect('gen-category-2', '— None (single scenario) —');
 
 // ══════════════════════════════════════════════════════════════════════════
 // MANUAL BUILDER
@@ -2489,7 +2413,7 @@ function updateManualTypeDropdown() {
       keys.map(k => `<option value="${k}">${CPG_SUBTYPE_LABELS[k] || k}</option>`).join('');
   }
   // Re-render secondary survey fields for the correct body-system set (trauma vs medical)
-  const [category, subcategory] = catVal.includes('|') ? catVal.split('|') : [catVal, catVal];
+  const [, subcategory] = catVal.includes('|') ? catVal.split('|') : [catVal, catVal];
   const isTrauma = subcategory && subcategory.toLowerCase().includes('trauma');
   renderSecondarySurveyFields(isTrauma ? 'trauma' : 'medical');
 }
@@ -2675,9 +2599,7 @@ addManualKQBlock(); addManualKQBlock();
 <!-- Hidden fields read by generateAIScenario() -->
 <div style="display:none">
   <select id="gen-category"></select>
-  <select id="gen-category-2"><option value="__none__">None</option></select>
   <select id="gen-cpg-subtype"><option value="__random__">Random</option></select>
-  <select id="gen-cpg-subtype-2"><option value="__random__">Random</option></select>
   <input type="text" id="gen-complaint">
   <select id="gen-complexity">
     <option value="standard">Standard</option>
