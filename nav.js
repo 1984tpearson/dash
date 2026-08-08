@@ -157,6 +157,15 @@
     var packSel = document.getElementById('avnav-pack-select');
     if (packSel) packSel.value = activeServicePackId();
     renderCopyrightFooter();
+    // scenario.html resolves the active pack's CPG hints/overlay/knowledge
+    // questions once, at loadScenario() time — switching packs mid-view (via
+    // this dropdown, while a scenario is already open) doesn't re-run that
+    // resolution on its own, so the CPG recommendation and questions kept
+    // showing whatever pack was active when the page loaded. A reload is the
+    // simplest correct fix: it re-reads av_service fresh and re-triggers the
+    // on-demand overlay generation in loadScenario() for the new pack. Same
+    // pattern deleteScenario() already uses above.
+    if (/scenario\.html/i.test(window.location.pathname)) window.location.reload();
   }
 
   function escapeHtml(s) {
