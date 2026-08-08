@@ -1840,7 +1840,6 @@ function toRow(s, overrides = {}) {
     vitals:       s.vitals || {},
     caller_hx:    s.caller_hx || '',
     arrival_hx:   s.arrival_hx || '',
-    key_hx:       s.key_hx || '',
     hx:           s.hx || {},
     medical_conditions: s.medical_conditions || [],
     medications:  s.medications || [],
@@ -1885,7 +1884,6 @@ function fromRow(r) {
     vitals:       r.vitals || {},
     caller_hx:    r.caller_hx || '',
     arrival_hx:   r.arrival_hx || '',
-    key_hx:       r.key_hx,
     hx:           r.hx || {},
     medical_conditions: r.medical_conditions || [],
     medications:  r.medications || [],
@@ -3681,7 +3679,7 @@ function renderScenario(s) {
             <div class="dc-text" style="opacity:0.85">${s.caller_hx||'—'}</div>
             <div class="dc-label" style="margin-top:10px">On Arrival</div>
             <div class="dc-text" style="opacity:0.85">${s.arrival_hx||'—'}</div>
-          `:s.key_hx?`<div class="dc-label" style="margin-top:10px">Key History</div><div class="dc-text" style="opacity:0.85">${s.key_hx}</div>`:''}
+          `:''}
           ${(s.provisional||s.ddx)?`
             <div class="ddx-block">
               <div class="dc-label" style="margin-top:12px">Provisional Dx</div>
@@ -3818,12 +3816,9 @@ function renderSection1(s, isTrauma) {
     || String(v.Rhythm||'').toLowerCase().match(/vf|vt\b|asystole|pea|arrest/)
     || String(v.Rhythm||'').toLowerCase().includes('arrest');
   const wellHint = (s.overrides&&s.overrides.wellunwell) || (immediateLifeThreat ? 'UNWELL' : 'Well');
-  // Prefer structured fields; fall back to key_hx for legacy built-in scenarios
   const condList = (s.medical_conditions||[]).filter(Boolean);
   const medList  = (s.medications||[]).filter(Boolean);
-  const keyHxShort = condList.length
-    ? condList.join(', ')
-    : (s.key_hx||'').slice(0, 160);
+  const keyHxShort = condList.join(', ');
 
   const hint = (val, key='') => {
     if (!val) return '';
@@ -4998,8 +4993,6 @@ function toggleKeyHxPanel() {
     if (s.caller_hx || s.arrival_hx) {
       html += `<div class="khx-label">Caller Reports</div><div class="khx-text">${s.caller_hx||'—'}</div>`;
       html += `<div class="khx-label" style="margin-top:10px">On Arrival</div><div class="khx-text">${s.arrival_hx||'—'}</div>`;
-    } else if (s.key_hx) {
-      html += `<div class="khx-label">Key History</div><div class="khx-text">${s.key_hx}</div>`;
     }
     if (s.provisional || s.ddx) {
       html += `<div class="khx-label" style="margin-top:10px">Provisional Dx</div><div class="khx-text">${s.provisional||'—'}</div>`;
@@ -6769,7 +6762,6 @@ const CORRECTABLE_FIELDS = {
   'field_dispatch':   { label: 'Dispatch',                       getter: s => s.dispatch||'' },
   'field_caller_hx':  { label: 'Caller Reports',                 getter: s => s.caller_hx||'' },
   'field_arrival_hx': { label: 'On Arrival',                     getter: s => s.arrival_hx||'' },
-  'field_key_hx':     { label: 'Key History (legacy)',           getter: s => s.key_hx||'' },
   // Hx detail hints
   'field_hx_timeline':  { label: 'Hx — Timeline',              getter: s => (s.hx||{}).timeline||'' },
   'field_hx_nature':    { label: 'Hx — Nature',                getter: s => (s.hx||{}).nature||'' },
@@ -6805,7 +6797,7 @@ const CORRECTABLE_FIELDS = {
   // VSS — Skin (computed, context-derived — corrections stored as override)
   'field_vss_skin':     { label: 'Circulatory — Skin', getter: s => (s.overrides&&s.overrides.vss_skin) || '(auto-calculated — click to override)' },
   // History — Medical Conditions summary
-  'field_medical_conditions': { label: 'Medical Conditions', getter: s => (s.medical_conditions||[]).filter(Boolean).join(', ') || s.key_hx || '' },
+  'field_medical_conditions': { label: 'Medical Conditions', getter: s => (s.medical_conditions||[]).filter(Boolean).join(', ') },
   // Monitor — ECG component characteristics (computed from Rhythm; corrections stored as overrides)
   'field_mon_pwave': { label: 'P Wave', getter: s => (s.overrides&&s.overrides.mon_pwave) || '(auto-calculated from Rhythm — click to override)' },
   'field_mon_pr':    { label: 'PR Interval', getter: s => (s.overrides&&s.overrides.mon_pr) || '(auto-calculated from Rhythm — click to override)' },
@@ -6859,7 +6851,6 @@ function applyCorrectionsToScenario(s) {
     } else if (fk === 'field_dispatch')    { patched.dispatch = cv;
     } else if (fk === 'field_caller_hx')  { patched.caller_hx = cv;
     } else if (fk === 'field_arrival_hx') { patched.arrival_hx = cv;
-    } else if (fk === 'field_key_hx')     { patched.key_hx = cv;
     } else if (fk === 'field_provisional') { patched.provisional = cv;
     } else if (fk === 'field_title')       { patched.title = cv;
     } else if (fk === 'field_subtitle')    { patched.subtitle = cv;

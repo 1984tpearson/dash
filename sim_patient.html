@@ -1512,11 +1512,12 @@ async function connectSession(code) {
       // SimEngine.computeDefibrillationEffect() locally (age/weight/
       // comorbidity parsing all read from this same scenarioMeta) — see
       // CLAUDE.md on why this device otherwise deliberately has no scenario
-      // context beyond the avatar build. provisional/key_hx are ALSO fetched
-      // now, purely for Realtime Voice mode's direct-from-this-device Claude
-      // call (see generateRealtimePatientReply()) — unused by anything else
-      // here, but harmless to always have since this is a single-row fetch.
-      sbGet(`scenarios?id=eq.${encodeURIComponent(row.scenario_id)}&select=title,subtitle,dispatch,hx,vitals,medical_conditions,patient_meta,provisional,key_hx`)
+      // context beyond the avatar build. provisional/medications/allergies/
+      // arrival_hx are ALSO fetched now, purely for Realtime Voice mode's
+      // direct-from-this-device Claude call (see
+      // generateRealtimePatientReply()) — unused by anything else here, but
+      // harmless to always have since this is a single-row fetch.
+      sbGet(`scenarios?id=eq.${encodeURIComponent(row.scenario_id)}&select=title,subtitle,dispatch,hx,vitals,medical_conditions,medications,allergies,arrival_hx,patient_meta,provisional`)
         .then(rows2 => {
           const scen = rows2[0] || {};
           scenarioMeta = scen;
@@ -3466,7 +3467,10 @@ async function generateRealtimePatientReply(question) {
 Scenario: ${(scenarioMeta && scenarioMeta.title) || ''}
 Patient name: ${patientName}
 Provisional diagnosis (do not reveal): ${(scenarioMeta && scenarioMeta.provisional) || 'unspecified'}
-Key history: ${(scenarioMeta && scenarioMeta.key_hx) || ''}
+Medical history: ${((scenarioMeta && scenarioMeta.medical_conditions) || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${((scenarioMeta && scenarioMeta.medications) || []).filter(Boolean).join(', ') || 'none documented'}
+Allergies: ${(scenarioMeta && scenarioMeta.allergies) || 'none documented'}
+What the patient told the crew on scene: ${(scenarioMeta && scenarioMeta.arrival_hx) || ''}
 Current approximate condition: HR ${v.HR}, RR ${v.RR}, SpO2 ${v.SpO2}%, GCS ${(v.gcsE||0)+(v.gcsV||0)+(v.gcsM||0)}/15 (Verbal component: ${gcsV}/5), pain ${v.pain != null ? v.pain + '/10' : 'unspecified'}
 Treatments given so far: ${treatmentsList || 'none yet'}
 

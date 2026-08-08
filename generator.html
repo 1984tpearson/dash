@@ -753,7 +753,7 @@ function toRow(s){
     subcategory:s.subcategory||'',scenario_type:s.scenario_type||null,type:s.type||'medical',
     cpg:s.cpg||'',level:s.level||'C/D',dispatch:s.dispatch||'',vitals:s.vitals||{},
     extra_cpgs:s.extra_cpgs||[],
-    caller_hx:s.caller_hx||'',arrival_hx:s.arrival_hx||'',key_hx:s.key_hx||'',hx:s.hx||{},
+    caller_hx:s.caller_hx||'',arrival_hx:s.arrival_hx||'',hx:s.hx||{},
     medical_conditions:s.medical_conditions||[],medications:s.medications||[],allergies:s.allergies||'',
     rsa:s.rsa||{},ra:s.ra||{},ps_exposure:s.ps_exposure||'',social:s.social||'',
     secondary_survey:s.secondary_survey||{},
@@ -1227,7 +1227,6 @@ async function classifyCPGFromText(freeText) {
 const SCENARIO_JSON_TEMPLATE = `{"title":"","subtitle":"","category":"CAT","subcategory":"SUB","type":"","cpg":"","additional_cpgs":[],"level":"C/D","dispatch":"","vitals":{"GCS":{"E":0,"V":0,"M":0,"total":0,"description":""},"SpO2":"","RR":"","HR":"","BP":"","Temp":"","BGL":"","Rhythm":"","Weight":"","Ketones":"","EtCO2":"","PainScore":0,"NauseaScore":0},"caller_hx":"","arrival_hx":"","hx":{"timeline":"","nature":"","prodromal":"","aggreliev":"","assoc":"","similar":""},"medical_conditions":["","",""],"medications":["","",""],"allergies":"","flags":{"red":[],"yellow":[]},"ddx":["","","",""],"provisional":"","ra":{"wob":"","skin":""},"ps_exposure":"","social":"","rsa":{"appearance":"","speech":"","breath_sounds":"","rhythm":"","wob":""},"secondary_survey":{},"life_threats":["",""],"baseline_cognitive_status":"","pregnancy_status":"","mood":"","kq":[{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":1,"answer":"","cpgCode":""}]}`;
 // Note: medical_conditions = short list e.g. ["Asthma (previous ICU admission)", "Type 2 Diabetes", "Hypertension"]
 // medications = short list e.g. ["Metoprolol 50mg daily", "Aspirin 100mg", "Candesartan 8mg"]
-// key_hx = legacy field kept for backwards compat with built-in scenarios; new scenarios use caller_hx + arrival_hx
 // kq[].cpgCode = the CPG code (e.g. "A0402") from the "--- CPG: title (code) ---" context blocks below,
 // identifying which specific guideline that question is testing. Must exactly match one shown in context.
 // baseline_cognitive_status and pregnancy_status are folded into scenario.patient_meta after generation —
