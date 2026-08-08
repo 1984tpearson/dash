@@ -28,9 +28,13 @@
  *   CATEGORY_TO_CPG / CPG_SUBTYPE_LABELS). This is safe specifically
  *   because callers only invoke it when the active pack IS the target —
  *   that's the whole reason an overlay is being built. Returns
- *   {cpg, kq} or null on failure (best-effort; caller decides what to
- *   show if it fails, same "never block on this" philosophy as
- *   classifyCPGFromText in generator.html).
+ *   {cpg, extra_cpgs, kq} or null on failure (best-effort; caller decides
+ *   what to show if it fails, same "never block on this" philosophy as
+ *   classifyCPGFromText in generator.html). "cpg" is only the single most
+ *   central classified key; any second, related-but-secondary key goes in
+ *   "extra_cpgs" — same primary/secondary split generator.html's native
+ *   cpg/additional_cpgs fields use, so scenario.html renders it as a small
+ *   AI-suggested extra rather than an equally-weighted second primary.
  *
  * Both read the Anthropic key from Supabase app_config directly (same
  * query every AI call site in this codebase uses) rather than depending
@@ -197,8 +201,17 @@
       });
       if (!kq.length) return null;
 
+      // keys[0] is the single most central/primary condition (per the classify
+      // prompt's rule 4) — only that one becomes the primary "cpg". Any second
+      // key is a related-but-secondary guideline, so it goes in "extra_cpgs"
+      // instead, same as generator.html's native "additional_cpgs" field —
+      // otherwise scenario.html renders every classified key as an equally-
+      // weighted primary CPG (e.g. an anaphylaxis scenario also showing
+      // "Essential Airway Management" as a second primary, just because
+      // airway is clinically related, not because it's a distinct primary
+      // condition here).
       var codes = keys.map(function (k) { return CPG_PACKAGES[k] && CPG_PACKAGES[k].cpg; }).filter(Boolean);
-      return { cpg: codes.join(', '), kq: kq };
+      return { cpg: codes[0] || '', extra_cpgs: codes.slice(1), kq: kq };
     } catch (e) {
       console.error('PackOverlay.buildRealPackOverlay failed:', e.message);
       return null;
