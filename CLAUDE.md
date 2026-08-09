@@ -585,7 +585,76 @@ re-sorting on every single sample — it was re-sorting the same small
 array dozens of times per render, across both pages, not just while
 editing.
 
+## Open TODOs
+
+- **Split `scenario.html` into `scenario.html` + `scenario.js` + `scenario.css`.**
+  Agreed with Tim as the right next step, deliberately deferred — not
+  urgent, do it when there's a reason to be in the file anyway. The file is
+  ~7.6k lines of which only ~1.6k is actual markup; the rest is one inline
+  `<script>` and one inline `<style>`. Extracting both to sibling files is
+  the single biggest readability win left, and it's mechanical.
+  **The one constraint that matters: the JS must stay a plain
+  `<script src="scenario.js">`, NOT `type="module"`.** Every interactive
+  element in the rendered assessment sheet uses inline `onclick="foo()"`
+  attributes, which resolve against globals; module scope would break all
+  of them at once and force a full migration to `addEventListener` across
+  hundreds of dynamically-generated call sites. That's the expensive,
+  risky refactor this split is specifically avoiding — keep the globals.
+  Cost of the split: three files to keep in sync instead of one, plus two
+  extra HTTP requests (irrelevant on Pages).
+- **The Corrections Log admin modal is orphaned** (`openCorrectionsModal`
+  and friends, `scenario.html`). Its only entry point was a link inside the
+  Manage Custom Scenarios modal, which was superseded by `nav.js`'s
+  `AVNav.openManageMine()` and removed — but `nav.js` has no replacement
+  link. Deliberately left in place rather than deleted, because the
+  "🚩 Flag Error" button that *writes* corrections is still live, so
+  deleting the review half would break a working workflow rather than
+  remove dead code. Needs either a new entry point in `nav.js` or a
+  decision to drop the feature. Tim's call.
+
 ## Gotchas
+
+- **Keep a casual eye out for dead code — flag it, don't hunt for it.**
+  Same posture as the AV-text entry below: while working in a file for
+  some other reason, notice unreferenced functions, orphaned CSS, stubs
+  left behind by a superseded feature, or markup nothing renders — and
+  tell Tim rather than silently leaving it or silently deleting it. Don't
+  start a dedicated sweep unless asked.
+  Two sweeps have already been done (Aug 2026): `scenario.html` and
+  `generator.html`. Worth knowing what those found, because the same
+  patterns are the ones to watch for elsewhere:
+  - The damage isn't usually the dead code itself, it's what it *hides*.
+    `buildSidebar()` was still being called from five places after its
+    `#scenario-list` element was removed with the old sidebar, so every
+    call threw and aborted the rest of its caller — silently killing the
+    tail of `saveEditedScenario()` (the re-render and modal close) and
+    both delete paths. That bug was invisible until the dead code around
+    it was cleared.
+  - The recurring cause is a feature being **superseded rather than
+    removed** — most often by `nav.js` taking something over (the sidebar,
+    Manage Scenarios, auth, theming all moved there and left duplicates
+    behind in `scenario.html`). When you move something into `nav.js`,
+    delete the old copy in the same commit.
+  - Other repeat offenders: markup deleted while its JS stayed (the whole
+    retired dev-notes cluster), hidden `<div style="display:none">` shim
+    fields kept for code that no longer reads them, and CSS added as a new
+    appended `<style>` block overriding earlier rules instead of editing
+    them in place.
+  **Verifying a cleanup or a pure-move refactor:** there's no test suite,
+  but the renderers are deterministic, so before/after equivalence is
+  directly checkable and is much stronger evidence than a screenshot.
+  Serve the repo locally, drive it with Playwright (intercept the
+  `1984tpearson.github.io` and supabase-js CDN requests to serve local
+  copies — see the no-build-step note at the top), stub `Math.random` for
+  determinism, set `localStorage.av_guest_mode='true'` to get past the
+  login gate and `localStorage.av_service` to cover both packs, then diff
+  `renderScenario()` / `renderSection1()` (both medical and trauma) /
+  `renderSection2()` output, the home-screen DOM, the `window` global
+  list, and `getComputedStyle` on a sample of selectors. For anything
+  that's purely a move, all of it must come out identical — any diff at
+  all is a bug, which makes reordering far safer here than "no test
+  suite" suggests. Normalise the per-render random ids
+  (`cpg-block-*`/`cpg-accordion-*`/`cpg-expand-*`) before diffing.
 
 - **Service-pack de-branding from Ambulance Victoria (AV) — status and the
   IP reasoning behind what did/didn't change.** This repo was duplicated
