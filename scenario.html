@@ -220,7 +220,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 #topbar .logo { display: flex; align-items: center; gap: 10px; }
 
 #topbar h1 { font-size: 14px; font-weight: 700; line-height: 1.2; }
-#topbar .subtitle { font-size: 10px; opacity: 0.7; }
+#topbar .subtitle { font-size: 10px; opacity: 0.7; margin-top: 1px; }
 .topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 /* Compact topbar — home screen only: bar goes fully transparent, page has no
    reserved offset for it, so the hero starts at the very top of the viewport
@@ -1046,21 +1046,8 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
 .ssi-sub { font-size: 11px; color: var(--grey); margin-top: 2px; }
 .ssi-badges { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
 /* home-random-btn defined in HOME section above */
-</style>
-<script src="cpg_pack_loader.js"></script>
-<script src="pack_overlay.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://1984tpearson.github.io/dash/ecg_engine.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-/* ── Live ECG strip on assessor side ── */
 
-</style>
-<style>
-/* ============================================================ D.A.S.H FACELIFT (TEST) */
-
-#topbar .subtitle { font-size: 10px; opacity: 0.7; margin-top: 1px; }
-
+/* ============================================================ D.A.S.H BRANDING — hero, logo, hero ECG strip */
 .dash-hero {
   padding: 0;
   margin-bottom: 8px;
@@ -1089,6 +1076,12 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
 .topbar-logo-img { height: 36px; width: auto; max-width: 260px; object-fit: contain; display: block; }
 .hero-logo-img { height: 78px; width: auto; max-width: 90%; object-fit: contain; display: block; }
 </style>
+<script src="cpg_pack_loader.js"></script>
+<script src="pack_overlay.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://1984tpearson.github.io/dash/ecg_engine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 </head>
 <body class="home-topbar-compact">
 
@@ -1573,19 +1566,54 @@ body.flag-mode-active .flaggable.has-correction:hover { outline: 2px solid var(-
   </div>
 </div>
 
+<!-- ECG Lightbox -->
+<div id="ecg-lightbox" onclick="closeECGLightbox()">
+  <span id="ecg-lightbox-close" onclick="closeECGLightbox()">✕</span>
+  <img id="ecg-lightbox-img" src="" alt="">
+  <div id="ecg-lightbox-label"></div>
+</div>
+
 <div id="toast"></div>
 
 <script>
+// Built-in scenario seed data. Empty here — every scenario now lives in
+// Supabase; kept as the fallback the seed/load paths degrade to.
 const SCENARIOS = [];
 
 // ============================================================
-// STATE
+// STATE — cross-cutting assessment state
 // ============================================================
+// State read or written from more than one section lives here. State owned by
+// a single feature stays declared with that feature — the main ones being:
+//   _authSession / _authProfile / _isGuest / _myFavourites / _popularScenarios
+//                                                    -> SUPABASE section below
+//   _corrections / _flagModeActive / _popoverState   -> ERROR CORRECTION SYSTEM
+//   _patientSessionCode / _sessionRevealed           -> PATIENT SESSION
+//   editKQCount / editKQMaxValues                    -> EDIT MODAL
+//   _assessorStrip / _assessorLead / _assessorRhythmKey -> assessor ECG
+// If new state is used across sections, add it here rather than inline.
+
+// The scenario currently open, and the assessment level driving which
+// sections/scoring are active.
 let currentScenario = null;
+let currentLevel = 'D'; // A, B, C, D
+
+// Scenario library loaded from the cloud, plus the last AI-generated one
+// awaiting save.
+let customScenarios = [];
+let lastAIScenario = null;
+
+// Live marking state for the open scenario: per-row ticks, per-subrow ticks,
+// section scores, and knowledge-question scores.
+let rowStates = {};
+let subRowStates = {};
+let sectionScores = {};
+let kqScores = {};
+
+// Assessment timer.
 let timerInterval = null;
 let timerSeconds = 0;
 let timerRunning = false;
-let currentLevel = 'D'; // A, B, C, D
 
 // Level configuration: timer (seconds), max score, pass threshold, visible sections
 const LEVEL_CONFIG = {
@@ -1687,13 +1715,6 @@ function applyLevel(level) {
   if (stickyLvl) stickyLvl.textContent = level;
 }
 
-let customScenarios = []; // loaded from localStorage
-let lastAIScenario = null; // holds the most recent AI-generated scenario pending save
-
-let rowStates = {};
-let subRowStates = {};
-let sectionScores = {};
-let kqScores = {};
 
 // ============================================================
 // SUPABASE — shared cloud storage for all users
@@ -1708,6 +1729,7 @@ let _authSession = null;
 let _authProfile = null;
 let _isGuest = false; // no Supabase session at all — set from login.html's "Continue as Guest" flag
 let _myFavourites = new Set();
+let _popularScenarios = []; // [{scenario_id, fav_count}] from get_popular_scenarios RPC
 
 // Central write-guard. Call at the top of any function that saves, deletes,
 // rates, corrects, or calls the AI. Shows a toast and returns true (caller
@@ -1717,7 +1739,6 @@ function guestBlocked(action) {
   showToast('🔒 Sign in with Google to ' + (action || 'do that') + '.', 3000);
   return true;
 }
-let _popularScenarios = []; // [{scenario_id, fav_count}] from get_popular_scenarios RPC
 
 // Keep _authSession current as Supabase silently refreshes the access token in
 // the background — without this, long-lived tabs start sending an expired JWT
@@ -6609,15 +6630,7 @@ function showToast(msg, duration) {
   setTimeout(() => t.classList.remove('show'), duration || 2800);
 }
 
-</script>
 
-<!-- ECG Lightbox -->
-<div id="ecg-lightbox" onclick="closeECGLightbox()">
-  <span id="ecg-lightbox-close" onclick="closeECGLightbox()">✕</span>
-  <img id="ecg-lightbox-img" src="" alt="">
-  <div id="ecg-lightbox-label"></div>
-</div>
-<script>
 function openECGLightbox(src, label) {
   const lb = document.getElementById('ecg-lightbox');
   document.getElementById('ecg-lightbox-img').src = src;
@@ -6683,6 +6696,24 @@ function initAssessorECG(rhythmStr, hr) {
 
 // Also expose so it can be called directly when a scenario opens
 window.initAssessorECG = initAssessorECG;
+
+function reInitECGAfterRender(scenarioId, rhythm) {
+  const ecgImg = document.getElementById('ecg-img-' + scenarioId);
+  if (ecgImg) { const ecg = getECGImage(rhythm); if (ecg) embedECGImage(ecgImg, ecg.url); }
+  setTimeout(() => {
+    if (typeof ECGEngine === 'undefined') return;
+    document.querySelectorAll('[id^="assessor-12lead-"]').forEach(le => {
+      if (le._ecgInit) return; le._ecgInit = true;
+      const r = le.dataset.rhythm; const hr = parseInt(le.dataset.hr)||72;
+      if (!r) return;
+      le.style.display = 'block'; le.style.overflow = 'hidden';
+      const w = le.getBoundingClientRect().width || le.clientWidth || 700;
+      le.style.width = Math.floor(w) + 'px';
+      const mapped = ECGEngine.mapRhythm(r, hr);
+      try { const _ei = new ECGEngine(le,{mode:'12lead',theme:'paper'}); _ei.setRhythm(mapped.key,mapped.bpm,mapped.bbbMode); } catch(e){console.warn('ECG re-init:',e);}
+    });
+  }, 300);
+}
 
 // ============================================================
 // ERROR CORRECTION SYSTEM
@@ -7125,24 +7156,6 @@ function injectFlagButtons() {
 }
 
 // Re-initialise ECG after a scenario re-render (e.g. after correction saved)
-function reInitECGAfterRender(scenarioId, rhythm) {
-  const ecgImg = document.getElementById('ecg-img-' + scenarioId);
-  if (ecgImg) { const ecg = getECGImage(rhythm); if (ecg) embedECGImage(ecgImg, ecg.url); }
-  setTimeout(() => {
-    if (typeof ECGEngine === 'undefined') return;
-    document.querySelectorAll('[id^="assessor-12lead-"]').forEach(le => {
-      if (le._ecgInit) return; le._ecgInit = true;
-      const r = le.dataset.rhythm; const hr = parseInt(le.dataset.hr)||72;
-      if (!r) return;
-      le.style.display = 'block'; le.style.overflow = 'hidden';
-      const w = le.getBoundingClientRect().width || le.clientWidth || 700;
-      le.style.width = Math.floor(w) + 'px';
-      const mapped = ECGEngine.mapRhythm(r, hr);
-      try { const _ei = new ECGEngine(le,{mode:'12lead',theme:'paper'}); _ei.setRhythm(mapped.key,mapped.bpm,mapped.bbbMode); } catch(e){console.warn('ECG re-init:',e);}
-    });
-  }, 300);
-}
-
 // Toggle flag mode on/off
 function toggleFlagMode(forceOff = false) {
   const btn = document.getElementById('flag-error-btn');
