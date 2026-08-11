@@ -602,15 +602,41 @@ editing.
   risky refactor this split is specifically avoiding — keep the globals.
   Cost of the split: three files to keep in sync instead of one, plus two
   extra HTTP requests (irrelevant on Pages).
-- **The Corrections Log admin modal is orphaned** (`openCorrectionsModal`
-  and friends, `scenario.html`). Its only entry point was a link inside the
-  Manage Custom Scenarios modal, which was superseded by `nav.js`'s
-  `AVNav.openManageMine()` and removed — but `nav.js` has no replacement
-  link. Deliberately left in place rather than deleted, because the
-  "🚩 Flag Error" button that *writes* corrections is still live, so
-  deleting the review half would break a working workflow rather than
-  remove dead code. Needs either a new entry point in `nav.js` or a
-  decision to drop the feature. Tim's call.
+- **Corrections Log — the review path is Claude reading the table, NOT the
+  admin modal. Do not "clean up" the corrections system as dead code.**
+  The `openCorrectionsModal` cluster in `scenario.html` is currently
+  unreachable (its only entry point was a link inside the Manage Custom
+  Scenarios modal, superseded by `nav.js`'s `AVNav.openManageMine()` and
+  removed; `nav.js` has no replacement link). That does NOT make the
+  feature dead — per Tim, the intended consumer is Claude periodically
+  scanning the `scenario_corrections` Supabase table directly and advising
+  on site/prompt fixes it implies. The modal is just one human-facing
+  viewer of that table, not the delivery mechanism.
+  The write path is live and independent of it: "🚩 Flag Error"
+  (`toggleFlagMode`) → per-field popover (`openCorrectionPopover`) →
+  `saveCorrection()` → `scenario_corrections`.
+  What makes the table genuinely analysable in aggregate: `field_key` is a
+  stable enumerated key from `CORRECTABLE_FIELDS`/`SS_FIELD_LABELS`
+  (`field_provisional`, `vital_GCS`, `field_ss_chest`, …), not free text —
+  so repeated corrections against the same key across unrelated scenarios
+  are a direct signal about `generator.html`'s prompts rather than about
+  any one scenario. Each row also carries `original_value` +
+  `corrected_value` + the submitter's `comment`, which is what separates
+  "the AI got this wrong" (fix the prompt) from "the assessor disagreed"
+  (no action). Keep that field-key stability in mind before renaming keys —
+  renames silently break the historical trend.
+  **Corrections are live-applied, not queued for approval.**
+  `loadScenario()` patches the scenario through
+  `applyCorrectionsToScenario()` before rendering, so any row with
+  `status:'active'` immediately changes that scenario's content for every
+  user. Writing one is gated only by `guestBlocked()` — any signed-in user,
+  not just admins. `revertCorrection()` sets `status:'reverted'` but is
+  reachable only from the popover on that specific scenario+field, so you
+  have to already know which one is wrong.
+  Open question (Tim's call, low urgency): that leaves no cross-scenario
+  view of what's currently been altered. Largely covered in practice by the
+  Claude-scanning path above, and low risk while accounts are limited to
+  trusted users — worth revisiting if a wider cohort ever gets logins.
 
 ## Gotchas
 
