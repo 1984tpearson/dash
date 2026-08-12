@@ -13,6 +13,16 @@ duplicated deliberately to shed the Ambulance Victoria branding/name — see
 the Gotchas entry below on remaining AV references still baked into the
 content itself).
 
+**`index.html` is the DASH verbal scenario assessment tool** — the main page,
+served at the Pages root. It used to live at `scenario.html`, with `index.html`
+being the small "other tools" landing grid; the two were swapped (Aug 2026) so
+the site root lands on the tool itself rather than a link menu. The landing
+grid is now `tools.html` (linked as "More Tools" in `nav.js`'s sidebar and as
+"← Back to Tools" from `games.html`). **`scenario.html` still exists as a
+deliberate redirect stub** — it forwards to `index.html` preserving the query
+string, so previously shared `scenario.html?id=<uuid>` links keep working. It
+is not dead code; don't remove it in a cleanup sweep.
+
 Backend is Supabase (`sim_sessions`, `scenarios`, `scenario_sim_timelines`
 tables; anon key is hardcoded client-side, this is a training tool not a
 security boundary). Two edge functions exist (`generate-avatar`,
@@ -33,7 +43,7 @@ Three files work together:
 - **`sim_patient.html`** — student-facing patient view: monitor, ECG,
   voice-driven "Treat / Assess / Talk" interactions.
 - **`ecg_engine.js`** — shared with *other* tools in this collection
-  (`monitor.html`, `scenario.html`, etc), not written for this sim
+  (`monitor.html`, `index.html`, etc), not written for this sim
   specifically, but fully appropriate to reuse here. Renders real
   waveform morphology per named rhythm key (`nsr`, `af`, `vf`, `asys`,
   `stemi-inf`, ~40 more) and has `mapRhythm(text, hr)` to fuzzy-match
@@ -587,14 +597,14 @@ editing.
 
 ## Open TODOs
 
-- **Split `scenario.html` into `scenario.html` + `scenario.js` + `scenario.css`.**
+- **Split `index.html` into `index.html` + `index.js` + `index.css`.**
   Agreed with Tim as the right next step, deliberately deferred — not
   urgent, do it when there's a reason to be in the file anyway. The file is
   ~7.6k lines of which only ~1.6k is actual markup; the rest is one inline
   `<script>` and one inline `<style>`. Extracting both to sibling files is
   the single biggest readability win left, and it's mechanical.
   **The one constraint that matters: the JS must stay a plain
-  `<script src="scenario.js">`, NOT `type="module"`.** Every interactive
+  `<script src="index.js">`, NOT `type="module"`.** Every interactive
   element in the rendered assessment sheet uses inline `onclick="foo()"`
   attributes, which resolve against globals; module scope would break all
   of them at once and force a full migration to `addEventListener` across
@@ -604,7 +614,7 @@ editing.
   extra HTTP requests (irrelevant on Pages).
 - **Corrections Log — the review path is Claude reading the table, NOT the
   admin modal. Do not "clean up" the corrections system as dead code.**
-  The `openCorrectionsModal` cluster in `scenario.html` is currently
+  The `openCorrectionsModal` cluster in `index.html` is currently
   unreachable (its only entry point was a link inside the Manage Custom
   Scenarios modal, superseded by `nav.js`'s `AVNav.openManageMine()` and
   removed; `nav.js` has no replacement link). That does NOT make the
@@ -646,7 +656,7 @@ editing.
   left behind by a superseded feature, or markup nothing renders — and
   tell Tim rather than silently leaving it or silently deleting it. Don't
   start a dedicated sweep unless asked.
-  Two sweeps have already been done (Aug 2026): `scenario.html` and
+  Two sweeps have already been done (Aug 2026): `index.html` and
   `generator.html`. Worth knowing what those found, because the same
   patterns are the ones to watch for elsewhere:
   - The damage isn't usually the dead code itself, it's what it *hides*.
@@ -659,7 +669,7 @@ editing.
   - The recurring cause is a feature being **superseded rather than
     removed** — most often by `nav.js` taking something over (the sidebar,
     Manage Scenarios, auth, theming all moved there and left duplicates
-    behind in `scenario.html`). When you move something into `nav.js`,
+    behind in `index.html`). When you move something into `nav.js`,
     delete the old copy in the same commit.
   - Other repeat offenders: markup deleted while its JS stayed (the whole
     retired dev-notes cluster), hidden `<div style="display:none">` shim
@@ -701,7 +711,7 @@ editing.
      pre-arrival → primary → life threats → history → vitals → secondary
      survey → focused assessments → risk/DDx → care pathway → implement,
      the three-section division and its scoring skeleton, all in
-     `scenario.html`) — also left identical between packs, deliberately.
+     `index.html`) — also left identical between packs, deliberately.
      RABCDE/primary-secondary-survey sequencing is standard clinical
      practice taught broadly, not AV's invention, and a 3-section
      (assessment / diagnosis+treatment / knowledge check) split is a
@@ -709,7 +719,7 @@ editing.
      assessment — low risk, and Tim didn't want to rebuild it without a
      real reason to. What DOES differ per pack is the AV-*sourced content*
      living inside that shared structure — see `hasAvLegalPack()` in both
-     `scenario.html` and `generator.html`, which gates: Section 2's
+     `index.html` and `generator.html`, which gates: Section 2's
      CPG-derived management-detail box/hint/Browse-CPGs button (generic
      pack shows a plain "consult your local guidelines/protocols" row
      instead, using the same tick mechanism as every other row); the AI

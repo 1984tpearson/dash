@@ -143,7 +143,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
 @keyframes ai-thinking-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.7); } }
 
 /* ===================== Debrief overlay — see showDebrief()/closeDebrief().
-   Mirrors scenario.html's #summary-overlay pattern (full-screen white
+   Mirrors index.html's #summary-overlay pattern (full-screen white
    overlay, window.print() for PDF/print, @media print hides everything
    else) rather than a new page/library — same convention that tool
    already established for "generate a printable end-of-run report". */
@@ -742,7 +742,7 @@ function infoSubheading(text) {
   return `<div class="info-subheading">${escapeHtml(text)}</div>`;
 }
 
-// Matches scenario.html's SS_FIELD_LABELS so the same finding reads the same
+// Matches index.html's SS_FIELD_LABELS so the same finding reads the same
 // way in both places.
 let SS_LABELS = {
   head: 'Head and face', neck: 'Neck', chest: 'Chest', abdomen: 'Abdomen', back: 'Back', pelvis: 'Pelvis', limbs: 'Limbs',
@@ -751,7 +751,7 @@ let SS_LABELS = {
 };
 
 // A secondary_survey entry can be a plain string (older/manual scenarios) or
-// {finding, abnormal} (current generator output) — same shape scenario.html
+// {finding, abnormal} (current generator output) — same shape index.html
 // already handles in its ssRow() renderer.
 function ssFindingText(entry) {
   return entry && typeof entry === 'object' ? (entry.finding || '') : (entry || '');
@@ -4640,7 +4640,7 @@ async function initAuth() {
   _authSession = await requireAuth();
   if (!_authSession) return; // redirected away above
   // Keep _authSession current as Supabase silently refreshes the access
-  // token in the background — see scenario.html/generator.html's identical
+  // token in the background — see index.html/generator.html's identical
   // comment for why this matters on long-lived tabs.
   sbRealtime.auth.onAuthStateChange((_event, session) => { _authSession = session; });
   checkIsAdmin(_authSession).then(isAdmin => {
@@ -4678,7 +4678,7 @@ async function regenerateScenarioTimeline() {
   }
 }
 
-// Arrived here from scenario.html's "Load as Live Scenario" link option —
+// Arrived here from index.html's "Load as Live Scenario" link option —
 // preselect that scenario and create its session immediately, mirroring how
 // "Load as Verbal Scenario" drops the assessor straight into the assessment
 // view with no extra clicks. The linked scenario is often not one of the 10

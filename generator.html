@@ -266,7 +266,7 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
     <span class="topbar-title">Scenario Generator</span>
     <span class="topbar-sub">ALS</span>
   </div>
-  <a class="topbar-back" href="scenario.html">← Scenario Tool</a>
+  <a class="topbar-back" href="index.html">← Scenario Tool</a>
 </div>
 
 <!-- TAB BAR -->
@@ -791,7 +791,7 @@ async function _attachOriginAndOverlay(scenario){
 async function saveAndNavigate(scenario){
   await _attachOriginAndOverlay(scenario);
   await sbFetch('scenarios',{method:'POST',prefer:'return=minimal',body:JSON.stringify(toRow(scenario))});
-  window.location.href=`scenario.html?id=${encodeURIComponent(String(scenario.id))}`;
+  window.location.href=`index.html?id=${encodeURIComponent(String(scenario.id))}`;
 }
 function showStatus(elId,type,msg){
   const el=document.getElementById(elId);if(!el)return;
@@ -1340,7 +1340,7 @@ async function generateAIScenario() {
     : `Patient demographics: ${ageStr} ${patient.gender}, name: ${patient.name}. These are FIXED and NON-NEGOTIABLE for the PATIENT — use this exact name, age, and gender everywhere the patient is described (title, subtitle, dispatch, caller_hx, arrival_hx, every hx.* field). Do NOT invent a different age or gender for the patient anywhere, including implicitly through how a bystander/caller refers to them — e.g. do not write a "husband"/"wife"/"his"/"her" framing that contradicts ${patient.gender}, and do not let the caller's own age or gender bleed into the patient's. The caller/bystander can be any relationship to the patient you like; the PATIENT's own demographics must stay exactly ${ageStr} ${patient.gender} in every field, with zero exceptions.`;
 
   // Pack-derived wording for the AI prompts below. hasAvLegalPack-equivalent
-  // check (same gate as scenario.html's hasAvLegalPack()) — the strict
+  // check (same gate as index.html's hasAvLegalPack()) — the strict
   // grounding/never-invent behavior itself doesn't change between packs,
   // only the wording used to describe the source, the knowledge-question
   // count, and whether questions are tagged to a specific guideline code.
@@ -2347,7 +2347,7 @@ function populateCategorySelect(selectId) {
 buildAccordion();
 buildConditionPicker();
 
-// Pre-open the relevant category if arriving via a link from scenario.html
+// Pre-open the relevant category if arriving via a link from index.html
 // (e.g. generator.html?category=Adult&subcategory=Cardiac)
 (() => {
   const params = new URLSearchParams(window.location.search);

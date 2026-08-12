@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Paramedic Training Tools</title>
+<script>
+// Apply saved theme immediately to prevent flash
+(function(){const t=localStorage.getItem('av_theme');if(t&&t!=='default')document.documentElement.setAttribute('data-theme',t);})();
+</script>
+<style>
+  :root {
+    --navy: #1C3A6E;
+    --navy-dark: #122849;
+    --navy-light: #2A4F8F;
+    --red: #C0392B;
+    --amber: #E8921A;
+    --green: #27833A;
+    --green-light: #EAFAF1;
+    --blue: #2E86C1;
+    --blue-light: #EBF5FB;
+    --purple: #7D3C98;
+    --purple-light: #F5EEF8;
+    --grey: #6C7A89;
+    --light: #F4F6F9;
+    --white: #FFFFFF;
+    --text: #1A1A2E;
+    --border: #D5D8DC;
+    --shadow: 0 2px 12px rgba(0,0,0,0.09);
+    --shadow-lg: 0 6px 28px rgba(0,0,0,0.13);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--light);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+    overscroll-behavior: none;
+  }
+
+  /* ── TOPBAR ── */
+  #topbar {
+    background: var(--navy);
+    color: white;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+
+  #topbar-logo {
+    width: 32px; height: 32px;
+    background: white;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  #topbar-logo svg { width: 20px; height: 20px; }
+
+  #topbar-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  #topbar-sub {
+    font-size: 11px;
+    opacity: 0.65;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+
+  /* ── MAIN CONTENT ── */
+  #main {
+    padding: 72px 16px 32px;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    background: var(--navy);
+    border-radius: 16px;
+    padding: 28px 24px 24px;
+    color: white;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    pointer-events: none;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -50px; right: 60px;
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    pointer-events: none;
+  }
+
+  .hero h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: 0.2px;
+  }
+
+  .hero p {
+    font-size: 14px;
+    opacity: 0.75;
+    line-height: 1.6;
+    max-width: 520px;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .hero-badge-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #4ade80;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--grey);
+    margin-bottom: 12px;
+    padding-left: 2px;
+  }
+
+  /* ── CARD GRID ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  @media (max-width: 480px) {
+    .card-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── PROJECT CARD ── */
+  .project-card {
+    background: var(--white);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.15s, box-shadow 0.15s;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .project-card:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .project-card.disabled {
+    opacity: 0.6;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .card-accent {
+    height: 5px;
+    flex-shrink: 0;
+  }
+
+  .card-body {
+    padding: 18px 18px 14px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 12px;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 5px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  .card-desc {
+    font-size: 12.5px;
+    color: var(--grey);
+    line-height: 1.55;
+    flex: 1;
+    margin-bottom: 16px;
+  }
+
+  .card-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    text-decoration: none;
+    transition: filter 0.15s;
+    letter-spacing: 0.2px;
+  }
+
+  .card-btn:active { filter: brightness(0.9); }
+
+  .card-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+  /* colour variants */
+  .accent-navy  { background: var(--navy); }
+  .accent-green { background: var(--green); }
+  .accent-blue  { background: var(--blue); }
+  .accent-amber { background: var(--amber); }
+  .accent-grey  { background: var(--grey); }
+
+  .icon-navy   { background: #EBF0F8; color: var(--navy); }
+  .icon-green  { background: var(--green-light); color: var(--green); }
+  .icon-blue   { background: var(--blue-light); color: var(--blue); }
+  .icon-amber  { background: #FEF5E7; color: var(--amber); }
+  .icon-purple { background: var(--purple-light); color: var(--purple); }
+  .icon-grey   { background: var(--light); color: var(--grey); }
+
+  .dash-logo-mark {
+    width: 26px; height: 26px;
+    background-color: var(--navy);
+    -webkit-mask-image: url('logoblack.png');
+    mask-image: url('logoblack.png');
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+  }
+  .dash-logo-mark.large {
+    width: 100%;
+    max-width: 190px;
+    height: 46px;
+    margin-bottom: 10px;
+    -webkit-mask-position: left center;
+    mask-position: left center;
+  }
+
+  .btn-navy   { background: var(--navy);  color: white; }
+  .btn-green  { background: var(--green); color: white; }
+  .btn-blue   { background: var(--blue);  color: white; }
+  .btn-amber  { background: var(--amber); color: white; }
+  .btn-purple { background: var(--purple); color: white; }
+  .btn-grey   { background: var(--light); color: var(--grey); border: 1px solid var(--border); }
+
+  /* ── GROUPED CARD ── */
+  .grouped-card {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .grouped-card .card-accent {
+    pointer-events: none;
+  }
+
+  .group-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    text-decoration: none;
+    color: inherit;
+    pointer-events: all;
+    transition: background 0.15s;
+    border-radius: 0;
+  }
+
+  .group-item:active { background: var(--light); }
+
+  .group-item .card-icon {
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+
+  .group-item-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .group-item-text .card-title { margin-bottom: 2px; }
+  .group-item-text .card-desc  { margin-bottom: 0; font-size: 12px; }
+
+  .group-item .card-btn {
+    width: auto;
+    flex-shrink: 0;
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+
+  .group-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0 18px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .group-arrow {
+    position: absolute;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--grey);
+  }
+
+  .group-arrow svg { width: 13px; height: 13px; }
+
+  /* ── COMING SOON CARD ── */
+  .coming-soon-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--light);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--grey);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+
+  /* ── FOOTER ── */
+  .footer {
+    text-align: center;
+    padding: 16px 0 env(safe-area-inset-bottom, 0);
+    font-size: 11px;
+    color: var(--grey);
+    border-top: 1px solid var(--border);
+    line-height: 1.7;
+  }
+
+  .footer a {
+    color: var(--navy);
+    text-decoration: none;
+    font-weight: 600;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div id="avnav-slot"></div>
+  <div id="topbar-logo">
+    <!-- Star of life icon -->
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 2L14.5 9H22L16 13.5L18.5 20.5L12 16L5.5 20.5L8 13.5L2 9H9.5L12 2Z" fill="#1C3A6E" stroke="none"/>
+      <rect x="10" y="7" width="4" height="10" rx="1" fill="white"/>
+      <rect x="7" y="10" width="10" height="4" rx="1" fill="white"/>
+    </svg>
+  </div>
+  <div>
+    <div id="topbar-title">Paramedic Training Tools</div>
+  </div>
+  <button id="topbar-login-btn" style="margin-left:auto;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;padding:7px 14px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600">Sign in</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-badge">
+      <div class="hero-badge-dot"></div>
+      Clinical Education Suite
+    </div>
+    <h1>Paramedic Training Resources</h1>
+    <p>Tools for Clinical Instructors and Paramedic Educators running ALS assessments, ECG interpretation, and clinical simulation.</p>
+  </div>
+
+  <!-- TOOLS -->
+  <div class="section-label">Tools</div>
+  <div class="card-grid">
+
+    <!-- DASH hub (Generator + Scenario + Monitor) -->
+    <a class="project-card" href="index.html">
+      <div class="card-accent accent-navy"></div>
+      <div class="card-body">
+        <div class="dash-logo-mark large" aria-hidden="true"></div>
+        <div class="card-desc">Dynamic Assessment &amp; Simulation Hub — generate cases, run graded verbal ALS scenarios, and mirror vitals to a second screen.</div>
+        <span class="card-btn btn-navy">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Open
+        </span>
+      </div>
+    </a>
+
+    <!-- ECG Generator -->
+    <a class="project-card" href="ecg.html">
+      <div class="card-accent accent-green"></div>
+      <div class="card-body">
+        <div class="card-icon icon-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="2 12 6 12 8 5 10 19 12 12 14 15 16 12 22 12"/>
+          </svg>
+        </div>
+        <div class="card-title">ECG Generator</div>
+        <div class="card-desc">Live animated ECG rhythms for teaching and simulation. Supports strip and 12-lead modes with multiple display themes.</div>
+        <span class="card-btn btn-green">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Open Tool
+        </span>
+      </div>
+    </a>
+
+    <!-- Games -->
+    <a class="project-card" href="games.html">
+      <div class="card-accent accent-amber"></div>
+      <div class="card-body">
+        <div class="card-icon icon-amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="6"/>
+            <line x1="7" y1="12" x2="9" y2="12"/>
+            <line x1="8" y1="11" x2="8" y2="13"/>
+            <circle cx="16" cy="10.5" r="1"/>
+            <circle cx="18" cy="13" r="1"/>
+          </svg>
+        </div>
+        <div class="card-title">Games</div>
+        <div class="card-desc">Multi-device quiz games — host on one screen, play from any device in the room.</div>
+        <span class="card-btn btn-amber">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Open
+        </span>
+      </div>
+    </a>
+
+    <!-- Coming Soon -->
+    <div class="project-card disabled">
+      <div class="card-accent accent-grey"></div>
+      <div class="card-body">
+        <div class="card-icon icon-grey">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="card-title">Coming Soon</div>
+        <div class="card-desc">More tools in development. Check back for future additions to the suite.</div>
+        <span class="coming-soon-tag">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          In Development
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div>Paramedic Training Tools &copy; 2026 Tim Pearson</div>
+    <div>Independent educational tool &nbsp;·&nbsp; For training use only</div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+const _sb = supabase.createClient(
+  'https://befsjenbaruxqrntuhpn.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA'
+);
+window.__avSupabaseClient = _sb; // shared with nav.js — avoids duplicate GoTrueClient instances
+(async () => {
+  const { data: { session } } = await _sb.auth.getSession();
+  const btn = document.getElementById('topbar-login-btn');
+  if (btn) {
+    if (session) {
+      btn.textContent = session.user.user_metadata?.full_name?.split(' ')[0] || 'Account';
+      btn.onclick = () => window.location.href = 'index.html';
+    } else {
+      btn.textContent = 'Sign in';
+      btn.onclick = () => window.location.href = 'login.html?redirect=tools.html';
+    }
+  }
+})();
+</script>
+
+<script src="nav.js"></script>
+</body>
+</html>

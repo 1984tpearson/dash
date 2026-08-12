@@ -2,7 +2,7 @@
  * Shared cross-pack scenario-overlay generation.
  *
  * Loaded by both generator.html (to dual-build a generic KQ set alongside
- * a real-pack generation) and scenario.html (to fill in a missing overlay
+ * a real-pack generation) and index.html (to fill in a missing overlay
  * on-demand, the first time a scenario is viewed under a pack it wasn't
  * generated under). Kept as one shared file rather than duplicated across
  * those two already-huge pages — see CLAUDE.md's service-pack Gotchas
@@ -33,7 +33,7 @@
  *   classifyCPGFromText in generator.html). "cpg" is only the single most
  *   central classified key; any second, related-but-secondary key goes in
  *   "extra_cpgs" — same primary/secondary split generator.html's native
- *   cpg/additional_cpgs fields use, so scenario.html renders it as a small
+ *   cpg/additional_cpgs fields use, so index.html renders it as a small
  *   AI-suggested extra rather than an equally-weighted second primary.
  *
  * Both read the Anthropic key from Supabase app_config directly (same
@@ -205,7 +205,7 @@
       // prompt's rule 4) — only that one becomes the primary "cpg". Any second
       // key is a related-but-secondary guideline, so it goes in "extra_cpgs"
       // instead, same as generator.html's native "additional_cpgs" field —
-      // otherwise scenario.html renders every classified key as an equally-
+      // otherwise index.html renders every classified key as an equally-
       // weighted primary CPG (e.g. an anaphylaxis scenario also showing
       // "Essential Airway Management" as a second primary, just because
       // airway is clinically related, not because it's a distinct primary

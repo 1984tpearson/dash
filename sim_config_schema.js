@@ -379,7 +379,7 @@
           SS_LABELS: {
             type: 'map_str_str',
             label: 'Secondary survey body-region labels',
-            help: '⚠ Must be kept in sync with scenario.html’s SS_FIELD_LABELS (a separate file, not managed by this admin page) — editing only here will make the two pages show different wording for the same finding.',
+            help: '⚠ Must be kept in sync with index.html’s SS_FIELD_LABELS (a separate file, not managed by this admin page) — editing only here will make the two pages show different wording for the same finding.',
             default: {
               head: 'Head and face', neck: 'Neck', chest: 'Chest', abdomen: 'Abdomen', back: 'Back', pelvis: 'Pelvis', limbs: 'Limbs',
               neuro: 'Neurological', cardio: 'Cardiovascular', resp: 'Respiratory', gi: 'Gastrointestinal', gu: 'Genitourinary',

@@ -285,7 +285,7 @@ const _newKeys = new Set(); // keys added this session that don't exist in the f
 const STEP_TYPES = ['action','mica','header','subheader','stop','note','assess'];
 const TYPE_LABELS = { action:'ALS Action', mica:'MICA', header:'Header', subheader:'Subheader', stop:'Stop', note:'Note', assess:'Assess' };
 
-// ── CATEGORY GROUPING (mirrors generator.html / scenario.html) ──
+// ── CATEGORY GROUPING (mirrors generator.html / index.html) ──
 const TOP_CATEGORIES = [
   { key: 'Adult',           icon: '🧑', color: 'var(--navy)' },
   { key: 'Paediatric',      icon: '🧒', color: 'var(--blue)' },
@@ -1688,7 +1688,7 @@ function patchCondToCpgKeyText(fileText, oldConditionName, cpgKey, newConditionN
   return fileText.slice(0, openIdx) + block + fileText.slice(closeIdx + 1);
 }
 
-// Adds/updates a bare-identifier-key label in scenario.html's CPG_SUBTYPE_LABELS (e.g. `fracture_dislocation_a0806: 'Fracture/dislocation',`).
+// Adds/updates a bare-identifier-key label in index.html's CPG_SUBTYPE_LABELS (e.g. `fracture_dislocation_a0806: 'Fracture/dislocation',`).
 function patchSubtypeLabelText(fileText, cpgKey, newLabel) {
   const declMatch = /const\s+CPG_SUBTYPE_LABELS\s*=\s*\{/.exec(fileText);
   if (!declMatch) throw new Error('CPG_SUBTYPE_LABELS declaration not found in this file');

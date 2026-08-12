@@ -1,7 +1,7 @@
 // ============================================================
 // nav.js — Shared hamburger nav, sidebar, and Settings modal
-// for the Scenario Trainer suite (scenario.html, generator.html,
-// index.html). Reuses the host page's own Supabase client
+// for the Scenario Trainer suite (index.html, generator.html,
+// tools.html). Reuses the host page's own Supabase client
 // (exposed on window.__avSupabaseClient) if one already exists,
 // to avoid multiple GoTrueClient instances sharing the same
 // auth storage key in the same tab. Falls back to creating its
@@ -12,7 +12,7 @@
 //   2. Add <div id="avnav-slot"></div> somewhere in the topbar.
 //   3. Add <script src="nav.js"></script> before </body>.
 //   4. (Optional but recommended) add the anti-flash theme
-//      snippet in <head> — see scenario.html for the pattern.
+//      snippet in <head> — see index.html for the pattern.
 // ============================================================
 (function () {
   'use strict';
@@ -33,8 +33,8 @@
     console.error('nav.js: supabase-js must be loaded before nav.js');
     return;
   }
-  // Reuse the host page's client if it already created one (scenario.html,
-  // generator.html, index.html all do). Only create a fresh one otherwise.
+  // Reuse the host page's client if it already created one (index.html,
+  // generator.html, tools.html all do). Only create a fresh one otherwise.
   var _sb = window.__avSupabaseClient || supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   if (!window.__avSupabaseClient) window.__avSupabaseClient = _sb;
 
@@ -43,6 +43,14 @@
   var _adminUsers = [];
   var _adminUsersScenarios = {};
   var _avatarPickerTarget = null; // null = editing own avatar; else a user id (admin editing someone else)
+
+  // True on the DASH scenario tool page. It lives at index.html, so this has to
+  // match the bare directory root (/dash/) as well as the explicit filename —
+  // a plain /index\.html/ test would miss everyone who arrived via the root URL.
+  function onDashHome() {
+    var page = window.location.pathname.split('/').pop();
+    return page === '' || /^index\.html$/i.test(page);
+  }
 
   // ------------------------------------------------------------------
   // Service packs — swappable role/level taxonomy + attribution text.
@@ -98,7 +106,7 @@
         ['NA', 'Other/NA']
       ],
       copyrightHtml: 'Role, level, and clinical-guideline terminology in this pack are modelled on Ambulance Victoria classifications, for training purposes only. Not affiliated with or endorsed by Ambulance Victoria.',
-      // Longer-form legal/attribution text used by scenario.html's page
+      // Longer-form legal/attribution text used by index.html's page
       // footer and per-scenario footer — null on any pack without real
       // sourced clinical content (i.e. "none") so those call sites can
       // render nothing at all rather than a generic placeholder.
@@ -157,7 +165,7 @@
     var packSel = document.getElementById('avnav-pack-select');
     if (packSel) packSel.value = activeServicePackId();
     renderCopyrightFooter();
-    // scenario.html resolves the active pack's CPG hints/overlay/knowledge
+    // index.html resolves the active pack's CPG hints/overlay/knowledge
     // questions once, at loadScenario() time — switching packs mid-view (via
     // this dropdown, while a scenario is already open) doesn't re-run that
     // resolution on its own, so the CPG recommendation and questions kept
@@ -165,7 +173,7 @@
     // simplest correct fix: it re-reads av_service fresh and re-triggers the
     // on-demand overlay generation in loadScenario() for the new pack. Same
     // pattern deleteScenario() already uses above.
-    if (/scenario\.html/i.test(window.location.pathname)) window.location.reload();
+    if (onDashHome()) window.location.reload();
   }
 
   function escapeHtml(s) {
@@ -422,7 +430,7 @@
           '<button class="avnav-settings-btn" id="avnav-settings-btn" onclick="AVNav.openSettings()" title="Settings">⚙</button>' +
         '</div>' +
         '<div class="avnav-links">' +
-          '<a class="avnav-link" href="scenario.html">Home</a>' +
+          '<a class="avnav-link" href="index.html">Home</a>' +
         '</div>' +
         '<div class="avnav-links" id="avnav-guest-notice" style="display:none">' +
           '<div style="padding:12px 16px;font-size:12px;color:var(--grey);line-height:1.5">Browsing as a guest — view only. Sign in with Google to save, rate, or generate content.</div>' +
@@ -436,7 +444,7 @@
           '<a class="avnav-link" id="avnav-simconfig-link" href="sim_config_admin.html" style="display:none">Sim Config</a>' +
         '</div>' +
         '<div class="avnav-links">' +
-          '<a class="avnav-link" href="index.html">More Tools</a>' +
+          '<a class="avnav-link" href="tools.html">More Tools</a>' +
         '</div>' +
         '<div class="avnav-bottom">' +
           '<div id="avnav-pack-select-wrap" style="display:none;margin-bottom:10px">' +
@@ -796,7 +804,7 @@
       body.innerHTML = rows.map(function (s) {
         return '<div class="avnav-scenario-item"><div><div class="avnav-scenario-title">' + escapeHtml(s.title) + '</div>' +
           '<div class="avnav-scenario-sub">' + escapeHtml(s.subtitle || s.category || '') + (s.ai_generated ? ' · AI' : ' · Manual') + '</div></div>' +
-          '<a class="avnav-scenario-load-btn" href="scenario.html?id=' + encodeURIComponent(s.id) + '">Load</a></div>';
+          '<a class="avnav-scenario-load-btn" href="index.html?id=' + encodeURIComponent(s.id) + '">Load</a></div>';
       }).join('');
     } catch (e) {
       body.innerHTML = '<p style="color:var(--red);padding:16px">Failed to load: ' + escapeHtml(e.message) + '</p>';
@@ -823,7 +831,7 @@
         rows.map(function (s) {
           return '<div class="avnav-scenario-item"><div><div class="avnav-scenario-title">' + escapeHtml(s.title) + '</div>' +
             '<div class="avnav-scenario-sub">' + escapeHtml(s.subtitle || s.category || '') + (admin ? ' · ' + escapeHtml(s.creator_name || 'Unknown') : '') + '</div></div>' +
-            '<a class="avnav-scenario-load-btn" href="scenario.html?id=' + encodeURIComponent(s.id) + '">Load</a>' +
+            '<a class="avnav-scenario-load-btn" href="index.html?id=' + encodeURIComponent(s.id) + '">Load</a>' +
             '<button class="avnav-scenario-delete-btn" onclick="AVNav.deleteScenario(\'' + s.id + '\')">Delete</button></div>';
         }).join('');
     } catch (e) {
@@ -869,7 +877,7 @@
         ? userScenarios.map(function (s) {
             return '<div class="avnav-scenario-item"><div><div class="avnav-scenario-title">' + escapeHtml(s.title) + '</div>' +
               '<div class="avnav-scenario-sub">' + escapeHtml(s.category || '') + '</div></div>' +
-              '<a class="avnav-scenario-load-btn" href="scenario.html?id=' + encodeURIComponent(s.id) + '">Load</a></div>';
+              '<a class="avnav-scenario-load-btn" href="index.html?id=' + encodeURIComponent(s.id) + '">Load</a></div>';
           }).join('')
         : '<p style="font-size:12px;color:var(--grey);padding:8px 0 0">No scenarios created.</p>';
       return '<div style="display:flex;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid var(--border)">' +
@@ -1061,7 +1069,7 @@
     if (!confirm('Delete this scenario? This cannot be undone.')) return;
     try {
       await sbFetch('scenarios?id=eq.' + encodeURIComponent(id), { method: 'DELETE', prefer: 'return=minimal' });
-      if (/scenario\.html/i.test(window.location.pathname)) window.location.reload();
+      if (onDashHome()) window.location.reload();
       else openManageMine();
     } catch (e) {
       alert('Delete failed: ' + e.message);
