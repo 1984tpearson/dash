@@ -2466,9 +2466,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-window.addEventListener('resize', () => {
-  if (actionState.ecg.status === 'done') rebuildECG(_lastHR);
-});
+// ECGEngine bakes its container's dimensions in at construction (see
+// rebuildECG), so anything that changes the monitor's box has to trigger a
+// rebuild. A window resize isn't the only way that happens: in
+// sim_combo.html both pages run in permanently-mounted iframes and the
+// inactive one is collapsed to width 0 (flex: 0 0 0), NOT display:none — so
+// this page can build its ECG while its own iframe measures zero, then be
+// revealed at a real size with nothing re-measuring it, leaving a trace
+// rendered to a width the monitor no longer has. A ResizeObserver on the
+// display wrap covers both that and the plain window-resize case, so the
+// window listener is no longer needed. Debounced to the trailing edge —
+// a pane reveal or a drag fires many callbacks, and each rebuild is a full
+// destroy/recreate of the engine.
+let _ecgResizeTimer = null;
+let _lastEcgBox = { w: 0, h: 0 };
+function observeEcgResize() {
+  const wrap = document.getElementById('ecg-display-wrap');
+  if (!wrap || typeof ResizeObserver === 'undefined') return;
+  let first = true;
+  new ResizeObserver(entries => {
+    const box = entries[0].contentRect;
+    const w = Math.round(box.width), h = Math.round(box.height);
+    if (w === _lastEcgBox.w && h === _lastEcgBox.h) return;
+    // The observer's own initial callback is just "here is the current
+    // size", not a change — record it without rebuilding, so an already
+    // correctly-sized trace isn't wiped and restarted on load.
+    if (first) { first = false; _lastEcgBox = { w, h }; return; }
+    _lastEcgBox = { w, h };
+    if (!w || !h) return; // collapsed (hidden combo pane) — nothing worth rebuilding into, wait for it to come back
+    clearTimeout(_ecgResizeTimer);
+    _ecgResizeTimer = setTimeout(() => {
+      if (actionState.ecg.status === 'done') rebuildECG(_lastHR);
+    }, 200);
+  }).observe(wrap);
+}
+observeEcgResize();
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { tick(); pollSession(); }

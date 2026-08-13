@@ -1688,7 +1688,17 @@ function applySessionRow(row) {
   if (!liveConfig) return;
   processStudentQueue(row); // fire-and-forget — auto-applies any new voice-queued items from sim_patient.html (see below)
   processDefibFollowUps(row); // fire-and-forget — re-projects the trajectory after a ROSC/cardioversion shock (see below)
-  liveConfig.treatments = row.treatments || [];
+  // Merged, not replaced, for the same reason as voice_transcript below:
+  // this page routinely holds an entry the row hasn't caught up with. A
+  // treatment is PATCHed the moment it's given, WITHOUT assumptions, and
+  // annotated by a second PATCH once its AI call returns — so a poll GET
+  // issued between those two writes comes back carrying the un-annotated
+  // copy, and a flat assignment here dropped the notes locally and then
+  // wrote that stale array back to the row on the next PATCH, losing them
+  // permanently. Seen in practice on fast catalogue-routed actions
+  // (aspirin, IV access), whose annotating PATCH lands within a single
+  // poll interval of the initial one.
+  liveConfig.treatments = mergeTreatments(treatments, row.treatments || []);
   // Merged, not replaced: this page may hold a just-recorded exchange the
   // row has not caught up with yet, and the patient device may have added
   // one of its own — see PatientVoice.mergeTranscript.
@@ -3869,7 +3879,7 @@ async function runDefibFollowUpPlan(entry, rowTreatments, followUpAtMs) {
   } catch (e) { return; } // couldn't even log it — leave the hardcoded cascade as-is rather than risk a partial write
 
   try {
-    await regenerateTimelineForScriptedEvent(command, followUpAtMs);
+    await regenerateTimelineForScriptedEvent(command, followUpAtMs, { entry: newEntry });
   } catch (e) {
     newEntry.assumptions = [`Could not compute follow-up trajectory: ${e.message}`];
     liveConfig.treatments = treatments;
@@ -4243,6 +4253,53 @@ function appendTreatmentEntry(entry) {
   liveConfig.treatments = treatments;
 }
 
+// Reconciles the polled treatment log against the one this page is holding.
+// The row is authoritative for WHICH entries exist; local state wins for
+// each entry's `assumptions`, which are written by a second, later PATCH
+// than the entry itself (see the call site in pollSession).
+//
+// Local entry objects are reused rather than replaced by their row
+// equivalents, deliberately: an in-flight AI call holds a direct reference
+// to its own entry (assignAssumptions), and swapping in a fresh object
+// parsed from JSON would leave that call writing into an orphan that is no
+// longer part of `treatments`.
+//
+// Local-only entries are kept only when they sit at or after the last
+// entry the row knows about — that's the just-appended-locally case, where
+// the poll simply hasn't caught up. A local entry the row has dropped from
+// somewhere earlier in the log is a genuine removal (an undo or a
+// rewind-and-diverge, possibly from another control tab) and is allowed
+// through, rather than being resurrected on the next PATCH.
+function mergeTreatments(localList, rowList) {
+  const local = localList || [];
+  const unclaimed = local.slice();
+  const merged = rowList.map(rowEntry => {
+    const i = unclaimed.findIndex(t => t.action === rowEntry.action && t.givenAtMin === rowEntry.givenAtMin);
+    if (i === -1) return rowEntry;
+    const localEntry = unclaimed.splice(i, 1)[0];
+    if (!localEntry.assumptions && rowEntry.assumptions) localEntry.assumptions = rowEntry.assumptions;
+    return localEntry;
+  });
+  const lastRowMin = rowList.length ? Math.max(...rowList.map(t => t.givenAtMin)) : -Infinity;
+  const tail = unclaimed.filter(t => t.givenAtMin >= lastRowMin);
+  return tail.length ? merged.concat(tail).sort((a, b) => a.givenAtMin - b.givenAtMin) : merged;
+}
+
+// Writes AI-produced assumptions onto the specific log entry the call was
+// about, by object reference. Falls back to the last entry only when no
+// entry was passed (older/other call paths), and silently does nothing if
+// the entry is no longer in `treatments` — a rewind-and-diverge
+// (appendTreatmentEntry's filter) can drop an entry while its own AI call
+// is still in flight, and re-adding it here would resurrect an action the
+// crew has already branched away from.
+function assignAssumptions(entry, assumptions) {
+  const target = entry || (treatments.length ? treatments[treatments.length - 1] : null);
+  if (!target) return;
+  if (entry && treatments.indexOf(entry) === -1) return;
+  target.assumptions = assumptions;
+  liveConfig.treatments = treatments;
+}
+
 // If this action is being given at a time EARLIER than something already
 // logged — a rewind followed by a genuinely different choice this time —
 // the old scheduled future beyond givenAtMs belongs to a branch that no
@@ -4398,11 +4455,9 @@ async function giveTreatment(providedText, opts) {
       : '';
     if (statusEl) statusEl.textContent = 'Recalculating trajectory…';
     try {
-      await regenerateTimelineAfterTreatment(reasoningText + contextNote, givenAtMs, { diverged });
+      await regenerateTimelineAfterTreatment(reasoningText + contextNote, givenAtMs, { diverged, entry: newEntry });
       if (matchedNotes.length) {
-        const idx = treatments.length - 1;
-        treatments[idx].assumptions = [...matchedNotes, ...(treatments[idx].assumptions || [])];
-        liveConfig.treatments = treatments;
+        assignAssumptions(newEntry, [...matchedNotes, ...(newEntry.assumptions || [])]);
         await sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
           method: 'PATCH', prefer: 'return=minimal',
           body: JSON.stringify({ treatments, updated_at: new Date().toISOString() })
@@ -4556,14 +4611,15 @@ Project how this patient's vitals change from here, given this specific action.`
   autoEnableGraphSeriesFromOverrides(parsed.overrides);
 
   // Record any assumptions the AI had to make on the treatment log entry
-  // itself (this action was just pushed as the last element of `treatments`
-  // by giveTreatment()) — feeds both the on-screen log and, later, the
-  // end-of-scenario report.
+  // itself — feeds both the on-screen log and, later, the end-of-scenario
+  // report. Written to the caller's own entry object (opts.entry), NOT to
+  // whatever happens to be last in `treatments` at the moment the call
+  // returns: these reasoning calls take tens of seconds and nothing
+  // serialises them, so a second action given while this one is still
+  // thinking makes ITS entry the last one, and the first action's
+  // assumptions get stapled onto the second action's log entry.
   const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter(a => typeof a === 'string') : [];
-  if (treatments.length) {
-    treatments[treatments.length - 1].assumptions = assumptions;
-    liveConfig.treatments = treatments;
-  }
+  assignAssumptions(opts.entry, assumptions);
 
   // spontaneousLines is omitted by the AI whenever this action wouldn't
   // change what the patient spontaneously says — that must mean "leave the
@@ -4629,7 +4685,7 @@ async function runAssessorCommand(providedText) {
   if (statusEl) statusEl.textContent = 'Scripting event\u2026';
   beginAiWork();
   try {
-    await regenerateTimelineForScriptedEvent(command, givenAtMs, { diverged });
+    await regenerateTimelineForScriptedEvent(command, givenAtMs, { diverged, entry: newEntry });
     if (statusEl) statusEl.textContent = '';
   } catch (e) {
     if (statusEl) statusEl.textContent = 'Could not script the event: ' + e.message;
@@ -4715,11 +4771,10 @@ Project how this patient's vitals change from here, given this command.`;
   SimEngine.spliceRhythmPlan(freshOverrides, parsed.rhythm, givenAtMs);
   autoEnableGraphSeriesFromOverrides(parsed.overrides);
 
+  // Same by-reference rule as regenerateTimelineAfterTreatment — see the
+  // comment there on why this must not write to treatments[length - 1].
   const assumptions = Array.isArray(parsed.assumptions) ? parsed.assumptions.filter(a => typeof a === 'string') : [];
-  if (treatments.length) {
-    treatments[treatments.length - 1].assumptions = assumptions;
-    liveConfig.treatments = treatments;
-  }
+  assignAssumptions(opts.entry, assumptions);
 
   // See regenerateTimelineAfterTreatment()'s identical comment — omitted
   // spontaneousLines means "no change", so only PATCH it when non-empty.
