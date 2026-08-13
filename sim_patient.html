@@ -2667,6 +2667,14 @@ function pickVoice() {
 // since an unresponsive patient shouldn't mutter an old line just because a
 // timer fired (same rule pain/nausea already follow, cutting to 0 in
 // lockstep with LOC).
+// Off for now (Aug 2026): the patient was audibly talking over itself, and
+// this is the only thing that speaks unprompted, on a timer, with no
+// knowledge of what else is mid-sentence. The guards below and in
+// startRealtimeCall() closed the windows we could find, but overlaps kept
+// being reported, so the whole behaviour is parked rather than kept running
+// while half-trusted. Everything below stays wired up — flip this back to
+// true to re-enable.
+const SPONTANEOUS_LINES_ENABLED = false;
 let _lastSpontaneousAt = 0;
 let _lastSpontaneousText = '';
 // First one waits a while so a session doesn't open with the patient already
@@ -2690,6 +2698,7 @@ function pickDifferent(pool, avoid) {
   return pick;
 }
 function maybeSaySpontaneousLine(v) {
+  if (!SPONTANEOUS_LINES_ENABLED) return; // see the constant's comment — parked, not removed
   if (_voiceModalOpen || _isSpeaking) return; // never interrupt/overlap a real exchange or an already-playing line
   // A live Realtime Voice call owns the patient's voice for its WHOLE life,
   // not just the moments the two flags above happen to cover. Those two miss
