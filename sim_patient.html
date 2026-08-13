@@ -2026,6 +2026,20 @@ function fmtTimer(ms) {
 // CLAUDE.md "Patient orientation"), computed independently here rather than
 // synced, same as the vitals themselves. Falls back to the real device
 // clock for scenarios that predate the vitals.TimeOfDay field.
+// The same in-fiction "what time does the patient think it is" value as the
+// Scene time clock below, formatted for the Realtime Voice patient prompt —
+// a hand-kept mirror of sim_control.html's scenarioFictionalDateTime(),
+// which feeds the identical line in its own callPatientAI() (see the
+// PATIENT_VOICE_PROMPT comment on why these two are duplicated rather than
+// shared). Falls back to the real device clock exactly as that one does,
+// for scenarios predating the vitals.TimeOfDay field.
+function scenarioFictionalDateTime() {
+  const nowMs = Date.now();
+  const raw = scenarioMeta && scenarioMeta.vitals && scenarioMeta.vitals.TimeOfDay;
+  const fictionalNow = testConfig && SimEngine.getScenarioFictionalNow(raw, testConfig, nowMs);
+  return (fictionalNow || new Date(nowMs)).toLocaleString('en-AU', { dateStyle: 'full', timeStyle: 'short' });
+}
+
 function updateScenarioClock(nowMs) {
   const raw = scenarioMeta && scenarioMeta.vitals && scenarioMeta.vitals.TimeOfDay;
   const clockDate = (testConfig && SimEngine.getScenarioFictionalNow(raw, testConfig, nowMs)) || new Date(nowMs);
@@ -2926,7 +2940,7 @@ async function getDeepgramKey() {
 // above for why both files can still stay in sync via the admin config even
 // though the JS text itself is duplicated. Keep in sync by hand if the
 // default wording ever changes in sim_control.html.
-let PATIENT_VOICE_PROMPT = "You are voicing the PATIENT in a paramedic training scenario, answering a question the crew just asked out loud. Reply only as the patient would speak — first person, in character, brief (1-3 short sentences), plain lay language, no clinical terms the patient wouldn't use.\n\nOnly say what this patient could plausibly know or perceive themselves (their own symptoms, feelings, what happened to them, basic personal details) — never reveal the provisional diagnosis, clinical reasoning, vital sign numbers, or anything a real patient wouldn't know or say. If asked something the patient wouldn't know or that's irrelevant to them, answer in character as a confused/unsure patient would.\n\nLet their current condition colour HOW they answer: e.g. short of breath = short, breathless sentences; distressed/in pain = anxious tone. Never break character, never mention this being a simulation.\n\nYour name is {{patientName}}. If asked your name, or anything requiring you to refer to yourself, you MUST use this exact name — never invent or substitute a different one.\n{{confusedNote}}\n\nReturn ONLY the spoken reply text — no quotation marks, no stage directions, no prose about the answer.";
+let PATIENT_VOICE_PROMPT = "You are voicing the PATIENT in a paramedic training scenario, answering a question the crew just asked out loud. Reply only as the patient would speak — first person, in character, brief (1-3 short sentences), plain lay language, no clinical terms the patient wouldn't use.\n\nOnly say what this patient could plausibly know or perceive themselves (their own symptoms, feelings, what happened to them, basic personal details) — never reveal the provisional diagnosis, clinical reasoning, vital sign numbers, or anything a real patient wouldn't know or say. If asked something the patient wouldn't know or that's irrelevant to them, answer in character as a confused/unsure patient would.\n\nLet their current condition colour HOW they answer: e.g. short of breath = short, breathless sentences; distressed/in pain = anxious tone. Never break character, never mention this being a simulation.\n\nThe user message tells you the patient's own current date/time — always trust and use that exact value for any orientation question (day, date, year, approximate time), never a date you might otherwise assume.\n\nYour name is {{patientName}}. If asked your name, or anything requiring you to refer to yourself, you MUST use this exact name — never invent or substitute a different one.\n{{confusedNote}}\n\nReturn ONLY the spoken reply text — no quotation marks, no stage directions, no prose about the answer.";
 let PATIENT_VOICE_CONFUSED_NOTE = "This patient’s GCS Verbal score is 4 (confused conversation) — they can hold a real back-and-forth conversation and engage with whatever’s actually asked, but they’re disoriented. Vary how much and in which domains — anywhere from mildly off (e.g. unsure of the exact date but still correctly knows the year, where they are, and who they’re talking to) to broadly disoriented (confused about time, place, the situation, AND who’s with them, e.g. mistaking a paramedic for a relative or hospital staff) — stay consistent about which specific things they’re confused about across the conversation rather than re-rolling it every reply. Let the disorientation show up as specific wrong or uncertain details inside an otherwise coherent, on-topic reply — not as rambling that ignores the question, drifts onto an unrelated tangent, or reads as agitated/erratic (that’s delirium, a different presentation) — and never a fully accurate, correctly-oriented answer.";
 
 // --- Deepgram TTS (Aura-2) voice selection ---------------------------
@@ -3460,10 +3474,12 @@ async function generateRealtimePatientReply(question) {
   const confused = gcsV === 4;
   const confusedNote = confused ? ('\n' + PATIENT_VOICE_CONFUSED_NOTE) : '';
   const systemPrompt = PATIENT_VOICE_PROMPT.replace(/\{\{patientName\}\}/g, patientName).replace(/\{\{confusedNote\}\}/g, confusedNote);
-  // Simplified inline equivalent of sim_control.html's currentDateTimeContext().
-  const nowStr = new Date().toLocaleString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const treatmentsList = (testConfig.treatments || []).map(t => t.action).join('; ');
-  const userPrompt = `Current real-world date/time: ${nowStr} — use this if the crew asks an orientation question ("do you know what day it is?" etc), otherwise it's just background context.
+  // The patient's own in-fiction clock, NOT this device's — a scenario
+  // authored as a 3am callout must have its patient believe it's 3am, which
+  // matters most for exactly the orientation questions a GCS V4 patient gets
+  // asked. Wording kept identical to sim_control.html's callPatientAI().
+  const userPrompt = `The patient's own current date/time (this is what THEY would believe if asked): ${scenarioFictionalDateTime()} — use this exact date/time, not any date you might otherwise assume, if the crew asks an orientation question ("do you know what day it is?", "what year is it?", "roughly what time is it?" etc). Otherwise it's just background context.
 Scenario: ${(scenarioMeta && scenarioMeta.title) || ''}
 Patient name: ${patientName}
 Provisional diagnosis (do not reveal): ${(scenarioMeta && scenarioMeta.provisional) || 'unspecified'}
