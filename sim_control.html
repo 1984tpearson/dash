@@ -226,6 +226,16 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
       <button class="btn" id="create-session-btn" onclick="createSession()">Create Session</button>
       <button class="btn btn-secondary" id="regen-timeline-btn" style="display:none;margin-left:8px;" onclick="regenerateScenarioTimeline()">Regenerate Timeline (Admin)</button>
       <div id="create-status" class="muted" style="margin-top:8px;"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #e2e8f0;">
+        <p class="muted" style="margin-bottom:8px;">Already running a session on a patient device? Join it by code instead of creating a new one — this tab has to be attached to the same session or nothing the crew says or does reaches the Log.</p>
+        <div class="row" style="align-items:flex-end;">
+          <div style="min-width:150px;">
+            <label for="join-code-input">Existing session code</label>
+            <input id="join-code-input" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" style="width:100%;font-family:'Courier New',monospace;letter-spacing:3px;text-align:center;">
+          </div>
+          <button class="btn btn-secondary" id="join-session-btn" onclick="joinSession()">Join Session</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1105,12 +1115,7 @@ async function createSession() {
           total_paused_ms: 0
         })
       });
-      sessionCode = code;
-      subscribeSessionRealtime(code);
-      currentScenario = scenario;
-      switchInfoTab('dispatch');
-      renderScenarioInfoPanel();
-      liveConfig = {
+      enterSession(code, scenario, {
         baseline: timeline.starting_vitals,
         startTimeMs: startMs,
         treatments: [],
@@ -1124,37 +1129,7 @@ async function createSession() {
         totalPausedMs: 0,
         patientConnected: false,
         endedAt: null
-      };
-      _joinInfoManuallyShown = false;
-      treatments = [];
-      undoStack = [];
-      patientActions = {};
-      actionControls = {};
-      expandedActionKey = null;
-      actionLog = [];
-      expandedTreatmentIdx = null;
-      _prevPatientActionsStatus = {};
-      _actionLogPrimed = false;
-      _recentlySkippedKeys = new Set();
-      document.getElementById('resume-prompt-modal').style.display = 'none';
-      graphSeriesOn = { ...GRAPH_DEFAULT_ON };
-      autoEnableGraphSeriesFromOverrides(timeline.timeline_overrides);
-      document.getElementById('create-panel').style.display = 'none';
-      document.getElementById('dashboard').style.display = 'flex';
-      document.getElementById('mode-switch-wrap').style.display = 'flex';
-      document.getElementById('code-display').textContent = code;
-      graphViewStartMin = 0;
-      graphViewWindowMin = 30;
-      graphUserPanned = false;
-      renderJoinQR();
-      updatePatientStatus();
-      renderRunControls();
-      renderLog();
-      updateUndoButtonState();
-      renderPendingActionsStack();
-      tickVitals();
-      setInterval(tickVitals, VITALS_TICK_MS);
-      setInterval(pollSession, DB_POLL_MS); // fallback poll — realtime (subscribeSessionRealtime) covers the common case
+      });
       return;
     } catch (e) {
       attempts++; // session_code collision (rare) — retry with a new code
@@ -1162,6 +1137,118 @@ async function createSession() {
   }
   statusEl.textContent = 'Could not create a session — try again.';
   btn.disabled = false;
+}
+
+// Swaps the create panel for the live dashboard on a given session, and
+// starts the tick/poll loops. Shared by createSession() and joinSession()
+// so a rejoined session is wired up identically to a freshly created one —
+// in particular processStudentQueue() only ever runs off these intervals,
+// so anything this misses means the patient device queues into a void.
+let _sessionLoopsStarted = false;
+function enterSession(code, scenario, cfg) {
+  sessionCode = code;
+  subscribeSessionRealtime(code);
+  currentScenario = scenario;
+  switchInfoTab('dispatch');
+  renderScenarioInfoPanel();
+  liveConfig = cfg;
+  _joinInfoManuallyShown = false;
+  treatments = cfg.treatments || [];
+  undoStack = [];
+  patientActions = {};
+  actionControls = {};
+  expandedActionKey = null;
+  actionLog = [];
+  expandedTreatmentIdx = null;
+  _prevPatientActionsStatus = {};
+  _actionLogPrimed = false;
+  _recentlySkippedKeys = new Set();
+  document.getElementById('resume-prompt-modal').style.display = 'none';
+  graphSeriesOn = { ...GRAPH_DEFAULT_ON };
+  autoEnableGraphSeriesFromOverrides(cfg.overrides);
+  document.getElementById('create-panel').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'flex';
+  document.getElementById('mode-switch-wrap').style.display = 'flex';
+  document.getElementById('code-display').textContent = code;
+  graphViewStartMin = 0;
+  graphViewWindowMin = 30;
+  graphUserPanned = false;
+  renderJoinQR();
+  updatePatientStatus();
+  renderRunControls();
+  renderLog();
+  updateUndoButtonState();
+  renderPendingActionsStack();
+  tickVitals();
+  if (!_sessionLoopsStarted) {
+    _sessionLoopsStarted = true;
+    setInterval(tickVitals, VITALS_TICK_MS);
+    setInterval(pollSession, DB_POLL_MS); // fallback poll — realtime (subscribeSessionRealtime) covers the common case
+  }
+}
+
+// Attaches to a session that already exists, by its 6-digit code.
+//
+// Why this exists: createSession() used to be the ONLY place sessionCode is
+// ever set, and both it and liveConfig live purely in this tab's memory. So
+// reloading the control tab (or creating a second session while a patient
+// device stayed on the first) orphaned the original permanently — the
+// patient stayed connected and kept queueing speech/treatments onto it, and
+// with nothing left polling that row, student_queue_ack_id sat at 0 forever
+// and none of it reached the Log. Realtime Voice made that failure silent:
+// the patient still answers from its own device, so a detached control tab
+// looks completely normal apart from an empty Log.
+//
+// Everything needed is already persisted on the row, so this rebuilds
+// liveConfig from it rather than regenerating a timeline — the running
+// scenario's clock, overrides and treatments must NOT be recomputed, or
+// rejoining would silently reset the session it's trying to pick back up.
+async function joinSession() {
+  const btn = document.getElementById('join-session-btn');
+  const statusEl = document.getElementById('create-status');
+  const code = (document.getElementById('join-code-input').value || '').trim();
+  if (!/^\d{6}$/.test(code)) { statusEl.textContent = 'Enter the 6-digit code shown on the patient device.'; return; }
+
+  btn.disabled = true;
+  statusEl.textContent = 'Looking up session…';
+  await loadSimConfig(); // same ordering rule as createSession — before anything reads a tunable
+
+  try {
+    const rows = await sbFetch(`sim_sessions?session_code=eq.${encodeURIComponent(code)}&select=*`, { method: 'GET' });
+    if (!rows.length) throw new Error('No session with that code — check the patient device.');
+    const row = rows[0];
+    if (row.ended_at) throw new Error('That session has already been ended.');
+
+    let scenario = null;
+    if (row.scenario_id) {
+      const scenRows = await sbFetch(`scenarios?id=eq.${encodeURIComponent(row.scenario_id)}&select=*`, { method: 'GET' });
+      scenario = scenRows[0] || null;
+    }
+    if (!scenario) throw new Error('The scenario this session was built from could not be loaded.');
+
+    enterSession(code, scenario, {
+      baseline: row.baseline,
+      startTimeMs: row.start_time_ms,
+      treatments: row.treatments || [],
+      overrides: row.overrides || {},
+      baselineOverrides: row.baseline_overrides || {},
+      previousOverrides: row.previous_overrides || {},
+      instantMode: !!row.instant_mode,
+      hasStarted: !!row.has_started,
+      isPaused: !!row.is_paused,
+      pausedAtMs: row.paused_at_ms,
+      totalPausedMs: row.total_paused_ms || 0,
+      patientConnected: !!row.patient_connected,
+      endedAt: null
+    });
+    // Anything the patient device queued while no control tab was attached
+    // is still sitting on the row unacked — drain it immediately rather than
+    // waiting out a poll interval, so the Log is caught up on arrival.
+    applySessionRow(row);
+  } catch (e) {
+    statusEl.textContent = 'Could not join: ' + e.message;
+    btn.disabled = false;
+  }
 }
 
 function renderJoinQR() {
