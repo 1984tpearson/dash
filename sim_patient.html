@@ -417,19 +417,6 @@ body.mode-avatar #monitor-col { display: none !important; }
     <p style="font-size:12px;color:#6b8299;">The assessor has ended this scenario. Nothing further will happen on this screen.</p>
   </div>
 </div>
-<div id="hq-voice-prompt" style="position:fixed;inset:0;background:rgba(20,30,45,0.92);z-index:110;display:none;align-items:center;justify-content:center;">
-  <div class="panel" style="width:300px;text-align:center;">
-    <h2 style="margin-bottom:10px;">Patient Voice Quality</h2>
-    <div style="font-size:12px;color:#33475a;margin-bottom:14px;line-height:1.5;">
-      Use a higher-quality AI voice for the patient? It sounds more natural
-      than the device's built-in voice, but downloads a voice model
-      (~30&ndash;60MB, once) the first time it's needed. You can change this
-      later with the HQ Voice tickbox.
-    </div>
-    <button style="width:100%;padding:8px;font-size:13px;font-weight:700;color:#fff;background:#0369a1;border:none;border-radius:6px;cursor:pointer;" onclick="chooseHqVoicePrompt(true)">Use High-Quality Voice</button>
-    <button style="width:100%;padding:7px;font-size:11px;font-weight:700;color:#33475a;background:#e2e8f0;border:none;border-radius:6px;cursor:pointer;margin-top:6px;" onclick="chooseHqVoicePrompt(false)">Use Standard Voice</button>
-  </div>
-</div>
 <div class="panel" id="patient-info" style="margin:10px 10px 0;">
   <div id="patient-info-normal">
     <h2>Patient / Scene Info</h2>
@@ -2524,13 +2511,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await requireAuth();
   setDisplayMode(localStorage.getItem(DISPLAY_MODE_LS_KEY) || defaultDisplayModeForDevice());
   document.getElementById('hq-voice-checkbox').checked = hqVoiceEnabled;
-  if (_patientDisplayMode === 'monitor') {
-    // No voice control is visible in this mode (see the CSS rules on
-    // body.mode-monitor) — asking about voice quality here would be a
-    // dead-end prompt for a setting this device will never use.
-  } else if (localStorage.getItem(HQ_VOICE_LS_KEY) === null) {
-    document.getElementById('hq-voice-prompt').style.display = 'flex';
-  } else if (hqVoiceEnabled) {
+  // Monitor Only never touches voice at all (see the body.mode-monitor CSS
+  // rules), so there's nothing to warm up for it.
+  if (_patientDisplayMode !== 'monitor' && hqVoiceEnabled) {
     warmPiperVoice(); // gives status feedback immediately, without waiting on a session to connect
   }
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
@@ -2810,6 +2793,13 @@ function speakAmbientLine(text) {
 // paediatric patients get an adult voice pitched/sped up via
 // youthVoiceRate() instead, a real approximation rather than a true
 // child voice, same tradeoff already accepted for it.
+// OFF by default, and silently so: there used to be a blocking first-load
+// "Patient Voice Quality" modal offering the choice before anything else on
+// the page could be used, which is no longer the right question to open with
+// now that Realtime Voice (further down) is the default "Talk to Patient"
+// path and carries its own Deepgram Aura-2 voice. HQ Voice only affects the
+// legacy/fallback speech path, so it's a tickbox to find when wanted, not a
+// gate to answer up front.
 const HQ_VOICE_LS_KEY = 'av_hq_voice_enabled';
 let PIPER_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm';
 let ELLIPSIS_PAUSE_MS = 550;
@@ -2924,16 +2914,6 @@ function setHqVoiceEnabled(enabled) {
   document.getElementById('hq-voice-checkbox').checked = hqVoiceEnabled;
   if (hqVoiceEnabled) warmPiperVoice();
   else setHqVoiceStatus('');
-}
-
-// First-load-only prompt — localStorage having no key at all (as opposed to
-// '0', an explicit prior "no") is what "first load" means here, so a student
-// who already chose isn't asked again on every visit. Answering either way
-// funnels through the same setHqVoiceEnabled() the tickbox uses, so both
-// stay in sync.
-function chooseHqVoicePrompt(enabled) {
-  setHqVoiceEnabled(enabled);
-  document.getElementById('hq-voice-prompt').style.display = 'none';
 }
 
 // Runs an async task that periodically signals activity via the `bump`
@@ -3139,8 +3119,9 @@ async function speakPatientReply(text, resumeIfConversing, isConversation, useHq
 // ============================================================================
 // --- Realtime Voice (beta): cascaded low-latency conversation pipeline ----
 // ============================================================================
-// An alternative to the legacy "Talk to Patient" flow above — opt-in via the
-// topbar's "⚡ Realtime Voice (beta)" checkbox, OFF by default. Give
+// An alternative to the legacy "Talk to Patient" flow above — ON by default
+// on browsers that support it, opt-out via the topbar's "⚡ Realtime Voice
+// (beta)" checkbox (see the _rtVoiceEnabled default below). Give
 // Treatment/Assessment are completely untouched; this only replaces what
 // happens when _rtVoiceEnabled is true and the student taps Talk (see the
 // branch in handleFabTap()).
@@ -3287,7 +3268,21 @@ function deepgramVoiceIdFor(gender) {
 
 // --- Toggle ------------------------------------------------------------
 const RT_VOICE_LS_KEY = 'av_rt_voice_enabled';
-let _rtVoiceEnabled = localStorage.getItem(RT_VOICE_LS_KEY) === '1';
+// Whether this browser can actually run the capture half of realtime mode —
+// see startRealtimeCapture()'s own MediaRecorder gate, which is what
+// ultimately refuses. Checked here too so the default below and the topbar
+// hint agree with it.
+function rtVoiceSupported() {
+  return !!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'));
+}
+// Default ON — but only where it can work. An explicit stored '1'/'0' (i.e.
+// the student has touched the tickbox) always wins; with no key set at all,
+// the default resolves to on for Chrome-class browsers and off elsewhere, so
+// an iPad/Safari user's first "Talk to Patient" tap still lands in the legacy
+// tap-to-talk flow rather than a "needs Chrome" dead end.
+let _rtVoiceEnabled = localStorage.getItem(RT_VOICE_LS_KEY) === null
+  ? rtVoiceSupported()
+  : localStorage.getItem(RT_VOICE_LS_KEY) === '1';
 function setRtVoiceEnabled(enabled) {
   _rtVoiceEnabled = !!enabled;
   localStorage.setItem(RT_VOICE_LS_KEY, _rtVoiceEnabled ? '1' : '0');
@@ -3298,8 +3293,7 @@ function setRtVoiceEnabled(enabled) {
 function updateRtVoiceStatusLabel() {
   const el = document.getElementById('rt-voice-status');
   if (!el) return;
-  const supported = !!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'));
-  el.textContent = _rtVoiceEnabled && !supported ? '(needs Chrome)' : '';
+  el.textContent = _rtVoiceEnabled && !rtVoiceSupported() ? '(needs Chrome)' : '';
 }
 
 // Same unlock trick as unlockPiperAudio() (see its comment above) —
