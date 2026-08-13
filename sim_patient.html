@@ -1488,6 +1488,7 @@ async function connectSession(code) {
       pausedAtMs: row.paused_at_ms,
       totalPausedMs: row.total_paused_ms,
       spontaneousLines: row.spontaneous_lines || [],
+      orientationProfile: row.orientation_profile || {},
       endedAt: row.ended_at || null
     };
     instantMode = row.instant_mode;
@@ -1558,7 +1559,7 @@ const _processedSkipEpoch = {};
 async function pollSession() {
   if (!sessionCode || !testConfig) return;
   try {
-    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,ended_at`);
+    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,orientation_profile,ended_at`);
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1589,6 +1590,7 @@ function applySessionRow(row) {
   instantMode = row.instant_mode;
   actionControls = row.action_controls || {};
   testConfig.spontaneousLines = row.spontaneous_lines || [];
+  if (row.orientation_profile) testConfig.orientationProfile = row.orientation_profile;
   checkForPatientReply(row.patient_reply);
 }
 
@@ -3482,7 +3484,8 @@ async function generateRealtimePatientReply(question) {
   // asked.
   const userPrompt = PatientVoice.buildUserPrompt({
     scenario: scenarioMeta, patientName, gcsV, vitals: v,
-    treatments: testConfig.treatments, fictionalDateTime: scenarioFictionalDateTime(), question
+    treatments: testConfig.treatments, fictionalDateTime: scenarioFictionalDateTime(), question,
+    orientationProfile: testConfig.orientationProfile
   });
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

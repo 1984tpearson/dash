@@ -57,6 +57,37 @@
       .replace(/\{\{confusedNote\}\}/g, note);
   }
 
+  // The fixed disorientation picture for a GCS-Verbal 4 patient — WHICH of
+  // time/date/place/person they are wrong about, and what they specifically
+  // believe instead. Generated once per scenario and cached (see
+  // sim_control.html's buildOrientationProfile), so the answers do not move.
+  //
+  // Why this exists rather than leaving it to the model: every reply is an
+  // independent, stateless API call with no memory of previous turns, so a
+  // patient asked "what year is it?" twice invented a different wrong year
+  // each time, and re-rolled which domains they were even confused about.
+  // The confusion note asks for consistency; only handing the model the
+  // same facts every turn actually delivers it. Rendered ONLY at V4 — V5 is
+  // oriented and must not receive a script for being wrong.
+  var ORIENTATION_DOMAINS = [
+    ['time', 'What time they think it is'],
+    ['date', 'What day/date they think it is'],
+    ['place', 'Where they think they are'],
+    ['person', 'Who they think the crew are'],
+    ['event', 'What they think has happened']
+  ];
+  function orientationBlock(profile, gcsV) {
+    if (tierFor(gcsV) !== 'confused' || !profile) return '';
+    var lines = ORIENTATION_DOMAINS.map(function (d) {
+      var entry = profile[d[0]];
+      if (!entry || !entry.believes) return null;
+      return '- ' + d[1] + ': ' + entry.believes + (entry.correct ? ' (this one they have RIGHT)' : '');
+    }).filter(Boolean);
+    if (!lines.length) return '';
+    return 'This patient is confused in a specific, FIXED way. These are what they actually believe — if the crew asks about any of them, answer from this list every time, wording it naturally in their own voice rather than reciting it. Never give a different answer on a later ask, and never be wrong about anything not listed here:\n'
+      + lines.join('\n') + '\n';
+  }
+
   // `fictionalDateTime` is the patient's OWN sense of the time — see
   // SimEngine.getScenarioFictionalNow() and each page's
   // scenarioFictionalDateTime(). Never pass the device clock: a scenario
@@ -71,6 +102,7 @@
     };
     var actions = (o.treatments || []).map(function (t) { return t && t.action; }).filter(Boolean);
     var gcsTotal = (v.gcsE || 0) + (v.gcsV || 0) + (v.gcsM || 0);
+    var orientation = orientationBlock(o.orientationProfile, o.gcsV);
     return 'The patient\'s own current date/time (this is what THEY would believe if asked): ' + o.fictionalDateTime + ' \u2014 use this exact date/time, not any date you might otherwise assume, if the crew asks an orientation question ("do you know what day it is?", "what year is it?", "roughly what time is it?" etc). Otherwise it\'s just background context.\n'
       + 'Scenario: ' + (s.title || '') + '\n'
       + 'Patient name: ' + name + '\n'
@@ -81,6 +113,7 @@
       + 'What the patient told the crew on scene: ' + (s.arrival_hx || '') + '\n'
       + 'Current approximate condition: HR ' + v.HR + ', RR ' + v.RR + ', SpO2 ' + v.SpO2 + '%, GCS ' + gcsTotal + '/15 (Verbal component: ' + o.gcsV + '/5), pain ' + (v.pain != null ? v.pain + '/10' : 'unspecified') + '\n'
       + 'Treatments given so far: ' + (actions.length ? actions.join('; ') : 'none yet') + '\n'
+      + orientation
       + '\n'
       + 'The crew just asked/said: "' + o.question + '"\n'
       + '\n'
@@ -91,6 +124,7 @@
     DEFAULT_PROMPT: DEFAULT_PROMPT,
     DEFAULT_CONFUSED_NOTE: DEFAULT_CONFUSED_NOTE,
     tierFor: tierFor,
+    ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,
     buildSystemPrompt: buildSystemPrompt,
     buildUserPrompt: buildUserPrompt
   };

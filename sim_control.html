@@ -740,6 +740,28 @@ function switchInfoTab(tab) {
 
 // Small render helpers for the Scenario Info tabs — every value is scenario
 // data (never user input), but still escaped for consistency/safety.
+// Shows the assessor the patient's scripted disorientation, so "did the
+// student assess orientation properly?" can actually be marked — before
+// this the patient improvised a different answer each time and there was no
+// correct answer to mark against. Only rendered while the patient is
+// genuinely at GCS-Verbal 4: at any other V the profile is inert, and
+// showing it would imply a confusion the crew won't encounter.
+// Deliberately in the assessor-only info panel, never sent to the patient
+// device beyond the prompt itself.
+function orientationProfileInfoHtml() {
+  const profile = liveConfig && liveConfig.orientationProfile;
+  if (!profile || !liveConfig) return '';
+  const v = SimEngine.getVitalsRaw(liveConfig, simNow());
+  if (PatientVoice.tierFor(v && v.gcsV) !== 'confused') return '';
+  const rows = PatientVoice.ORIENTATION_DOMAINS.map(([key, label]) => {
+    const entry = profile[key];
+    if (!entry || !entry.believes) return '';
+    return infoBlock(label + (entry.correct ? ' — oriented' : ' — DISORIENTED'), entry.believes);
+  }).join('');
+  if (!rows) return '';
+  return infoSubheading('Orientation (GCS V4 — what this patient believes)') + rows;
+}
+
 function infoBlock(label, value) {
   const v = (value === null || value === undefined || value === '') ? '—' : escapeHtml(value);
   return `<div class="info-block"><div class="info-label">${escapeHtml(label)}</div><div class="info-value">${v}</div></div>`;
@@ -801,7 +823,8 @@ function renderScenarioInfoPanel() {
     infoSubheading('Medications') +
     infoListBlock('Medications', s.medications) +
     infoSubheading('Allergies') +
-    infoBlock('Allergies', s.allergies);
+    infoBlock('Allergies', s.allergies) +
+    orientationProfileInfoHtml();
 
   const rsa = s.rsa || {};
   document.getElementById('info-tab-appearance').innerHTML =
@@ -1024,6 +1047,59 @@ Project the deterioration/progression from these starting vitals assuming no tre
 }
 
 // --- Cache lookup/build for a scenario's sim timeline -----------------------
+// The patient's fixed disorientation picture, used only at GCS-Verbal 4 —
+// see patient_voice.js's orientationBlock() for how it reaches the prompt
+// and why a stateless per-turn call cannot produce this on its own.
+//
+// Built once per scenario and cached in the same scenario_sim_timelines row
+// as the trajectory, under the same source_updated_at key: every student
+// running this scenario meets the SAME confused patient (same wrong year,
+// same misidentified relative), so two students' orientation assessments
+// are marked against an identical presentation. Editing the scenario
+// invalidates it along with the timeline.
+//
+// Generated for every scenario, including ones that never reach V4 — the
+// alternative is sampling the whole projection to find out, for one cheap
+// cached-forever Haiku call. Time and date are deliberately left to the
+// model alongside place/person rather than computed as clock offsets here:
+// what a disoriented patient believes is anchored to their own life (a
+// night-shift worker, someone who thinks they are still at work), not to
+// arithmetic on the real time.
+//
+// Failure returns {} — the prompt block is then simply omitted and V4
+// behaves exactly as it did before this existed, rather than blocking a
+// session from starting over a flavour detail.
+let ORIENTATION_PROFILE_PROMPT = "You are setting up a paramedic training patient whose GCS Verbal score is 4 (confused conversation) — they hold a real conversation but are disoriented. Decide, ONCE, exactly what this specific patient is and isn't confused about, so the simulator can answer consistently every time the crew asks.\n\nGround it in this patient: their age, condition, medications, and where they were found. A hypoglycaemic 30-year-old, a post-ictal teenager and an 85-year-old with a UTI are confused in different ways.\n\nReturn ONLY valid JSON, no prose, in exactly this shape:\n{\"time\": {\"believes\": \"...\", \"correct\": false}, \"date\": {\"believes\": \"...\", \"correct\": false}, \"place\": {\"believes\": \"...\", \"correct\": true}, \"person\": {\"believes\": \"...\", \"correct\": false}, \"event\": {\"believes\": \"...\", \"correct\": false}}\n\nRules:\n- 'believes' is written from the outside, describing what they think, e.g. \"that it is late evening, around 9pm\" or \"that the paramedic is her son Peter\". Short phrases, not sentences the patient would say.\n- 'correct' true means they have that domain RIGHT — include it anyway, so the simulator knows to answer it accurately.\n- Real disorientation is patchy, not total. Get 1-3 domains WRONG and leave the rest correct. Time and date are the most commonly affected; person is the most severe and should only be wrong on a genuinely obtunded or elderly/demented picture. Never mark all five wrong.\n- Wrong beliefs must be plausible for THIS person's own life — a familiar place, a real relative, a time of day they would ordinarily be somewhere. Never surreal or random.\n- Keep it internally consistent: if they think it is the evening, do not also have them think they are at a morning appointment.\n\n- Training placeholder pending clinical review, not a validated clinical model.";
+
+async function buildOrientationProfile(scenario) {
+  try {
+    const apiKey = await getAnthropicKey();
+    const userPrompt = `Patient: ${(scenario.patient_meta && scenario.patient_meta.name) || 'unnamed'}, age ${(scenario.patient_meta && scenario.patient_meta.age) != null ? scenario.patient_meta.age : 'unknown'}, ${(scenario.patient_meta && scenario.patient_meta.gender) || 'unspecified'}
+Scenario: ${scenario.title || ''}
+Provisional diagnosis: ${scenario.provisional || 'unspecified'}
+Medical history: ${(scenario.medical_conditions || []).filter(Boolean).join(', ') || 'none documented'}
+Medications: ${(scenario.medications || []).filter(Boolean).join(', ') || 'none documented'}
+Where they were found / what they told the crew: ${scenario.arrival_hx || scenario.dispatch || ''}
+Actual time of day in the scenario: ${(scenario.vitals && scenario.vitals.TimeOfDay) || 'unspecified'}
+
+Decide this patient's fixed disorientation picture.`;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, system: ORIENTATION_PROFILE_PROMPT, messages: [{ role: 'user', content: userPrompt }] })
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    addAiCost('claude-haiku-4-5-20251001', data.usage);
+    const text = (data.content || []).map(b => b.text || '').join('').trim();
+    const parsed = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim());
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+  } catch (e) {
+    console.warn('orientation profile generation failed — V4 falls back to unscripted confusion:', e);
+    return {};
+  }
+}
+
 async function getOrBuildTimeline(scenario) {
   const cached = await sbFetch(`scenario_sim_timelines?scenario_id=eq.${encodeURIComponent(scenario.id)}&select=*`, { method: 'GET' });
   if (cached.length && cached[0].source_updated_at === scenario.updated_at) {
@@ -1043,6 +1119,7 @@ async function getOrBuildTimeline(scenario) {
     starting_vitals: built.starting_vitals,
     timeline_overrides: built.timeline_overrides,
     spontaneous_lines: built.spontaneous_lines,
+    orientation_profile: await buildOrientationProfile(scenario),
     source_updated_at: scenario.updated_at
   };
   await sbFetch('scenario_sim_timelines?on_conflict=scenario_id', {
@@ -1111,6 +1188,7 @@ async function createSession() {
           baseline_overrides: overrides,
           previous_overrides: overrides,
           spontaneous_lines: timeline.spontaneous_lines || [],
+          orientation_profile: timeline.orientation_profile || {},
           instant_mode: false,
           has_started: false,
           is_paused: true,
@@ -1131,7 +1209,8 @@ async function createSession() {
         pausedAtMs: startMs,
         totalPausedMs: 0,
         patientConnected: false,
-        endedAt: null
+        endedAt: null,
+        orientationProfile: timeline.orientation_profile || {}
       });
       return;
     } catch (e) {
@@ -1242,7 +1321,8 @@ async function joinSession() {
       pausedAtMs: row.paused_at_ms,
       totalPausedMs: row.total_paused_ms || 0,
       patientConnected: !!row.patient_connected,
-      endedAt: null
+      endedAt: null,
+      orientationProfile: row.orientation_profile || {}
     });
     // Anything the patient device queued while no control tab was attached
     // is still sitting on the row unacked — drain it immediately rather than
@@ -3822,7 +3902,8 @@ async function callPatientAI(question, v, gcsV) {
     });
     const userPrompt = PatientVoice.buildUserPrompt({
       scenario: currentScenario, patientName, gcsV, vitals: v, treatments,
-      fictionalDateTime: scenarioFictionalDateTime(), question
+      fictionalDateTime: scenarioFictionalDateTime(), question,
+      orientationProfile: liveConfig && liveConfig.orientationProfile
     });
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
