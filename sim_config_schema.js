@@ -585,15 +585,6 @@
             type: 'string_list', label: 'Female voice name hints',
             default: ['female', 'samantha', 'victoria', 'karen', 'susan', 'zira', 'emma', 'amy', 'joanna', 'salli', 'kate', 'moira', 'tessa']
           },
-          PIPER_VOICE_POOL: {
-            type: 'map_str_list',
-            label: 'HQ (Piper) voice pool',
-            help: 'A few voices per gender, one picked deterministically per patient. Same "medium" quality tier throughout.',
-            default: {
-              male: ['en_GB-alan-medium', 'en_US-ryan-medium', 'en_GB-northern_english_male-medium'],
-              female: ['en_GB-jenny_dioco-medium', 'en_US-amy-medium', 'en_GB-alba-medium']
-            }
-          },
           VOICE_MODE_LABELS: {
             type: 'map_str_str',
             label: 'Voice modal title per mode',
@@ -604,40 +595,11 @@
             label: 'Reply-line prefix per mode',
             default: { exam: 'Finding:', chat: 'Patient replied:' }
           },
-          PIPER_MODULE_URL: {
-            type: 'string',
-            label: 'Piper (vits-web) module CDN URL',
-            default: 'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm'
-          },
-          ELLIPSIS_PAUSE_MS: {
-            type: 'number',
-            label: 'Pause after "…" / "..." (ms, HQ voice only)',
-            help: 'How long playPiperChunks() waits after a chunk that ends in an ellipsis before speaking the next chunk — reads as a longer, trailing-off pause than a plain "." "!" "?". Only applies to the HQ (Piper) voice path; the standard Web Speech voice has no equivalent per-chunk pause control.',
-            default: 550
-          },
-          SENTENCE_PAUSE_MS: {
-            type: 'number',
-            label: 'Pause after "." / "!" / "?" (ms, HQ voice only)',
-            help: 'Same mechanism as the ellipsis pause above, for ordinary sentence-ending punctuation.',
-            default: 220
-          },
           YOUTH_VOICE_RATE_AT_ZERO: {
             type: 'number',
             label: 'Youth voice pitch/rate multiplier at newborn',
-            help: 'Approximates a younger-sounding voice by speeding up/pitching up the adult voice (real vocal pitch does run higher in young children). Ramps linearly down to 1.0/no-change by age 18 — same ageRamp() shape as the avatar’s age-scaling constants. Applied as audio.playbackRate for the HQ (Piper) voice, and as utterance.pitch for the standard Web Speech voice. Kept deliberately moderate — too high reads as "chipmunk".',
+            help: 'Approximates a younger-sounding voice by pitching up the adult voice (real vocal pitch does run higher in young children). Ramps linearly down to 1.0/no-change by age 18 — same ageRamp() shape as the avatar’s age-scaling constants. Applied as utterance.pitch on the standard Web Speech voice; Realtime Voice’s Deepgram Aura-2 replies have no equivalent knob and are not pitch-shifted. Kept deliberately moderate — too high reads as "chipmunk".',
             default: 1.22
-          },
-          PIPER_WARM_STALL_MS: {
-            type: 'number',
-            label: 'HQ voice prefetch stall timeout (ms)',
-            help: 'warmPiperVoice()’s background prefetch (run on session connect / toggling HQ Voice on) gives up and reports "Unavailable" if this long passes with no progress. Long on purpose — nothing else is waiting on this prefetch, and the OPFS write/verify tail reports no progress at all on slower devices.',
-            default: 60000
-          },
-          PIPER_REPLY_STALL_MS: {
-            type: 'number',
-            label: 'HQ voice live-reply stall timeout (ms)',
-            help: 'speakPatientReply()’s watchdog for an actual in-conversation reply — shorter than the prefetch timeout above since a live conversation needs to fall back to the standard voice promptly instead of sitting in silence.',
-            default: 25000
           }
         }
       },

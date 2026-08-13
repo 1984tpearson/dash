@@ -33,10 +33,6 @@ body.embed #topbar { display: none; }
 #topbar .title { font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #ffffff; text-transform: uppercase; }
 #topbar-right { display: flex; align-items: center; gap: 14px; }
 #instant-mode-label { font-size: 10px; display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.85); cursor: pointer; user-select: none; }
-#hq-voice-label { font-size: 10px; display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.85); cursor: pointer; user-select: none; }
-#hq-voice-status { font-size: 9px; font-style: italic; color: rgba(255,255,255,0.6); max-width: 110px; }
-#hq-voice-status.hq-voice-status-ready { color: #4ade80; font-style: normal; }
-#hq-voice-status.hq-voice-status-error { color: #f87171; font-style: normal; cursor: pointer; text-decoration: underline dotted; }
 #scenario-timer { font-size: 13px; font-weight: 700; color: #4ade80; }
 #patient-info { flex-shrink: 0; }
 #main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px; overflow: hidden; }
@@ -65,8 +61,6 @@ body.embed #topbar { display: none; }
    non-visual half of that (a hidden button alone doesn't stop e.g. auto-listen
    resuming from a stale localStorage flag). */
 body.mode-monitor #info-col,
-body.mode-monitor #hq-voice-label,
-body.mode-monitor #hq-voice-status,
 body.mode-monitor #rt-voice-label,
 body.mode-monitor #rt-voice-status { display: none !important; }
 body.mode-avatar #monitor-col { display: none !important; }
@@ -382,12 +376,8 @@ body.mode-avatar #monitor-col { display: none !important; }
       <option value="monitor">📈 Monitor Only</option>
       <option value="avatar">🧑 Avatar Only</option>
     </select>
-    <label id="hq-voice-label" title="Higher-quality patient voice (downloads a voice model on first use)">
-      <input type="checkbox" id="hq-voice-checkbox" onchange="setHqVoiceEnabled(this.checked)">HQ Voice
-    </label>
-    <span id="hq-voice-status"></span>
-    <label id="rt-voice-label" title="Experimental: continuous, low-latency &quot;Talk to Patient&quot; conversation — streams speech straight to Claude and speaks back via Deepgram Aura-2 TTS, entirely from this device (no dependency on the assessor's tab being open/polling). Requires a Deepgram API key configured by the admin; falls back to the standard tap-to-talk flow if unavailable. Chrome only.">
-      <input type="checkbox" id="rt-voice-checkbox" onchange="setRtVoiceEnabled(this.checked)">&#9889; Realtime Voice (beta)
+    <label id="rt-voice-label" title="Continuous, low-latency &quot;Talk to Patient&quot; conversation — streams speech straight to Claude and speaks back via Deepgram Aura-2 TTS, entirely from this device (no dependency on the assessor's tab being open/polling). On by default. Untick for the standard tap-to-talk flow, which is also what this falls back to automatically if realtime can't run (no Deepgram key, no mic permission, non-Chrome browser, blocked network).">
+      <input type="checkbox" id="rt-voice-checkbox" onchange="setRtVoiceEnabled(this.checked)">&#9889; Realtime Voice
     </label>
     <span id="rt-voice-status"></span>
     <div id="scenario-timer">00:00</div>
@@ -658,17 +648,11 @@ async function loadSimConfig() {
 
     MALE_VOICE_HINTS = pick(field('voice', 'MALE_VOICE_HINTS'), MALE_VOICE_HINTS);
     FEMALE_VOICE_HINTS = pick(field('voice', 'FEMALE_VOICE_HINTS'), FEMALE_VOICE_HINTS);
-    PIPER_VOICE_POOL = pick(field('voice', 'PIPER_VOICE_POOL'), PIPER_VOICE_POOL);
     VOICE_MODE_LABELS = pick(field('voice', 'VOICE_MODE_LABELS'), VOICE_MODE_LABELS);
     VOICE_MODE_REPLY_LABELS = pick(field('voice', 'VOICE_MODE_REPLY_LABELS'), VOICE_MODE_REPLY_LABELS);
-    PIPER_MODULE_URL = pick(field('voice', 'PIPER_MODULE_URL'), PIPER_MODULE_URL);
-    ELLIPSIS_PAUSE_MS = pick(field('voice', 'ELLIPSIS_PAUSE_MS'), ELLIPSIS_PAUSE_MS);
-    SENTENCE_PAUSE_MS = pick(field('voice', 'SENTENCE_PAUSE_MS'), SENTENCE_PAUSE_MS);
     YOUTH_VOICE_RATE_AT_ZERO = pick(field('voice', 'YOUTH_VOICE_RATE_AT_ZERO'), YOUTH_VOICE_RATE_AT_ZERO);
-    PIPER_WARM_STALL_MS = pick(field('voice', 'PIPER_WARM_STALL_MS'), PIPER_WARM_STALL_MS);
-    PIPER_REPLY_STALL_MS = pick(field('voice', 'PIPER_REPLY_STALL_MS'), PIPER_REPLY_STALL_MS);
 
-    // Realtime Voice (beta) reads the SAME admin-editable 'prompts' section
+    // Realtime Voice reads the SAME admin-editable 'prompts' section
     // sim_control.html's callPatientAI() does — the default text below is a
     // plain copy of sim_control.html's own defaults (this file has no access
     // to sim_control.html's top-level `let`s, and these aren't SimEngine-
@@ -1050,7 +1034,7 @@ function buildAvatarBase(seed, skinHex, gender, age) {
   avatarBuild.ageBand = ageBandFromMeta(age);
   avatarBuild.ageYears = parseAgeYears(age); // exact years (or null) — drives the continuous ageRamp() scaling in applyAgeScale(), separate from the discrete band above
   const s = String(seed || sessionCode || 'default');
-  avatarBuild.voiceSeed = s; // same per-scenario seed as the hair/eyebrow picks below, reused by piperVoiceIdFor() so a patient's voice is stable across reconnects too
+  avatarBuild.voiceSeed = s; // same per-scenario seed as the hair/eyebrow picks below, reused by deepgramVoiceIdFor() so a patient's voice is stable across reconnects too
   const allowAdultHair = avatarBuild.ageBand === 'teen' || avatarBuild.ageBand === 'adult';
   const hairKeys = Object.keys(AvatarAssets.top).filter(k =>
     (allowAdultHair || !ADULT_ONLY_HAIR.has(k)) && (allowAdultHair || !FACE_FRAMING_HEADWEAR.has(k))
@@ -1544,7 +1528,6 @@ async function connectSession(code) {
             else if (/\bmale\b/i.test(title)) gender = 'male';
           }
           if (gender === 'male' || gender === 'female') patientGender = gender;
-          warmPiperVoice(); // best-effort — no-op if HQ Voice isn't enabled
           const age = meta.age != null ? meta.age : SimEngine.parseAgeFromScenario(scen);
           patientMood = SimEngine.parseScenarioMood(meta.mood);
           buildAvatarBase(row.scenario_id, meta.skin_colour, gender, age);
@@ -2404,7 +2387,7 @@ function tick() {
 // _isSpeaking is set by startTalkAnimation() and cleared by
 // stopTalkAnimation(), and it gates the wake mic (so the patient's own
 // voice isn't transcribed as a crew member talking). But speakPatientReply's
-// Piper path only calls stopTalkAnimation() when playback actually runs to
+// speech path only calls stopTalkAnimation() when playback actually runs to
 // completion — a superseded or watchdog-aborted attempt leaves the flag
 // stuck true, which used to mean the wake mic never came back for the rest
 // of the session. No real utterance runs this long, so anything past the
@@ -2510,12 +2493,6 @@ function setDisplayMode(mode) {
 document.addEventListener('DOMContentLoaded', async () => {
   await requireAuth();
   setDisplayMode(localStorage.getItem(DISPLAY_MODE_LS_KEY) || defaultDisplayModeForDevice());
-  document.getElementById('hq-voice-checkbox').checked = hqVoiceEnabled;
-  // Monitor Only never touches voice at all (see the body.mode-monitor CSS
-  // rules), so there's nothing to warm up for it.
-  if (_patientDisplayMode !== 'monitor' && hqVoiceEnabled) {
-    warmPiperVoice(); // gives status feedback immediately, without waiting on a session to connect
-  }
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
   updateRtVoiceStatusLabel();
   const params = new URLSearchParams(window.location.search);
@@ -2537,8 +2514,8 @@ document.addEventListener('visibilitychange', () => {
   // window.speechSynthesis voice when the tab gets backgrounded doesn't
   // reliably pick back up normally on returning — seen in practice either
   // continuing well past where the on-screen reply text says it should
-  // have finished, or restarting the same line from the beginning. Piper
-  // (HQ Voice) and Realtime Voice's Deepgram Aura-2 reply both play
+  // have finished, or restarting the same line from the beginning. Realtime
+  // Voice's Deepgram Aura-2 replies instead play
   // through real <audio> elements instead, which don't have this problem —
   // only the plain "computerized" browser voice does. Cancelling the
   // instant the tab actually goes into the background means there's
@@ -2628,11 +2605,11 @@ function unlockSpeechSynthesis() {
 }
 
 // Same problem as unlockSpeechSynthesis() above, for the separate <audio>
-// element the Piper voice plays through: iOS Safari (this tool's primary
-// device) refuses audio.play() unless it's called synchronously inside a
-// genuine user gesture — and the real Piper audio only becomes available
-// later, from an async poll callback, same as the speech-synthesis reply
-// always has been. Unlocking speechSynthesis does NOT also unlock this;
+// elements Realtime Voice plays through (see unlockRealtimeAudio() and
+// unlockRealtimeChime() below): iOS Safari (this tool's primary device)
+// refuses audio.play() unless it's called synchronously inside a genuine
+// user gesture — and the real Deepgram audio only becomes available later,
+// from an async fetch. Unlocking speechSynthesis does NOT also unlock this;
 // they're separate APIs with separate gesture requirements. The trick:
 // play (and keep) ONE real <audio> element inside the tap itself, using a
 // short but non-empty silent WAV (an effectively-zero-length one doesn't
@@ -2650,24 +2627,13 @@ const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABA
 // — never reliably produced audible sound in practice on this tool's
 // primary device (iOS Safari). This <audio>-element approach reuses the
 // EXACT mechanism already proven to work for real patient-voice playback
-// (see unlockPiperAudio()/unlockRealtimeAudio() above) — an already-
+// (see unlockRealtimeAudio() above) — an already-
 // activated element's later src changes + play() calls still count as
 // covered by the original unlocking gesture. Two rising sine tones
 // (880Hz/1320Hz, ~200ms total), generated offline, not decorative-only:
 // short and quiet enough not to compete with the patient reply that
 // usually follows it within a second or two.
 const REALTIME_READY_CHIME_WAV_DATA_URI = 'data:audio/wav;base64,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';
-
-let _piperAudioEl = null;
-let _piperAudioUnlocked = false;
-function unlockPiperAudio() {
-  if (_piperAudioUnlocked) return;
-  _piperAudioUnlocked = true;
-  try {
-    _piperAudioEl = new Audio(SILENT_WAV_DATA_URI);
-    _piperAudioEl.play().catch(() => {}); // best-effort — a rejection here just means the real reply falls back to speechSynthesis later, same as any other Piper failure
-  } catch (e) { /* best-effort unlock only */ }
-}
 
 // Voice name substrings the Web Speech API doesn't expose a real "gender"
 // attribute for, so this is a heuristic over voice.name (which varies by
@@ -2732,7 +2698,7 @@ function maybeSaySpontaneousLine(v) {
   // revealRealtimeModal() has set _voiceModalOpen), and the "Thinking…" gap
   // between the student finishing a sentence and Deepgram's audio actually
   // starting (_isSpeaking is only set once audio.play() resolves). A line
-  // starting in either window plays through the legacy Piper/Web Speech
+  // starting in either window plays through the standard Web Speech
   // path while the call answers in Deepgram Aura-2 — two voices, two
   // different voice types, talking over each other.
   if (_rtActive) return;
@@ -2770,7 +2736,7 @@ function maybeSaySpontaneousLine(v) {
 }
 // Routed through speakPatientReply() — the same path a spoken reply to a
 // crew question takes, so an unprompted remark is in the patient's OWN
-// voice, HQ/Piper included when it's enabled. (An earlier version
+// voice. (An earlier version
 // deliberately forced the plain standard voice here, on the same reasoning
 // sim_control.html's exam findings use for staying off the patient voice —
 // wrong analogy: an exam finding is the simulator narrating an observation
@@ -2779,340 +2745,60 @@ function maybeSaySpontaneousLine(v) {
 // isConversation=false and a no-op resume callback: nothing is waiting on
 // an ambient line finishing, unlike a real Talk exchange.
 function speakAmbientLine(text) {
-  if (!_speechUnlocked && !_piperAudioUnlocked) return; // no gesture yet, so no audio API here can actually play — see unlockSpeechSynthesis/unlockPiperAudio
+  if (!_speechUnlocked) return; // no gesture yet, so speechSynthesis can't actually play — see unlockSpeechSynthesis()
   // speakPatientReply is async, so a rejection escapes a plain try/catch and
   // would surface as an unhandled rejection — .catch() is what actually
   // contains it. Best-effort either way: the timer just tries again later.
   try {
-    Promise.resolve(speakPatientReply(text, () => {}, false, hqVoiceEnabled))
+    Promise.resolve(speakPatientReply(text, () => {}, false))
       .catch(() => { stopTalkAnimation(); }); // also releases the wake mic if the animation had already started
   } catch (e) { stopTalkAnimation(); }
 }
 
-// Opt-in higher-quality patient voice — Piper neural TTS running client-side
-// via WebAssembly (@diffusionstudio/vits-web), loaded lazily from a CDN only
-// once the student enables it. This deliberately stays a fully optional
-// upgrade layered on top of the Web Speech path above, not a replacement:
-// it downloads a real ~30-60MB model file (cached in OPFS after first use)
-// and depends on WASM/OPFS support, so any failure anywhere in this path
-// (module load, OPFS unsupported, network, inference) falls straight back
-// to the existing speechSynthesis flow — see speakPatientReply() below.
-// No en-AU Piper voices exist upstream, so en_GB/en_US are the closest
-// match. Piper's public voice set has no genuinely child-trained voice
-// (TTS needs a lot of clean single-speaker recordings, and there's no
-// ethically-sourced children's-speech dataset in general circulation) —
-// paediatric patients get an adult voice pitched/sped up via
-// youthVoiceRate() instead, a real approximation rather than a true
-// child voice, same tradeoff already accepted for it.
-// OFF by default, and silently so: there used to be a blocking first-load
-// "Patient Voice Quality" modal offering the choice before anything else on
-// the page could be used, which is no longer the right question to open with
-// now that Realtime Voice (further down) is the default "Talk to Patient"
-// path and carries its own Deepgram Aura-2 voice. HQ Voice only affects the
-// legacy/fallback speech path, so it's a tickbox to find when wanted, not a
-// gate to answer up front.
-const HQ_VOICE_LS_KEY = 'av_hq_voice_enabled';
-let PIPER_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1/+esm';
-let ELLIPSIS_PAUSE_MS = 550;
-let SENTENCE_PAUSE_MS = 220;
 let YOUTH_VOICE_RATE_AT_ZERO = 1.22;
-let PIPER_WARM_STALL_MS = 60000;
-let PIPER_REPLY_STALL_MS = 25000;
-// A few voices per gender rather than one fixed pick — same "medium" quality
-// tier throughout (a reasonable size/quality balance; "low" sounds worse,
-// "high" isn't worth the extra download for a training tool), spanning a
-// couple of English accents/timbres for real variety between patients.
-let PIPER_VOICE_POOL = {
-  male: ['en_GB-alan-medium', 'en_US-ryan-medium', 'en_GB-northern_english_male-medium'],
-  female: ['en_GB-jenny_dioco-medium', 'en_US-amy-medium', 'en_GB-alba-medium'],
-};
-let hqVoiceEnabled = localStorage.getItem(HQ_VOICE_LS_KEY) === '1';
-let _piperModulePromise = null;
-let _piperModuleFailedOnce = false;
 
-// Picks from the pool using the same per-scenario seed (and same hashStr()
-// mechanism) buildAvatarBase() already uses for hair/eyebrow style, with its
-// own suffix so the voice pick doesn't land in lockstep with those — stable
-// across reconnects for a given patient, not re-rolled every page load.
-function piperVoiceIdFor(gender) {
-  const pool = PIPER_VOICE_POOL[gender] || PIPER_VOICE_POOL.male;
-  const seed = avatarBuild.voiceSeed || sessionCode || 'default';
-  return pool[hashStr(seed + ':voice') % pool.length];
-}
-
-// Approximates a younger-sounding voice by speeding up/pitching up an adult
-// voice — real vocal pitch does run meaningfully higher in young children,
-// so this isn't pure fabrication, but it's still a coarse trick (Piper
-// output sped up, not a real child voice) and reads as a bit synthetic at
-// the low end. Same ageRamp() shape as every other age-scaled constant in
-// this file (0 at newborn ramping linearly to 1.0/no-change by 18).
-// 1.22 is a deliberately moderate pick — enough to read as younger without
-// tipping into "chipmunk".
+// Approximates a younger-sounding voice by pitching up the adult voice —
+// real vocal pitch does run meaningfully higher in young children, so this
+// isn't pure fabrication, but it's still a coarse trick (not a real child
+// voice) and reads as a bit synthetic at the low end. Same ageRamp() shape
+// as every other age-scaled constant in this file (0 at newborn ramping
+// linearly to 1.0/no-change by 18). 1.22 is a deliberately moderate pick —
+// enough to read as younger without tipping into "chipmunk". Applied as
+// utterance.pitch on the standard Web Speech path below. Realtime Voice's
+// Deepgram Aura-2 replies are not pitch-shifted — that API has no
+// equivalent knob, and its own per-patient voice pool covers the variation.
 function youthVoiceRate(years) {
   return ageRamp(years, YOUTH_VOICE_RATE_AT_ZERO, 1.0);
 }
 
-// A failed dynamic import() is cached by the browser against its exact URL
-// string for the rest of the page's lifetime — resetting _piperModulePromise
-// alone does NOT let a later attempt retry, it just replays the same
-// rejection forever. Appending a cache-busting query param after the first
-// failure gives retries (a new patient reply, warmPiperVoice() firing again,
-// re-checking the tickbox) a genuinely fresh URL to fetch instead of being
-// permanently wedged by one transient network blip.
-function loadPiperModule() {
-  if (!_piperModulePromise) {
-    const url = _piperModuleFailedOnce ? `${PIPER_MODULE_URL}?retry=${Date.now()}` : PIPER_MODULE_URL;
-    _piperModulePromise = import(url).catch(e => {
-      _piperModulePromise = null;
-      _piperModuleFailedOnce = true;
-      throw e;
-    });
-  }
-  return _piperModulePromise;
-}
-
-// Visible readout next to the tickbox — without this there was no way to
-// tell "using the good voice" from "silently fell back to the standard
-// one", short of opening devtools. `detail` is the actual error/stall
-// reason — sits in the title tooltip and console for a desktop browser,
-// but this is an iPad-first tool and there's no hover/devtools there, so
-// on error the status is also made tappable (alert()) as the only way a
-// student on a tablet can actually read and relay what went wrong.
-function setHqVoiceStatus(text, kind, detail) {
-  const el = document.getElementById('hq-voice-status');
-  el.textContent = text;
-  el.className = kind ? `hq-voice-status-${kind}` : '';
-  el.title = detail || '';
-  el.onclick = (kind === 'error' && detail) ? () => alert('HQ Voice error:\n\n' + detail) : null;
-  if (kind === 'error' && detail) console.warn('HQ Voice unavailable:', detail);
-}
-
-// Best-effort prefetch so the model is hopefully already cached in OPFS by
-// the time the first patient reply needs it. Also doubles as the only way
-// a student finds out ahead of time whether HQ Voice is actually going to
-// work on this device/network, via setHqVoiceStatus — previously this was
-// silent, so a failure here just looked identical to it never having been
-// tried.
-//
-// 60s stall window, not 15s: the progress callback only covers the network
-// fetch — the tail end (writing the ~30-60MB model into OPFS, verifying its
-// md5 digest) reports no progress at all, so on a slower device that gap
-// alone can exceed a tight stall window and get mistaken for a hang even
-// though the download genuinely succeeded (reported as "downloaded, then
-// Unavailable"). This is a background prefetch nothing else is waiting on,
-// so there's no cost to being patient here — unlike the live per-reply
-// path below, which still needs to bail promptly so a real conversation
-// doesn't sit in silence.
-function warmPiperVoice() {
-  if (!hqVoiceEnabled) return;
-  setHqVoiceStatus('Checking…');
-  runWithStallWatchdog(async bump => {
-    const tts = await loadPiperModule();
-    bump();
-    await tts.download(piperVoiceIdFor(patientGender), progress => {
-      bump();
-      if (!progress.total) return;
-      setHqVoiceStatus(`Downloading… ${Math.round(progress.loaded * 100 / progress.total)}%`);
-    });
-  }, PIPER_WARM_STALL_MS)
-    .then(() => setHqVoiceStatus('Ready', 'ready'))
-    .catch(e => setHqVoiceStatus('Unavailable — using standard voice', 'error', e.message));
-}
-
-function setHqVoiceEnabled(enabled) {
-  hqVoiceEnabled = !!enabled;
-  localStorage.setItem(HQ_VOICE_LS_KEY, hqVoiceEnabled ? '1' : '0');
-  document.getElementById('hq-voice-checkbox').checked = hqVoiceEnabled;
-  if (hqVoiceEnabled) warmPiperVoice();
-  else setHqVoiceStatus('');
-}
-
-// Runs an async task that periodically signals activity via the `bump`
-// function it's handed; if STALL_MS elapses with no bump (network stall,
-// a WASM/OPFS step that never settles, etc — anything short of a clean
-// reject), the returned promise rejects on its own so callers always get
-// *some* outcome instead of hanging forever. `aborted()` lets the task
-// check, after each resumption, whether the watchdog already gave up on
-// it — needed since the underlying task keeps running in the background
-// even after this races it away (there's no way to truly cancel a fetch
-// or WASM call), so it must stop short of side effects like playing audio.
-function runWithStallWatchdog(taskFn, stallMs) {
-  let lastActivity = Date.now();
-  let timedOut = false;
-  const bump = () => { lastActivity = Date.now(); };
-  const aborted = () => timedOut;
-  let watchdogTimer;
-  const watchdog = new Promise((_, reject) => {
-    watchdogTimer = setInterval(() => {
-      if (Date.now() - lastActivity > stallMs) {
-        timedOut = true;
-        clearInterval(watchdogTimer);
-        reject(new Error('stalled — no activity for ' + stallMs + 'ms'));
-      }
-    }, 1000);
-  });
-  return Promise.race([taskFn(bump, aborted), watchdog]).finally(() => clearInterval(watchdogTimer));
-}
-
-// Tries the Piper WASM voice (if enabled) first, falling back to the
-// existing Web Speech path on any failure — including partway through
-// (module load ok, inference fails, etc) AND including a stall (see
-// runWithStallWatchdog — a hung Piper attempt used to mean total silence,
-// since nothing ever reached the fallback below it). replyId guards
-// against a reply that's no longer current by the time async
-// loading/inference finishes (student closed the modal, or a newer reply
-// already arrived).
 // A new reply always interrupts whatever's still playing from a previous
-// one — same "cancel, don't queue" rule the speechSynthesis path already
-// had via speechSynthesis.cancel(), extended to cover the Piper <audio>
-// element too now that it's a reused singleton (see unlockPiperAudio()).
-// Without this, a reply whose Piper synthesis/playback was still running
-// when the next reply started speaking would get its src swapped and
-// play() called again out from under the still-playing audio — the two
-// overlap on the same element instead of one cleanly cutting off the
-// other, which is what "talking over himself" actually was.
+// one — "cancel, don't queue", via speechSynthesis.cancel(). Also called by
+// startRealtimeCall(), so a realtime call taking the floor cuts off any
+// ambient line still playing through this path rather than talking over it.
 function stopAnyPatientAudio() {
-  if (_piperAudioEl) { try { _piperAudioEl.pause(); } catch (e) {} }
   if ('speechSynthesis' in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
 }
 
-// Splits a reply into sentence/clause-sized chunks at sentence-ending
-// punctuation and ellipses, each synthesized and played as its own separate
-// Piper call rather than one predict() over the whole reply. Two problems
-// this fixes at once, both traced back to the same cause — Piper's small
-// VITS-family model can lose its place ("attention collapse", a known
-// failure mode for this model family) on longer, clause-heavy input, which
-// is exactly what an AI-written rambling/confused patient produces: it
-// reads as the ellipsis pause being ignored (comma-substitution didn't
-// actually fix this — the model was garbling regardless of punctuation,
-// not skipping past it), AND as the later, longer replies coming out
-// jumbled ("talking over himself"/slurred, not overlapping audio — that
-// was a separate, already-fixed bug). Keeping each chunk to one clause
-// keeps it well inside what these models handle reliably, and splitting on
-// punctuation also hands back the real, controllable inter-chunk pause
-// (see playPiperChunks()) an ellipsis was supposed to produce in the first
-// place, instead of hoping the phonemizer honours it.
-function splitIntoPiperChunks(text) {
-  const chunks = [];
-  const re = /[.!?…]+/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = re.exec(text))) {
-    const punct = match[0];
-    const end = match.index + punct.length;
-    const chunkText = text.slice(lastIndex, end).trim();
-    lastIndex = end;
-    if (!chunkText) continue;
-    const isEllipsis = punct.includes('…') || punct.length >= 3; // "…" or "..." reads as a longer, trailing-off pause than a plain "." "!" "?"
-    chunks.push({ text: chunkText, pauseAfterMs: isEllipsis ? ELLIPSIS_PAUSE_MS : SENTENCE_PAUSE_MS });
-  }
-  const rest = text.slice(lastIndex).trim();
-  if (rest) chunks.push({ text: rest, pauseAfterMs: 0 });
-  if (!chunks.length) chunks.push({ text: text.trim(), pauseAfterMs: 0 });
-  return chunks;
-}
-
-// Synthesizes and plays each chunk in order on the given (already-unlocked,
-// see unlockPiperAudio()) audio element, with a real setTimeout silence
-// between chunks instead of relying on Piper to produce one. bump()/
-// stillCurrent()/aborted() thread through to runWithStallWatchdog and the
-// reply-staleness guard exactly as the single-call version did. Returns
-// whether every chunk played to completion — false on an early bailout
-// (stale reply / watchdog abort), so the caller knows NOT to treat this as
-// a finished reply (stopTalkAnimation/resumeIfConversing belong to
-// whichever reply actually finishes, not one that got superseded
-// mid-playback).
-async function playPiperChunks(tts, chunks, voiceId, audio, statusEl, priorStatus, bump, stillCurrent, aborted) {
-  for (let i = 0; i < chunks.length; i++) {
-    if (!stillCurrent() || aborted()) return false;
-    const wav = await tts.predict({ text: chunks[i].text, voiceId }, progress => {
-      bump();
-      if (!stillCurrent() || !progress.total) return;
-      statusEl.textContent = `Loading voice… ${Math.round(progress.loaded * 100 / progress.total)}%`;
-    });
-    bump();
-    if (!stillCurrent() || aborted()) return false;
-    if (statusEl.textContent !== priorStatus) statusEl.textContent = priorStatus;
-    audio.src = URL.createObjectURL(wav);
-    await new Promise((resolve, reject) => {
-      audio.onended = resolve;
-      audio.onerror = () => reject(new Error('audio playback error'));
-      audio.play().then(startTalkAnimation).catch(reject);
-    });
-    bump();
-    if (i < chunks.length - 1) {
-      if (!stillCurrent() || aborted()) return false;
-      await new Promise(r => setTimeout(r, chunks[i].pauseAfterMs));
-      bump();
-    }
-  }
-  return true;
-}
-
-async function speakPatientReply(text, resumeIfConversing, isConversation, useHqVoice) {
-  const replyId = _lastShownReplyId;
-  const stillCurrent = () => replyId === _lastShownReplyId;
+// The patient's spoken voice on the standard (non-Realtime) path: the
+// browser's own Web Speech synthesis. This is both the flow used when
+// Realtime Voice is turned off and the automatic fallback whenever a
+// realtime call can't run — see startRealtimeCapture()'s failure branches
+// and speakRealtimeReply()'s catch. replyId guards against a reply that's
+// no longer current by the time anything async here finishes (student
+// closed the modal, or a newer reply already arrived).
+async function speakPatientReply(text, resumeIfConversing, isConversation) {
   stopAnyPatientAudio();
-  if (useHqVoice) {
-    try {
-      await runWithStallWatchdog(async (bump, aborted) => {
-        const tts = await loadPiperModule();
-        bump();
-        if (!stillCurrent() || aborted()) return;
-        const voiceId = piperVoiceIdFor(patientGender);
-        const statusEl = document.getElementById('voice-modal-status');
-        const priorStatus = statusEl.textContent;
-        // Reuses the element unlockPiperAudio() already played inside a real
-        // tap, rather than constructing a fresh Audio() here — a new element
-        // built from this async/poll-driven callback wouldn't count as
-        // gesture-initiated on iOS Safari and play() would be rejected. Falls
-        // back to a fresh element only if the unlock never ran (e.g. HQ Voice
-        // got enabled without the voice modal ever having been opened yet).
-        const audio = _piperAudioEl || new Audio();
-        // preservesPitch defaults to true (browsers auto-correct pitch when
-        // playbackRate changes) — turning it off is what makes the rate
-        // change actually sound like a pitch shift, the classic tape-speed
-        // effect, rather than just talking faster at the same pitch.
-        const rate = youthVoiceRate(avatarBuild.ageYears);
-        audio.playbackRate = rate;
-        audio.preservesPitch = rate === 1;
-        audio.mozPreservesPitch = rate === 1;
-        audio.webkitPreservesPitch = rate === 1;
-        const chunks = splitIntoPiperChunks(text);
-        const finished = await playPiperChunks(tts, chunks, voiceId, audio, statusEl, priorStatus, bump, stillCurrent, aborted);
-        if (finished) { stopTalkAnimation(); resumeIfConversing(); }
-      }, PIPER_REPLY_STALL_MS); // see warmPiperVoice()'s comment on why this needs real slack, not just enough for the network fetch
-      setHqVoiceStatus('Ready', 'ready');
-      return;
-    } catch (e) {
-      // Piper best-effort only (stalled or errored) — fall through to Web Speech below.
-      setHqVoiceStatus('Unavailable — using standard voice', 'error', e.message);
-    }
-  }
-  // A reply that's no longer current shouldn't fall back to speaking here
-  // either — this matters more than it looks: stopAnyPatientAudio() pausing
-  // a still-in-flight Piper attempt (because a NEWER reply just started)
-  // makes that attempt's audio.play() reject with an AbortError, which
-  // lands in the catch above and, without this guard, would fall through
-  // to speaking the now-superseded text via the standard voice anyway —
-  // the same reply effectively speaking twice, once cut off mid-Piper and
-  // once via the fallback, and wrongly resuming the conversation loop for
-  // text that's already been replaced.
-  if (!stillCurrent()) return;
   if ('speechSynthesis' in window) {
     try {
       // No cancel() here — stopAnyPatientAudio() already did that at the top
       // of this function. Calling cancel() a second time immediately before
       // speak() (both synchronous, same tick) hits a known Chrome bug where
       // the queued utterance silently never plays — no error, just nothing.
-      // This mattered little for chat/treatment replies (HQ Voice normally
-      // took the Piper path instead), but exam replies always land here now,
-      // so this double-cancel was reliably eating exam audio entirely.
       const utter = new SpeechSynthesisUtterance(text);
       const voice = pickVoice();
       if (voice) utter.voice = voice;
       utter.lang = 'en-AU';
-      utter.pitch = youthVoiceRate(avatarBuild.ageYears); // same paediatric approximation as the Piper path, via the API's native pitch control instead of a playbackRate trick
+      utter.pitch = youthVoiceRate(avatarBuild.ageYears); // paediatric approximation, via the API's native pitch control
       utter.onstart = startTalkAnimation;
       utter.onend = () => { stopTalkAnimation(); resumeIfConversing(); };
       utter.onerror = () => { stopTalkAnimation(); resumeIfConversing(); };
@@ -3140,7 +2826,7 @@ async function speakPatientReply(text, resumeIfConversing, isConversation, useHq
 // Why this exists: the legacy chat flow is genuinely slow by conversational
 // standards — a spoken question goes browser SpeechRecognition -> Supabase
 // student_queue -> sim_control.html's ~3s poll -> Haiku call -> Supabase
-// patient_reply -> this page's own ~3s poll -> speechSynthesis/Piper. That's
+// patient_reply -> this page's own ~3s poll -> speechSynthesis. That's
 // up to two ~3s polling delays plus two full round trips through Postgres
 // before a single word is spoken back, and the assessor's tab has to be
 // open the whole time or nothing happens at all. This mode collapses that
@@ -3158,17 +2844,14 @@ async function speakPatientReply(text, resumeIfConversing, isConversation, useHq
 // versus Cartesia's ~40ms-TTFB-optimized architecture.
 //
 // Trade-offs accepted for this first pass, deliberately not fixed yet:
-// - Assessor-side Log visibility: sim_control.html's `actionLog` is
-//   populated only when sim_control.html itself processes a student_queue
-//   item — it's never persisted to Supabase (see processStudentQueue()).
-//   Since this mode bypasses that queue entirely, exchanges here do NOT
-//   currently show up in the assessor's Log tab (only a best-effort write
-//   to the row's `patient_reply` field — see handleRealtimeUtterance()).
-//   A future pass could patch a proper audit record onto the session row
-//   for sim_control.html to pick up; out of scope for this first cut.
+// - Assessor-side Log visibility: this mode answers on this device, so
+//   sim_control.html never processes the question and can't log it as a
+//   side effect the way the legacy flow does. handleRealtimeUtterance()
+//   therefore queues an explicit 'talk_log' student_queue item carrying
+//   both halves of the exchange — see its comment, and the matching branch
+//   in sim_control.html's processStudentQueue().
 // - TTS playback fetches the full Deepgram Aura-2 response before playing
-//   (a single <audio> element, same pattern as the legacy Piper path in
-//   speakPatientReply()) rather than true streaming playback via Media
+//   (a single <audio> element) rather than true streaming playback via Media
 //   Source Extensions — for the short (max_tokens 300) replies this engine
 //   generates, the difference is small, but a longer reply would benefit
 //   from real chunked playback later.
@@ -3237,12 +2920,12 @@ let PATIENT_VOICE_PROMPT = "You are voicing the PATIENT in a paramedic training 
 let PATIENT_VOICE_CONFUSED_NOTE = "This patient’s GCS Verbal score is 4 (confused conversation) — they are disoriented. Every reply must be rambling, tangential, and only loosely connected to what was actually asked (may drift to an unrelated memory, misidentify the crew, or answer a different question than the one asked) — never a clear, accurate, on-topic answer, no matter what is asked.";
 
 // --- Deepgram TTS (Aura-2) voice selection ---------------------------
-// Same per-scenario-stable pick as piperVoiceIdFor() (hashStr(seed +
-// ':voice') % pool.length, seeded off avatarBuild.voiceSeed) — deliberately
-// a DIFFERENT hash suffix and a different namespace of IDs than
-// PIPER_VOICE_POOL, since Aura-2's model names (format
-// "aura-2-<voicename>-<language>", e.g. "aura-2-thalia-en") are a
-// completely separate catalogue from Piper's. Every one of the 41 names
+// Per-scenario-stable pick (hashStr(seed + ':deepgram-tts-voice') %
+// pool.length, seeded off avatarBuild.voiceSeed — the same mechanism
+// buildAvatarBase() uses for hair/eyebrow style, with its own suffix so the
+// voice pick doesn't land in lockstep with those), so a given patient keeps
+// the same voice across reconnects. Aura-2's model names take the format
+// "aura-2-<voicename>-<language>", e.g. "aura-2-thalia-en". Every one of the 41 names
 // below is Deepgram's OWN complete "Aura-2: All Available English Voices"
 // table (transcribed directly from their docs page, not summarized/
 // guessed), split by their own "Expressed Gender" column
@@ -3298,20 +2981,29 @@ function setRtVoiceEnabled(enabled) {
   _rtVoiceEnabled = !!enabled;
   localStorage.setItem(RT_VOICE_LS_KEY, _rtVoiceEnabled ? '1' : '0');
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
+  _rtFellBackToStandard = false; // an explicit re-toggle is the retry — see fallBackToStandardVoice()
   updateRtVoiceStatusLabel();
   if (!_rtVoiceEnabled && _rtActive) endRealtimeCall(); // switching off mid-call tears the live call down too
+}
+// The single question "does a Talk tap go to Deepgram or to the standard
+// tap-to-talk flow?" — the box being ticked isn't enough on its own, since
+// realtime may have already proven it can't run here.
+function useRealtimeForTalk() {
+  return _rtVoiceEnabled && !_rtFellBackToStandard;
 }
 function updateRtVoiceStatusLabel() {
   const el = document.getElementById('rt-voice-status');
   if (!el) return;
-  el.textContent = _rtVoiceEnabled && !rtVoiceSupported() ? '(needs Chrome)' : '';
+  if (_rtVoiceEnabled && _rtFellBackToStandard) el.textContent = '(using standard voice)';
+  else el.textContent = _rtVoiceEnabled && !rtVoiceSupported() ? '(needs Chrome)' : '';
 }
 
-// Same unlock trick as unlockPiperAudio() (see its comment above) —
+// Same unlock trick as unlockSpeechSynthesis() (see the comment above
+// SILENT_WAV_DATA_URI) —
 // Safari/iOS require play() to happen synchronously inside a real user
 // gesture, and the actual Deepgram Aura-2 audio only becomes available
 // later from an async fetch. Reuses the same primed-<audio>-element pattern with its
-// own element (not _piperAudioEl) — the two TTS paths never run
+// own element (not the chime's) — the two never run
 // concurrently, but keeping them distinct avoids any chance of one
 // clobbering the other's src mid-flight.
 let _rtAudioEl = null;
@@ -3340,8 +3032,8 @@ function unlockRealtimeAudio() {
 // AudioContext + createOscillator(), which never produced audible sound in
 // practice on iOS Safari (this tool's primary device) even after moving its
 // resume() call into the tap handler where WebKit requires it. Same
-// unlock-in-the-tap-handler pattern as unlockRealtimeAudio()/
-// unlockPiperAudio() just above instead — created and played (silently,
+// unlock-in-the-tap-handler pattern as unlockRealtimeAudio() just above
+// instead — created and played (silently,
 // via SILENT_WAV_DATA_URI) here in startRealtimeCall(), then the SAME
 // element gets its src swapped to the real chime and played again later
 // from socket.onopen, which is the exact mechanism already proven to carry
@@ -3444,7 +3136,7 @@ function startRealtimeCall() {
   hideWakePanel();
   // The other direction of the same overlap guarded in
   // maybeSaySpontaneousLine(): an ambient line that started a moment before
-  // this tap is still playing through the legacy Piper/Web Speech path, and
+  // this tap is still playing through the standard Web Speech path, and
   // nothing else would cut it off — the realtime call would just start
   // talking over the top of it in a different voice. Same helper the legacy
   // path already uses on itself for exactly this ("talking over himself" —
@@ -3470,12 +3162,11 @@ function hideRealtimeConnectingIndicator() {
   document.getElementById('voice-mic-indicator').classList.remove('connecting');
 }
 
-// Reveals the voice modal panel — called exactly once per call attempt,
-// either from socket.onopen on success or from one of
-// startRealtimeCapture()'s earlier failure branches (unsupported browser /
-// key fetch failed / mic permission denied / connect timeout), so whichever
-// status text that branch sets is actually visible instead of being
-// written into a still-hidden panel.
+// Reveals the voice modal panel — called once per call attempt, from
+// socket.onopen, i.e. only once the mic is genuinely live. Every failure
+// branch in startRealtimeCapture() (unsupported browser / key fetch failed /
+// mic permission denied / connect timeout) goes to fallBackToStandardVoice()
+// instead, which opens this same shared modal on the standard flow.
 function revealRealtimeModal() {
   hideRealtimeConnectingIndicator();
   openVoiceModal('chat', { skipCapture: true }); // reuses the shared modal shell; skipCapture=true means it does NOT also start legacy SpeechRecognition
@@ -3529,6 +3220,26 @@ function endRealtimeCall() {
   _rtPendingText = '';
 }
 
+// Realtime couldn't run — hand this exchange to the standard tap-to-talk
+// flow instead of dead-ending on an error message. Every way of getting
+// here is sticky for the rest of the session (non-Chrome browser, no
+// Deepgram key configured, mic permission refused, a network security
+// layer swallowing the WebSocket), so _rtFellBackToStandard latches and
+// every later Talk tap goes straight to the standard flow rather than
+// re-running a known-broken connect attempt first. Unticking and re-ticking
+// the Realtime Voice box clears the latch — the same "an explicit re-toggle
+// is the retry" convention startWakeListening() uses for a denied mic.
+let _rtFellBackToStandard = false;
+function fallBackToStandardVoice(reason) {
+  _rtFellBackToStandard = true;
+  endRealtimeCall(); // clears _rtActive/mic/socket and bumps _rtCallId, so nothing in flight from the failed attempt can still fire
+  updateRtVoiceStatusLabel();
+  openVoiceModal('chat'); // legacy flow, capture included — this is what "fall back to standard" actually means
+  // After openVoiceModal (beginCapture sets its own status), so the reason
+  // for the switch is what the student actually reads.
+  document.getElementById('voice-modal-status').textContent = reason;
+}
+
 function stopRealtimeAudio() {
   _rtSpeaking = false;
   _rtBargeInArmedAt = null; // any pending barge-in arm/confirm cycle ends with the audio it was about
@@ -3551,9 +3262,8 @@ async function startRealtimeCapture() {
   const callId = _rtCallId;
   const statusEl = document.getElementById('voice-modal-status');
   const transcriptEl = document.getElementById('voice-modal-transcript');
-  if (!(window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))) {
-    revealRealtimeModal();
-    statusEl.textContent = 'Realtime Voice needs Chrome (MediaRecorder isn’t available here).';
+  if (!rtVoiceSupported()) {
+    fallBackToStandardVoice('Realtime Voice needs Chrome — using the standard voice.');
     return;
   }
   // No "Connecting…" status set here — the panel itself stays hidden this
@@ -3561,14 +3271,14 @@ async function startRealtimeCapture() {
   // above), so there's nothing to show it to yet.
   let dgKey;
   try { dgKey = await getDeepgramKey(); }
-  catch (e) { if (callId === _rtCallId) { revealRealtimeModal(); statusEl.textContent = e.message; } return; }
+  catch (e) { if (callId === _rtCallId) fallBackToStandardVoice('Realtime Voice unavailable — using the standard voice.'); return; }
   if (callId !== _rtCallId) return; // call ended/superseded while the key fetch was in flight
 
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) {
-    if (callId === _rtCallId) { revealRealtimeModal(); statusEl.textContent = 'Microphone permission is required for Realtime Voice.'; }
+    if (callId === _rtCallId) fallBackToStandardVoice('Microphone permission is required — using the standard voice.');
     return;
   }
   if (callId !== _rtCallId) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -3595,8 +3305,7 @@ async function startRealtimeCapture() {
   const connectTimer = setTimeout(() => {
     if (callId !== _rtCallId) return;
     try { socket.close(); } catch (e) {}
-    revealRealtimeModal();
-    statusEl.textContent = 'Couldn’t connect (timed out) — this can happen on networks with security filtering that blocks realtime voice traffic. Try Standard Voice instead, or check with IT if this keeps happening.';
+    fallBackToStandardVoice('Realtime Voice couldn’t connect (this network may block it) — using the standard voice.');
   }, RT_CONNECT_TIMEOUT_MS);
 
   socket.onopen = () => {
@@ -3663,7 +3372,17 @@ async function startRealtimeCapture() {
 
   socket.onerror = () => {
     clearTimeout(connectTimer);
-    if (callId === _rtCallId) statusEl.textContent = 'Connection error — check the network and try again.';
+    if (callId !== _rtCallId) return;
+    // Before onopen this is a failed connect, so it falls back like every
+    // other setup failure. After onopen the modal is already live and the
+    // student may be mid-exchange — dropping them into a different flow
+    // underneath a conversation in progress would be more disruptive than
+    // saying so, so that case just reports it and leaves the call up.
+    if (socket.readyState === WebSocket.CONNECTING || !_rtRecorder) {
+      fallBackToStandardVoice('Realtime Voice couldn’t connect — using the standard voice.');
+    } else {
+      statusEl.textContent = 'Connection error — check the network and try again.';
+    }
   };
   socket.onclose = () => {
     clearTimeout(connectTimer);
@@ -3692,12 +3411,20 @@ async function handleRealtimeUtterance(text, callId) {
   statusEl.textContent = 'Patient replied:';
   replyEl.textContent = `“${reply}”`;
   replyEl.style.display = 'block';
-  // Fire-and-forget audit write — see the "Trade-offs" comment at the top
-  // of this section on why this doesn't reach the assessor's Log tab yet.
-  sbPatch(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}`, {
-    patient_reply: { id: Date.now(), forId: null, text: reply, speak: true },
-    updated_at: new Date().toISOString()
-  }).catch(() => {});
+  // Push the exchange to the assessor's Log. This mode answers entirely on
+  // this device, so sim_control.html never sees the question — without this
+  // it has no idea any conversation happened at all. Goes onto the SAME
+  // student_queue the legacy flow uses, as a 'talk_log' item: that reuses
+  // the existing atomic claim/ack machinery (so two assessor tabs can't
+  // both log it), and lands in the Log tab identically to a legacy
+  // exchange. sim_control.html only logs this type — no AI call, no
+  // patient_reply write, since the reply already exists and is about to be
+  // spoken here. atMin is computed HERE, off the same pause-aware sim clock
+  // both pages share, so the entry sits at the scenario time the exchange
+  // actually happened rather than whenever the assessor's poll picked it up.
+  // Fire-and-forget: a failed log write must never delay or break the reply.
+  const atMin = (SimEngine.getSimNow(testConfig, Date.now()) - testConfig.startTimeMs) / 60000;
+  queueStudentItem('talk_log', text, { reply, atMin }).catch(() => {});
   await speakRealtimeReply(reply, callId);
   if (callId !== _rtCallId) return;
   statusEl.textContent = 'Listening… (you can interrupt anytime)';
@@ -3768,7 +3495,7 @@ Reply as the patient.`;
 // "?model=aura-2-thalia-en&encoding=mp3"), NOT JSON body fields — only
 // `text` goes in the body. mp3 is the REST endpoint's own default encoding,
 // requested explicitly here anyway for clarity/future-proofing. Falls back
-// to speakPatientReply()'s existing Piper-then-Web-Speech chain on any
+// to speakPatientReply()'s standard Web Speech voice on any
 // failure (missing key, network error, bad voice name) rather than leaving
 // the reply silent — same "never leave the training exercise stuck"
 // principle the legacy path already follows.
@@ -3831,10 +3558,10 @@ async function speakRealtimeReply(text, callId) {
   } catch (e) {
     stopRealtimeAudio();
     if (callId !== _rtCallId) return;
-    // Fall back to the legacy Piper/Web Speech chain — isConversation=false
-    // and a no-op resume since this call site drives its own loop
+    // Fall back to the standard Web Speech voice — isConversation=false and
+    // a no-op resume since this call site drives its own loop
     // (handleRealtimeUtterance), not speakPatientReply()'s.
-    await speakPatientReply(text, () => {}, false, hqVoiceEnabled);
+    await speakPatientReply(text, () => {}, false);
   }
 }
 
@@ -3905,11 +3632,15 @@ function playStreamedMp3(audio, body, callId) {
   });
 }
 
-async function queueStudentItem(type, text) {
+// `extra` carries any additional per-type fields (see the 'talk_log' item
+// queued by handleRealtimeUtterance) — sim_control.html's
+// processStudentQueue() branches on `type` and reads whatever that type
+// defines, so nothing here needs to know about them.
+async function queueStudentItem(type, text, extra) {
   const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=student_queue`);
   const queue = (rows[0] && rows[0].student_queue) || [];
   const id = Date.now();
-  queue.push({ id, type, text });
+  queue.push(Object.assign({ id, type, text }, extra || {}));
   await sbPatch(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}`, { student_queue: queue, updated_at: new Date().toISOString() });
   return id;
 }
@@ -3924,7 +3655,6 @@ let VOICE_MODE_REPLY_LABELS = { exam: 'Finding:', chat: 'Patient replied:' };
 // capture instead. Omitted (or falsy), this behaves exactly as before.
 function openVoiceModal(mode, opts) {
   unlockSpeechSynthesis(); // must happen here, inside the tap handler, to count as a user gesture
-  unlockPiperAudio(); // same requirement, separate API — see unlockPiperAudio()'s comment
   stopWakeListening(); // a manual exchange takes the mic away from auto-listen until this one closes
   // Drop any auto-listen presentation still on screen BEFORE _voiceModalOpen
   // is set, so hideWakePanel()'s "manual modal owns this now" guard doesn't
@@ -4244,7 +3974,6 @@ function toggleWakeWord() {
   if (_wakeWordEnabled) {
     if (_wakeStatus === 'denied') _wakeStatus = 'off'; // an explicit re-toggle is the retry, since startWakeListening() won't retry a latched refusal on its own
     unlockSpeechSynthesis(); // this tap is a real user gesture — take the chance to unlock TTS so wake-triggered replies can actually be spoken
-    unlockPiperAudio();
     // 'starting' up front, not left on the stale 'off': startWakeListening()
     // legitimately no-ops until a session is joined, and without this the
     // button would sit there reading "Off" immediately after being switched
@@ -4419,7 +4148,7 @@ async function sendWakeItem(text, mode, isGreeting) {
 function handleFabTap(mode) {
   if (_patientDisplayMode === 'monitor') return; // buttons are hidden in this mode anyway — belt-and-braces against any programmatic call
   const armed = isFabArmed(mode);
-  if (mode === 'chat' && _rtVoiceEnabled) {
+  if (mode === 'chat' && useRealtimeForTalk()) {
     if (armed) requestEndRealtimeCall(); else startRealtimeCall();
     return;
   }
@@ -4444,7 +4173,7 @@ function handleFabTap(mode) {
 // showing armed until closeVoiceModal() actually runs (manually, or via
 // checkForPatientReply()'s auto-close for Treat/Assess).
 function isFabArmed(mode) {
-  if (mode === 'chat' && _rtVoiceEnabled) return _rtActive && !_rtMicClosed;
+  if (mode === 'chat' && useRealtimeForTalk()) return _rtActive && !_rtMicClosed;
   return _voiceModalOpen && _voiceMode === mode;
 }
 
@@ -4622,11 +4351,7 @@ function checkForPatientReply(reply) {
   };
 
   if (reply.speak !== false) {
-    // Exam findings ("Assess") always read in the plain standard voice, even
-    // with HQ Voice on — it's assessment feedback, not the patient speaking
-    // in character, and should sound distinct from the patient's own
-    // dialogue rather than sharing the same (possibly HQ) voice.
-    speakPatientReply(reply.text, resumeIfConversing, isConversation, hqVoiceEnabled && !isExam);
+    speakPatientReply(reply.text, resumeIfConversing, isConversation);
   } else {
     // No speech at all (e.g. GCS-gated "no verbal response") — pause briefly
     // so the text is readable, then resume listening for the next question.

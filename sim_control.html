@@ -3595,11 +3595,32 @@ async function processStudentQueue(row) {
         await answerPatientQuestion(item.text, item.id);
       } else if (item.type === 'exam' && item.text) {
         await answerExamFinding(item.text, item.id);
+      } else if (item.type === 'talk_log' && item.text) {
+        logRealtimeExchange(item);
       }
     }
   } finally {
     _studentQueueBusy = false;
   }
+}
+
+// Records a Realtime Voice exchange that sim_patient.html already answered
+// on its own device. Nothing to generate and nothing to send back — the
+// patient has heard the reply by the time this arrives; this is purely the
+// assessor's Log catching up on a conversation it wasn't part of. Formatted
+// to match answerPatientQuestion()'s own two entries exactly, so a realtime
+// exchange and a legacy one are indistinguishable in the Log.
+// item.atMin is sim_patient.html's own scenario clock at the moment of the
+// exchange — preferred over recomputing here, which would place the entry
+// at whenever this poll happened to pick the item up (up to a poll interval
+// late, and further still if this tab connected after the fact).
+function logRealtimeExchange(item) {
+  const atMin = typeof item.atMin === 'number' && isFinite(item.atMin)
+    ? item.atMin
+    : (simNow() - liveConfig.startTimeMs) / 60000;
+  actionLog.push({ text: `\u{1F399}\uFE0F Crew asked: "${item.text}"`, atMin, kind: 'talk' });
+  if (item.reply) actionLog.push({ text: `\u{1F5E3}\uFE0F Patient: "${item.reply}"`, atMin, kind: 'talk' });
+  renderLog();
 }
 
 // --- Follow-up AI re-projection after a hardcoded defib outcome ----------

@@ -44,9 +44,6 @@
   #proxy-pause-indicator.on { color: #fbbf24; }
   #proxy-instant-indicator.on { color: rgba(255,255,255,0.85); font-weight: 400; }
   #proxy-scenario-timer { font-weight: 700; color: #4ade80; }
-  #proxy-hq-voice-status { font-size: 9px; font-style: italic; color: rgba(255,255,255,0.6); max-width: 110px; }
-  #proxy-hq-voice-status.hq-voice-status-ready { color: #4ade80; font-style: normal; }
-  #proxy-hq-voice-status.hq-voice-status-error { color: #f87171; font-style: normal; cursor: pointer; text-decoration: underline dotted; }
   #proxy-join-btn { display: none; font-family: inherit; font-size: 10px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; padding: 3px 8px; cursor: pointer; align-items: center; gap: 5px; }
   #proxy-join-btn.on { display: inline-flex; }
   #proxy-join-dot { width: 7px; height: 7px; border-radius: 50%; background: #b45309; flex-shrink: 0; }
@@ -118,9 +115,7 @@
         <option value="monitor">📈 Monitor Only</option>
         <option value="avatar">🧑 Avatar Only</option>
       </select>
-      <label title="Higher-quality patient voice"><input type="checkbox" id="proxy-hq-voice" onchange="proxySetHqVoice(this.checked)">HQ Voice</label>
-      <span id="proxy-hq-voice-status"></span>
-      <label title="Experimental low-latency voice conversation"><input type="checkbox" id="proxy-rt-voice" onchange="proxySetRtVoice(this.checked)">&#9889; RT Voice</label>
+      <label title="Low-latency voice conversation, on by default — untick for the standard tap-to-talk voice"><input type="checkbox" id="proxy-rt-voice" onchange="proxySetRtVoice(this.checked)">&#9889; RT Voice</label>
       <span id="proxy-rt-voice-status"></span>
       <div id="proxy-scenario-timer">00:00</div>
     </div>
@@ -268,7 +263,6 @@ function patWin() { return document.getElementById('patient-frame').contentWindo
 function proxyToggleMode() { try { ctrlWin().toggleManagementFullscreen(); } catch (e) {} }
 function proxyOpenJoinModal() { try { ctrlWin().openJoinModal(); } catch (e) {} }
 function proxySetDisplayMode(mode) { try { patWin().setDisplayMode(mode); } catch (e) {} }
-function proxySetHqVoice(on) { try { patWin().setHqVoiceEnabled(on); } catch (e) {} }
 function proxySetRtVoice(on) { try { patWin().setRtVoiceEnabled(on); } catch (e) {} }
 
 // ---------------------------------------------------------------------
@@ -319,22 +313,6 @@ function syncProxyState() {
       const sel = d.getElementById('display-mode-select');
       const proxySel = document.getElementById('proxy-display-mode-select');
       if (sel && document.activeElement !== proxySel) proxySel.value = sel.value;
-
-      const hq = d.getElementById('hq-voice-checkbox');
-      const proxyHq = document.getElementById('proxy-hq-voice');
-      if (hq && document.activeElement !== proxyHq) proxyHq.checked = hq.checked;
-      const hqStatus = d.getElementById('hq-voice-status');
-      if (hqStatus) {
-        const proxyHqStatus = document.getElementById('proxy-hq-voice-status');
-        proxyHqStatus.textContent = hqStatus.textContent;
-        proxyHqStatus.className = hqStatus.className;
-        proxyHqStatus.title = hqStatus.title;
-        // On error this is tappable to alert() the failure detail (see
-        // setHqVoiceStatus() in sim_patient.html) — same function
-        // reference works fine to reuse directly, same-origin realm.
-        proxyHqStatus.onclick = hqStatus.onclick;
-        proxyHqStatus.style.cursor = hqStatus.onclick ? 'pointer' : '';
-      }
 
       const rt = d.getElementById('rt-voice-checkbox');
       const proxyRt = document.getElementById('proxy-rt-voice');
