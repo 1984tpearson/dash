@@ -157,9 +157,6 @@ body.mode-avatar #monitor-col { display: none !important; }
 .voice-fab.armed:active,
 #voice-fab-chat.armed:active,
 #voice-fab-exam.armed:active { background: #b91c1c; }
-#wake-word-toggle-btn { width: 100%; max-width: 240px; min-height: 22px; margin-top: 4px; border-radius: 7px; border: 1px solid #d7dee6; background: #f7fafc; color: #33475a; font-family: 'Courier New', monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.3px; cursor: pointer; padding: 3px 6px; -webkit-tap-highlight-color: rgba(255,255,255,0.2); }
-#wake-word-toggle-btn.active { background: #15803d; color: #fff; border-color: #15803d; }
-#wake-word-toggle-btn.warn { background: #b91c1c; color: #fff; border-color: #b91c1c; }
 
 /* Floating head + mic badge — mic sits just above/right of the gif, flat
    red icon, invisible unless actively listening (toggled via .listening,
@@ -262,19 +259,6 @@ body.mode-avatar #monitor-col { display: none !important; }
 #input-mode-toggle-btn { flex-shrink: 0; width: 22px; height: 22px; border-radius: 5px; border: 1px solid #d7dee6; background: #f7fafc; color: #33475a; font-size: 12px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; -webkit-tap-highlight-color: rgba(255,255,255,0.2); }
 #input-mode-toggle-btn.active { background: #0369a1; color: #fff; border-color: #0369a1; }
 #voice-modal-status { font-size: 11px; color: #33475a; margin-bottom: 4px; min-height: 14px; }
-/* Auto-listen (wake-word) exchanges reuse this same panel, but the student
-   never pressed anything to open it — so it needs to announce itself more
-   loudly than a modal they deliberately opened. A tinted left edge marks the
-   whole panel as auto-triggered, and the two transient states get their own
-   animated cue: pulsing while capturing what was said, and a travelling
-   ellipsis while the assessor side is generating the reply. */
-#patient-info-voice.wake-auto { border-left: 3px solid #15803d; padding-left: 8px; }
-#voice-modal-title.wake-badge::after { content: ' \00b7 AUTO'; color: #15803d; }
-#voice-modal-status.wake-hearing { color: #15803d; font-weight: 700; animation: wakePulse 1.1s ease-in-out infinite; }
-@keyframes wakePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-#voice-modal-status.wake-thinking { color: #0369a1; font-weight: 700; }
-#voice-modal-status.wake-thinking::after { content: '\2026'; display: inline-block; animation: wakeDots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom; }
-@keyframes wakeDots { 0% { width: 0; } 100% { width: 12px; } }
 #voice-modal-transcript { min-height: 20px; border: 1px solid #d7dee6; border-radius: 6px; padding: 6px 8px; font-size: 13px; color: #1e2a36; margin-bottom: 4px; background: #f7fafc; }
 #type-input-row { display: none; gap: 6px; margin-bottom: 4px; }
 #type-input-row input { flex: 1; min-width: 0; font-size: 13px; padding: 6px 8px; border: 1px solid #d7dee6; border-radius: 6px; font-family: 'Courier New', monospace; }
@@ -303,7 +287,7 @@ body.mode-avatar #monitor-col { display: none !important; }
      away in sim_control.html for the assessor, and nothing here reads it
      back to the student. Hidden outright (not just shrunk) rather than
      sized down like everything else in this block, and `!important` since
-     openVoiceModal()/hideWakePanel()/closeVoiceModal() all set its inline
+     openVoiceModal()/closeVoiceModal() both set its inline
      `style.display` directly (see those functions) and would otherwise win
      over a plain override here. The OUTER #patient-info panel still needs
      to appear, though — #patient-info-voice (the Talk/Assess/Treat
@@ -357,7 +341,6 @@ body.mode-avatar #monitor-col { display: none !important; }
   body.mode-avatar #voice-fab-strip { max-width: 100%; gap: 10px; }
   body.mode-avatar .voice-fab { min-height: 58px; font-size: 16px; gap: 8px; border-radius: 10px; padding: 8px 10px; }
   body.mode-avatar .voice-fab svg { width: 22px; height: 22px; }
-  body.mode-avatar #wake-word-toggle-btn { max-width: 100%; min-height: 46px; font-size: 14px; margin-top: 8px; }
 }
 </style>
 </head>
@@ -399,7 +382,7 @@ body.mode-avatar #monitor-col { display: none !important; }
 <!-- Shown by showEncounterEndedScreen(), once tick() sees testConfig.endedAt
      — replaces the live monitor entirely rather than overlaying a dimmed
      version of it, same idea as #session-gate pre-connect. z-index sits
-     above the voice modal/wake-mic UI (110) too, since ending should
+     above the voice modal (110) too, since ending should
      supersede a mid-interaction voice modal, not sit behind it. -->
 <div id="encounter-ended-screen" style="position:fixed;inset:0;background:rgba(20,30,45,0.94);z-index:120;display:none;align-items:center;justify-content:center;">
   <div class="panel" style="width:300px;text-align:center;">
@@ -537,7 +520,6 @@ body.mode-avatar #monitor-col { display: none !important; }
         <span class="fab-armed"><svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>Stop</span>
       </button>
     </div>
-    <button type="button" id="wake-word-toggle-btn" onclick="toggleWakeWord()">🎤 Auto-listen: Off</button>
   </div>
   </div>
 </div>
@@ -1437,7 +1419,6 @@ let _talkAnimTimer = null;
 function startTalkAnimation() {
   if (!_isSpeaking) _speakingSinceMs = Date.now();
   _isSpeaking = true;
-  stopWakeListening(); // don't let the wake-word mic pick up the patient's own voice
   if (_talkAnimTimer) return;
   let open = false;
   _talkAnimTimer = setInterval(() => {
@@ -1450,7 +1431,6 @@ function stopTalkAnimation() {
   _speakingSinceMs = 0;
   if (_talkAnimTimer) { clearInterval(_talkAnimTimer); _talkAnimTimer = null; }
   setMouth(_restingMouthState);
-  startWakeListening(); // no-op unless auto-listen is on and nothing else has claimed the mic since
 }
 
 // --- Session join flow -----------------------------------------------------
@@ -1541,7 +1521,6 @@ async function connectSession(code) {
     tick();
     setInterval(tick, VITALS_TICK_MS);
     setInterval(pollSession, DB_POLL_MS); // fallback poll — realtime (subscribeSessionRealtime) covers the common case
-    startWakeListening(); // resumes automatically if auto-listen was left on from a previous session on this device
   } catch (e) {
     errEl.textContent = 'Could not reach the session — check the code and try again.';
   }
@@ -2334,7 +2313,7 @@ updateDefibButtons();
 let _lastTickMs = Date.now();
 // Called every tick once testConfig.endedAt is set instead of the normal
 // render path — swaps the live monitor for a static screen and stops
-// anything that would otherwise keep running unattended (wake-word mic,
+// anything that would otherwise keep running unattended (
 // any in-flight TTS). Idempotent (tick() calls it once a second for as
 // long as the page stays open post-end) via _endedScreenShown so the
 // stop calls below only fire once, not every tick.
@@ -2343,7 +2322,6 @@ function showEncounterEndedScreen() {
   document.getElementById('encounter-ended-screen').style.display = 'flex';
   if (_endedScreenShown) return;
   _endedScreenShown = true;
-  try { stopWakeListening(); } catch (e) {}
   try { stopAnyPatientAudio(); } catch (e) {}
   try { closeVoiceModal(); } catch (e) {} // in case a crew member was mid Treat/Assess/Talk when this landed
 }
@@ -2390,56 +2368,24 @@ function tick() {
     maybeSaySpontaneousLine(av);
   } catch (e) { console.error('avatar render failed:', e); }
   try { updateTrendIndicator(testConfig, simNow); } catch (e) { console.error('trend indicator render failed:', e); }
-  // Also fault-isolated, and deliberately after the avatar: re-arms the
-  // wake-word mic if anything left it stopped (see startWakeListening —
-  // it's fully guarded, so this is a no-op whenever it's already running or
-  // auto-listen is off). This once-a-second retry is what turns every
-  // transient failure in that path into a one-second outage instead of a
-  // silent permanent one.
+  // Fault-isolated, same as the avatar above it.
   try {
     clearStuckSpeakingFlag();
-    clearStalePendingWakeItem();
-    startWakeListening();
-  } catch (e) { console.error('wake listening re-arm failed:', e); }
+  } catch (e) { console.error('speaking-flag check failed:', e); }
 }
 
 // _isSpeaking is set by startTalkAnimation() and cleared by
-// stopTalkAnimation(), and it gates the wake mic (so the patient's own
-// voice isn't transcribed as a crew member talking). But speakPatientReply's
-// speech path only calls stopTalkAnimation() when playback actually runs to
-// completion — a superseded or watchdog-aborted attempt leaves the flag
-// stuck true, which used to mean the wake mic never came back for the rest
-// of the session. No real utterance runs this long, so anything past the
-// timeout is a leak, not speech.
+// stopTalkAnimation(), and it drives the avatar's talking mouth. But
+// speakPatientReply's speech path only calls stopTalkAnimation() when
+// playback actually runs to completion — a superseded or watchdog-aborted
+// attempt leaves the flag stuck true, which leaves the mouth flapping for
+// the rest of the session. No real utterance runs this long, so anything
+// past the timeout is a leak, not speech.
 let SPEAKING_STUCK_MS = 60000;
 function clearStuckSpeakingFlag() {
   if (_isSpeaking && _speakingSinceMs && Date.now() - _speakingSinceMs > SPEAKING_STUCK_MS) {
-    console.warn('speaking flag stuck — clearing so the wake mic can resume');
+    console.warn('speaking flag stuck — clearing so the talk animation stops');
     stopTalkAnimation();
-  }
-}
-
-// Same class of leak on the other blocking flag. A wake-triggered chat/exam
-// item sets _lastChatSentId and waits for checkForPatientReply() to clear
-// it — but nothing clears it if the reply never arrives (assessor page
-// closed, a dropped write, an AI call that errored out on that side). The
-// manual flow recovers by the student closing and re-pressing the button;
-// auto-listen has no such gesture, so an unanswered wake item used to
-// silently swallow every trigger after it. Only ever applied while the
-// manual modal is closed — an open modal legitimately owns that flag.
-let WAKE_REPLY_TIMEOUT_MS = 45000;
-let _wakeSentAtMs = 0;
-function clearStalePendingWakeItem() {
-  if (_voiceModalOpen || !_wakeSentAtMs || !_lastChatSentId) return;
-  if (Date.now() - _wakeSentAtMs < WAKE_REPLY_TIMEOUT_MS) return;
-  console.warn('no reply to the last wake-word item — releasing the trigger lock');
-  _wakeSentAtMs = 0;
-  _lastChatSentId = null;
-  if (_wakePanelActive) {
-    const statusEl = document.getElementById('voice-modal-status');
-    statusEl.classList.remove('wake-hearing', 'wake-thinking');
-    statusEl.textContent = 'No response came back — try again.';
-    scheduleWakePanelHide(4000);
   }
 }
 
@@ -2493,12 +2439,6 @@ function setDisplayMode(mode) {
   document.body.classList.add('mode-' + mode);
   const sel = document.getElementById('display-mode-select');
   if (sel) sel.value = mode;
-  // Belt-and-braces on top of the CSS hiding every voice control above:
-  // Monitor Only means this device's mic is never touched, even if
-  // auto-listen was left on in localStorage from before this device was
-  // repurposed (see startWakeListening()'s own guard for the other half of
-  // this — a hidden button alone doesn't stop something that auto-resumes).
-  if (mode === 'monitor') stopWakeListening();
 }
 
 // Registered on `document`, not `window`: nav.js's own DOMContentLoaded
@@ -2779,7 +2719,7 @@ function speakAmbientLine(text) {
   // contains it. Best-effort either way: the timer just tries again later.
   try {
     Promise.resolve(speakPatientReply(text, () => {}, false))
-      .catch(() => { stopTalkAnimation(); }); // also releases the wake mic if the animation had already started
+      .catch(() => { stopTalkAnimation(); });
   } catch (e) { stopTalkAnimation(); }
 }
 
@@ -3160,8 +3100,6 @@ function startRealtimeCall() {
   unlockSpeechSynthesis(); // the TTS-failure fallback in speakRealtimeReply() still needs this unlocked
   unlockRealtimeAudio(); // must happen here, inside the tap handler, to count as a user gesture
   unlockRealtimeChime(); // same reason — see its own comment
-  stopWakeListening();
-  hideWakePanel();
   // The other direction of the same overlap guarded in
   // maybeSaySpontaneousLine(): an ambient line that started a moment before
   // this tap is still playing through the standard Web Speech path, and
@@ -3256,7 +3194,7 @@ function endRealtimeCall() {
 // every later Talk tap goes straight to the standard flow rather than
 // re-running a known-broken connect attempt first. Unticking and re-ticking
 // the Realtime Voice box clears the latch — the same "an explicit re-toggle
-// is the retry" convention startWakeListening() uses for a denied mic.
+// is the retry" convention a denied mic permission already follows.
 let _rtFellBackToStandard = false;
 function fallBackToStandardVoice(reason) {
   _rtFellBackToStandard = true;
@@ -3672,17 +3610,12 @@ let VOICE_MODE_LABELS = { treatment: 'Give Treatment', exam: 'Assessment', chat:
 let VOICE_MODE_REPLY_LABELS = { exam: 'Finding:', chat: 'Patient replied:' };
 
 // `opts.skipCapture` is used by startRealtimeCall() — it wants this
-// function's panel-opening side effects (title, wake-panel teardown, mode
+// function's panel-opening side effects (title, mode
 // state) WITHOUT also starting the legacy tap-to-toggle SpeechRecognition
 // capture in beginCapture(), since realtime mode drives its own Deepgram
 // capture instead. Omitted (or falsy), this behaves exactly as before.
 function openVoiceModal(mode, opts) {
   unlockSpeechSynthesis(); // must happen here, inside the tap handler, to count as a user gesture
-  stopWakeListening(); // a manual exchange takes the mic away from auto-listen until this one closes
-  // Drop any auto-listen presentation still on screen BEFORE _voiceModalOpen
-  // is set, so hideWakePanel()'s "manual modal owns this now" guard doesn't
-  // short-circuit and leave the wake styling stuck on the panel.
-  hideWakePanel();
   _voiceMode = mode;
   document.getElementById('voice-modal-title').textContent = VOICE_MODE_LABELS[mode] || mode;
   document.getElementById('voice-modal-transcript').textContent = '';
@@ -3731,424 +3664,6 @@ function setInputMode(mode) {
 }
 syncInputModeUI(); // reflect the default mode on the toggle button before any button is ever pressed
 
-// --- Wake-word "auto-listen" ------------------------------------------------
-// Opt-in continuous listening so a crew member doesn't have to hold one of
-// the three fab buttons — see CLAUDE.md's "wake word" discussion for why
-// this, not eye-tracking or a bare open mic. NOT a real hotword engine
-// (browsers don't expose one): this just runs SpeechRecognition continuously
-// and fuzzy-matches each final transcript against a small set of trigger
-// phrases (see getWakeWords()) before treating anything after the matched
-// phrase as that mode's content, queued through the exact same student_queue
-// path (queueStudentItem) a manual press uses. Three modes, two different
-// kinds of trigger:
-// - 'chat' triggers on the patient's own first name — asking the patient
-//   something is naturally addressed to them by name ("Dave, can you hear
-//   me?"), so no new phrase to learn.
-// - 'exam'/'treatment' trigger on a fixed lead-in phrase ("assessment"/
-//   "treatment") instead, because those two are narrated to the team/
-//   instructor, not spoken to the patient — there's no equivalent natural
-//   "address by name" moment to hook, so this is a spoken stand-in for
-//   holding the Assess/Treat button rather than something inferred from the
-//   content itself (that would need an AI classification call, and this
-//   page has no Anthropic key to make one — see CLAUDE.md's sim
-//   architecture notes on why all AI calls live in sim_control.html).
-// False positives from ordinary crew/student crosstalk that happens to
-// contain one of these phrases are an accepted tradeoff of not requiring a
-// button press — same class of risk any keyword-gated always-on mic has; a
-// real wake-word engine wouldn't remove it either.
-const WAKE_WORD_LS_KEY = 'av_wake_word_enabled';
-let _wakeWordEnabled = localStorage.getItem(WAKE_WORD_LS_KEY) === '1';
-let _wakeRecognition = null;
-// Set once a wake phrase alone was heard with nothing following it (e.g.
-// just "...Dave?" or "assessment—") — the NEXT final transcript within this
-// window is taken as that phrase's content, without needing it repeated.
-let _wakeArmedUntil = 0;
-let _wakeArmedMode = null;
-let _wakeArmedGreeting = false;
-const WAKE_FOLLOWUP_MS = 7000;
-// Synchronous guard against a second wake trigger firing while the first
-// send is still in flight — matters most for 'treatment', which (unlike
-// 'chat'/'exam') never sets _lastChatSentId, so nothing else would block a
-// near-simultaneous second detection during the await below.
-let _wakeSendInFlight = false;
-// Bootstrap-only chat triggers ("hello"/"hey"/"hi there") for before the
-// crew knows the patient's name yet — e.g. "hello, my name is Tim, what's
-// your name?" One-shot: the first time any of these actually fires a wake
-// item, this flips false for the rest of the session (see sendWakeItem) and
-// stays off, since "hey"/"hello" are common enough in ordinary crew/student
-// chatter that leaving them live all scenario would misfire constantly once
-// they're no longer needed to break the ice.
-let _greetingWakeWordsActive = true;
-
-// Each entry's phrase triggers that entry's mode ('chat'/'exam'/'treatment'
-// — same three types student_queue items already carry, see
-// queueStudentItem()/processStudentQueue()). The patient's own name only
-// makes sense as a trigger for 'chat' — asking the patient something is
-// naturally addressed to them by name ("Dave, can you hear me?"), but an
-// assessment or treatment action is narrated to the team/instructor, not
-// spoken to the patient, so there's no equivalent natural "address by name"
-// moment to hook for those two. 'assessment'/'treatment' work instead as a
-// spoken equivalent of holding the Assess/Treat button — a fixed lead-in
-// phrase, not a name — accepting that this is one more thing to learn/say
-// than the chat trigger, same tradeoff already noted for the chat wake word:
-// no better signal is available without an AI classification call this page
-// has no Anthropic key to make (see CLAUDE.md's sim architecture notes).
-// Order matters: checked top-to-bottom, first match wins, so a longer/more
-// specific phrase must come before a shorter one it contains (e.g. 'hey
-// patient' before the bare 'hey') or the shorter one would win and leave
-// the specific one's tail ("patient") sitting in the extracted query text.
-// Matched on WORD BOUNDARIES, never as a bare substring — see
-// findWakePhrase(). A plain indexOf() made 'hey' fire on every "they" in
-// ordinary crew talk ("so they are hypotensive now"), and short patient
-// names were far worse: 'Ed' hit "checked"/"seemed"/"worried", 'Al' hit
-// "also"/"already", 'Sam' hit "same". That alone would make auto-listen
-// look like it was triggering at random.
-function getWakeWords() {
-  const name = scenarioMeta && scenarioMeta.patient_meta && scenarioMeta.patient_meta.name;
-  const words = [];
-  if (name) {
-    const parts = String(name).trim().split(/\s+/).filter(Boolean);
-    const first = (parts[0] || '').toLowerCase();
-    // Full name before first name — longer/more specific wins, and it keeps
-    // "Connor McDonald" from leaving "mcdonald" stranded in the query text.
-    if (parts.length > 1) words.push({ phrase: parts.join(' ').toLowerCase(), mode: 'chat', name: true });
-    if (first) words.push({ phrase: first, mode: 'chat', name: true });
-  }
-  words.push({ phrase: 'hey patient', mode: 'chat' }, { phrase: 'excuse me', mode: 'chat' });
-  if (_greetingWakeWordsActive) {
-    words.push(
-      { phrase: 'hi there', mode: 'chat', greeting: true },
-      { phrase: 'hello', mode: 'chat', greeting: true },
-      { phrase: 'hey', mode: 'chat', greeting: true }
-    );
-  }
-  words.push({ phrase: 'assessment', mode: 'exam' }, { phrase: 'assessing', mode: 'exam' });
-  words.push({ phrase: 'treatment', mode: 'treatment' }, { phrase: 'administering', mode: 'treatment' });
-  return words;
-}
-
-// Proper nouns are the weakest thing a speech recogniser handles, and it has
-// no idea this scenario's patient is called Connor — doubled consonants in
-// particular come back inconsistently ("Connor"/"Conor", "Emmett"/"Emet",
-// "Aaliyah"/"Alia"). Collapsing runs of the same letter on BOTH sides makes
-// those compare equal. Only applied to names 4+ characters long: at 2-3
-// characters it starts matching ordinary words ("all" collapses to "al",
-// "see" to "se"), which is exactly the false-positive class the word-boundary
-// fix above existed to kill.
-function normaliseNameToken(s) {
-  const stripped = String(s).toLowerCase().replace(/[^a-z]/g, '');
-  return stripped.length >= 4 ? stripped.replace(/(.)\1+/g, '$1') : stripped;
-}
-
-// Finds the first wake phrase present in `transcript` as a whole word (or
-// whole multi-word run), returning the matched entry plus where its content
-// starts. Word boundaries are built with an explicit non-letter lookaround
-// rather than \b: a name could contain an apostrophe or hyphen, and \b would
-// happily match mid-name at those. Returns null when nothing matched.
-function findWakePhrase(transcript) {
-  const lower = transcript.toLowerCase();
-  for (const w of getWakeWords()) {
-    if (w.name) {
-      const hit = findNameToken(transcript, w.phrase);
-      if (hit != null) return { entry: w, contentFrom: hit };
-      continue;
-    }
-    const escaped = w.phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('(?:^|[^a-z0-9])' + escaped + '(?![a-z0-9])', 'i');
-    const m = re.exec(lower);
-    if (!m) continue;
-    return { entry: w, contentFrom: m.index + m[0].length };
-  }
-  return null;
-}
-
-// Word-wise (not regex) scan for a name, so each transcript token can be
-// compared through normaliseNameToken(). `namePhrase` may be multi-word (a
-// full name), in which case consecutive tokens must all match in order.
-// Returns the character index just past the matched run, or null.
-function findNameToken(transcript, namePhrase) {
-  const wanted = namePhrase.split(/\s+/).map(normaliseNameToken).filter(Boolean);
-  if (!wanted.length) return null;
-  const tokens = [];
-  const re = /[A-Za-z'’-]+/g;
-  let m;
-  while ((m = re.exec(transcript))) tokens.push({ text: m[0], end: m.index + m[0].length });
-  for (let i = 0; i + wanted.length <= tokens.length; i++) {
-    let all = true;
-    for (let j = 0; j < wanted.length; j++) {
-      if (normaliseNameToken(tokens[i + j].text) !== wanted[j]) { all = false; break; }
-    }
-    if (all) return tokens[i + wanted.length - 1].end;
-  }
-  return null;
-}
-
-// --- Wake exchange panel ----------------------------------------------------
-// A wake-word exchange happens with no button pressed and no modal open, so
-// without this the only evidence anything was happening was the patient
-// eventually talking — nothing showed that a trigger had been heard, that a
-// reply was being generated, or what the reply actually said. Reuses the
-// same #patient-info-voice panel the manual modal uses (identical layout,
-// one place to maintain) but deliberately does NOT set _voiceModalOpen: that
-// flag means "the student is mid-manual-exchange" and would both stop the
-// wake mic and start the push-to-talk capture. The manual modal always wins
-// if it opens — see openVoiceModal(), which cancels this outright.
-//
-// Showing the heard transcript is also the diagnostic surface for wake-word
-// misfires: a name the recogniser mangles is invisible otherwise, but here
-// it's on screen exactly as transcribed.
-let _wakePanelActive = false;
-let _wakePanelHideTimer = null;
-let WAKE_PANEL_LINGER_MS = 6000;
-// Per-mode wording for the in-flight state — "thinking" is only honest for
-// chat; an exam finding is being looked up and a treatment is just being
-// logged/applied, neither of which is the patient thinking about anything.
-let WAKE_THINKING_STATUS = {
-  chat: 'Patient is thinking',
-  exam: 'Getting the finding',
-  treatment: 'Sending to the assessor'
-};
-
-function showWakePanel(mode, opts) {
-  if (_voiceModalOpen) return; // a real manual exchange owns the panel
-  opts = opts || {};
-  _wakePanelActive = true;
-  if (_wakePanelHideTimer) { clearTimeout(_wakePanelHideTimer); _wakePanelHideTimer = null; }
-  const titleEl = document.getElementById('voice-modal-title');
-  const statusEl = document.getElementById('voice-modal-status');
-  titleEl.textContent = VOICE_MODE_LABELS[mode] || mode;
-  titleEl.classList.add('wake-badge');
-  statusEl.textContent = opts.status || '';
-  statusEl.classList.toggle('wake-hearing', opts.state === 'hearing');
-  statusEl.classList.toggle('wake-thinking', opts.state === 'thinking');
-  if (opts.heard !== undefined) document.getElementById('voice-modal-transcript').textContent = opts.heard;
-  if (opts.clearReply) {
-    const replyEl = document.getElementById('patient-reply-display');
-    replyEl.style.display = 'none';
-    replyEl.textContent = '';
-  }
-  document.getElementById('type-input-row').style.display = 'none'; // nothing to type into — this exchange is voice-driven by definition
-  document.getElementById('patient-info-voice').classList.add('wake-auto');
-  document.getElementById('patient-info-normal').style.display = 'none';
-  document.getElementById('patient-info-voice').style.display = 'block';
-  document.getElementById('patient-info').classList.add('voice-active'); // see the mobile Avatar Only rule in the CSS for why this exists
-  document.getElementById('voice-mic-indicator').classList.toggle('listening', opts.state === 'hearing');
-}
-
-// Leaves the reply on screen for a few seconds after it finishes speaking,
-// rather than snapping away the moment the audio ends — the text version is
-// the point, and it needs to outlast the speech to be readable.
-function scheduleWakePanelHide(delayMs) {
-  if (!_wakePanelActive) return;
-  if (_wakePanelHideTimer) clearTimeout(_wakePanelHideTimer);
-  _wakePanelHideTimer = setTimeout(hideWakePanel, delayMs == null ? WAKE_PANEL_LINGER_MS : delayMs);
-}
-
-function hideWakePanel() {
-  if (_wakePanelHideTimer) { clearTimeout(_wakePanelHideTimer); _wakePanelHideTimer = null; }
-  if (!_wakePanelActive) return;
-  _wakePanelActive = false;
-  if (_voiceModalOpen) return; // the manual modal took over — leave its own presentation alone
-  document.getElementById('voice-modal-title').classList.remove('wake-badge');
-  const statusEl = document.getElementById('voice-modal-status');
-  statusEl.classList.remove('wake-hearing', 'wake-thinking');
-  document.getElementById('voice-mic-indicator').classList.remove('listening');
-  document.getElementById('patient-info-voice').classList.remove('wake-auto');
-  document.getElementById('patient-info-voice').style.display = 'none';
-  document.getElementById('patient-info-normal').style.display = 'block';
-  document.getElementById('patient-info').classList.remove('voice-active');
-}
-
-// Reported on the toggle button itself rather than kept internal: the first
-// version failed silently in several ways at once (no SpeechRecognition on
-// iOS Safari, a refused mic, a start() that threw) and all of them looked
-// identical from the outside — a button reading "On" with nothing
-// happening. The label is the only feedback surface this control has, so it
-// shows the REAL state, not just the stored preference.
-let _wakeStatus = 'off'; // 'off' | 'starting' | 'listening' | 'denied' | 'unavailable'
-let WAKE_STATUS_LABELS = {
-  off: '\u{1F3A4} Auto-listen: Off',
-  starting: '\u{1F3A4} Auto-listen: Starting…',
-  listening: '\u{1F3A4} Auto-listen: Listening',
-  denied: '\u{1F3A4} Auto-listen: Mic blocked',
-  unavailable: '\u{1F3A4} Auto-listen: Not supported'
-};
-function setWakeStatus(status) {
-  if (_wakeStatus === status) return;
-  _wakeStatus = status;
-  syncWakeWordUI();
-}
-
-function syncWakeWordUI() {
-  const btn = document.getElementById('wake-word-toggle-btn');
-  if (!btn) return;
-  btn.textContent = WAKE_STATUS_LABELS[_wakeWordEnabled ? _wakeStatus : 'off'] || WAKE_STATUS_LABELS.off;
-  btn.classList.toggle('active', _wakeWordEnabled && _wakeStatus === 'listening');
-  btn.classList.toggle('warn', _wakeWordEnabled && (_wakeStatus === 'denied' || _wakeStatus === 'unavailable'));
-  btn.title = _wakeStatus === 'unavailable' ? 'This browser has no speech recognition — use Chrome (iOS Safari doesn’t support it).'
-    : _wakeStatus === 'denied' ? 'Microphone permission was refused — allow it, then tap this again.'
-    : 'Say the patient’s name (or "hello") to talk to them; "assessment…" / "treatment…" for the other two.';
-}
-syncWakeWordUI(); // reflect the persisted (localStorage) state before any button is pressed
-
-function toggleWakeWord() {
-  _wakeWordEnabled = !_wakeWordEnabled;
-  localStorage.setItem(WAKE_WORD_LS_KEY, _wakeWordEnabled ? '1' : '0');
-  if (_wakeWordEnabled) {
-    if (_wakeStatus === 'denied') _wakeStatus = 'off'; // an explicit re-toggle is the retry, since startWakeListening() won't retry a latched refusal on its own
-    unlockSpeechSynthesis(); // this tap is a real user gesture — take the chance to unlock TTS so wake-triggered replies can actually be spoken
-    // 'starting' up front, not left on the stale 'off': startWakeListening()
-    // legitimately no-ops until a session is joined, and without this the
-    // button would sit there reading "Off" immediately after being switched
-    // on — the exact ambiguity this status line exists to remove.
-    setWakeStatus('starting');
-    startWakeListening();
-  } else {
-    stopWakeListening();
-    setWakeStatus('off');
-    syncWakeWordUI();
-  }
-}
-
-// Guarded so it's always safe to call speculatively (e.g. after a reply
-// finishes speaking, or right after connecting) — only actually starts the
-// mic when auto-listen is on and nothing else currently owns it. Also
-// re-armed from tick() every second, which is what makes every failure
-// path below self-healing: any missed/failed restart is retried on the next
-// tick rather than leaving auto-listen silently dead for the rest of the
-// session (which is exactly how the first version failed).
-function startWakeListening() {
-  if (_patientDisplayMode === 'monitor') return; // this device's mic is intentionally never used in Monitor Only mode — see setDisplayMode()
-  if (!_wakeWordEnabled || _wakeRecognition || _voiceModalOpen || _isSpeaking || !sessionCode) return;
-  const Ctor = getSpeechRecognitionCtor();
-  if (!Ctor) { setWakeStatus('unavailable'); return; } // no SpeechRecognition at all — iOS Safari, this tool's primary device (same Chrome-only limitation the push-to-talk mic reports in its own status line)
-  if (_wakeStatus === 'denied') return; // mic permission refused — retrying every tick would just spam the browser; the student has to re-toggle after granting it
-  const rec = new Ctor();
-  rec.lang = 'en-AU';
-  rec.continuous = true;
-  rec.interimResults = false;
-  rec.maxAlternatives = 1;
-  rec.onresult = handleWakeResult;
-  rec.onstart = () => { if (_wakeRecognition === rec) setWakeStatus('listening'); };
-  rec.onerror = (ev) => {
-    // 'no-speech'/'aborted'/'network' are all ordinary and recoverable —
-    // onend fires next and the restart (or tick()'s re-arm) handles them.
-    // A permission refusal is not recoverable by retrying, so it latches.
-    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') setWakeStatus('denied');
-  };
-  rec.onend = () => {
-    // Only clear the shared handle if THIS instance is still the current
-    // one. A late onend from an instance that stopWakeListening() already
-    // abandoned would otherwise null out a newer, actually-running
-    // instance — after which the next start() hits InvalidStateError with
-    // two recognitions live, and auto-listen dies for good.
-    if (_wakeRecognition !== rec) return;
-    _wakeRecognition = null;
-    if (_wakeStatus === 'listening') setWakeStatus('starting');
-    // Chrome's continuous mode still stops itself periodically — restart
-    // automatically unless something else (a manual exchange, the patient
-    // talking, the toggle being switched off) now owns the mic/speaker.
-    if (_wakeWordEnabled && !_voiceModalOpen && !_isSpeaking) setTimeout(startWakeListening, 300);
-  };
-  // Assigned BEFORE start() so onstart/onend (which can fire synchronously
-  // in some builds) see the right current instance. On a throw — most often
-  // InvalidStateError from a previous instance still shutting down — it's
-  // cleared again and tick()'s re-arm retries a second later, rather than
-  // the original version's silent permanent dead end (start() throwing
-  // meant onend never fired, so nothing was left to trigger a retry).
-  _wakeRecognition = rec;
-  setWakeStatus('starting');
-  try { rec.start(); } catch (e) { _wakeRecognition = null; }
-}
-
-function stopWakeListening() {
-  if (_wakeRecognition) {
-    const rec = _wakeRecognition;
-    _wakeRecognition = null; // cleared first so rec's own onend sees itself as no longer current and doesn't schedule a restart
-    try { rec.abort(); } catch (e) {}
-  }
-  if (_wakeStatus !== 'denied' && _wakeStatus !== 'unavailable') setWakeStatus(_wakeWordEnabled ? 'starting' : 'off');
-}
-
-function handleWakeResult(ev) {
-  if (_voiceModalOpen || _lastChatSentId || _wakeSendInFlight) return; // a manual exchange or an already-in-flight wake item owns the floor
-  for (let i = ev.resultIndex; i < ev.results.length; i++) {
-    if (!ev.results[i].isFinal) continue;
-    const transcript = ev.results[i][0].transcript || '';
-    let query = null, mode = null, isGreeting = false;
-    if (Date.now() < _wakeArmedUntil) {
-      query = transcript.trim();
-      mode = _wakeArmedMode;
-      isGreeting = _wakeArmedGreeting;
-    } else {
-      const hit = findWakePhrase(transcript);
-      if (hit) {
-        // Leading punctuation is stripped too — "Dave, can you hear me?"
-        // leaves ", can you hear me?" once the phrase itself is removed.
-        query = transcript.slice(hit.contentFrom).replace(/^[\s,.;:!?—–-]+/, '').trim();
-        mode = hit.entry.mode;
-        isGreeting = !!hit.entry.greeting;
-      }
-    }
-    _wakeArmedUntil = 0;
-    _wakeArmedMode = null;
-    _wakeArmedGreeting = false;
-    if (query === null) continue; // no wake phrase heard in this utterance — ordinary crosstalk, ignored
-    if (!query) { // phrase said alone — wait for the follow-up line
-      _wakeArmedUntil = Date.now() + WAKE_FOLLOWUP_MS;
-      _wakeArmedMode = mode;
-      _wakeArmedGreeting = isGreeting;
-      // The trigger landed but there's nothing to send yet — this is the
-      // state that most needed a visible cue, since otherwise saying the
-      // patient's name on its own looked exactly like not being heard.
-      showWakePanel(mode, { state: 'hearing', status: 'Heard you — go ahead…', heard: '', clearReply: true });
-      continue;
-    }
-    showWakePanel(mode, { state: 'thinking', status: WAKE_THINKING_STATUS[mode] || 'Thinking', heard: query, clearReply: true });
-    sendWakeItem(query, mode, isGreeting);
-    return;
-  }
-}
-
-// Funnels a wake-triggered treat/assess/talk item through the exact same
-// student_queue path a manual button press uses (queueStudentItem, then
-// processStudentQueue on sim_control.html's side dispatches by type — see
-// CLAUDE.md). 'treatment' is genuinely fire-and-forget there (giveTreatment
-// writes no patient_reply, same as the manual Treat button's flow), so only
-// 'chat'/'exam' get the _lastChatSentId/_lastChatSentMode pair
-// checkForPatientReply matches a reply against — the reply itself still
-// arrives via the normal poll and speaks through speakPatientReply.
-async function sendWakeItem(text, mode, isGreeting) {
-  if (!sessionCode || _lastChatSentId || _wakeSendInFlight) return;
-  // One-shot: retire the bootstrap greeting triggers the instant one of them
-  // actually fires, regardless of whether the send below succeeds — from the
-  // student's perspective they've already "used" it either way.
-  if (isGreeting) _greetingWakeWordsActive = false;
-  _wakeSendInFlight = true;
-  const tracksReply = mode !== 'treatment';
-  if (tracksReply) {
-    _lastChatSentId = -1; // synchronous placeholder — blocks a near-simultaneous second wake detection from also queueing while the real id is still in flight below
-    _lastChatSentMode = mode;
-    _wakeSentAtMs = Date.now(); // starts the reply-timeout clock — see clearStalePendingWakeItem()
-  }
-  try {
-    const id = await queueStudentItem(mode, text);
-    if (tracksReply) {
-      _lastChatSentId = id;
-    } else {
-      // Treatment gets no reply to wait for, so this is the whole outcome —
-      // confirm it landed, then let the panel time out on its own.
-      showWakePanel(mode, { status: 'Sent to the assessor.' });
-      scheduleWakePanelHide(3500);
-    }
-  } catch (e) {
-    if (tracksReply) { _lastChatSentId = null; _wakeSentAtMs = 0; } // best-effort — a missed wake item just needs repeating
-    showWakePanel(mode, { status: 'Couldn’t send — check the connection and say it again.' });
-    scheduleWakePanelHide(5000);
-  } finally {
-    _wakeSendInFlight = false;
-  }
-}
 
 // Press-and-hold handlers for the three fab buttons (Treat/Assess/Talk).
 // In speech mode, pointerdown opens the panel and starts listening,
@@ -4287,11 +3802,6 @@ function startVoiceCapture() {
 function closeVoiceModal() {
   _voiceModalOpen = false;
   if (_rtActive) endRealtimeCall(); // this is the shared close path for Realtime Voice's live call too (a second Talk tap while mid-reply routes through requestEndRealtimeCall() first, which calls this once the reply finishes) — tear down the socket/mic/audio, not just the panel
-  // Also the dismiss path for an auto-listen exchange — this is the shared
-  // close path, and without this it would hide the panel while leaving
-  // _wakePanelActive and the wake-* classes set, so the next wake exchange
-  // would inherit stale styling and a pending hide timer.
-  hideWakePanel();
   document.getElementById('voice-mic-indicator').classList.remove('listening');
   if (_recognition) { try { _recognition.abort(); } catch (e) {} _recognition = null; }
   _recognitionActive = false;
@@ -4300,7 +3810,6 @@ function closeVoiceModal() {
   document.getElementById('patient-info-normal').style.display = 'block';
   document.getElementById('patient-info').classList.remove('voice-active');
   syncFabArmedUI();
-  startWakeListening(); // hand the mic back to auto-listen, if it's on
 }
 
 // Shared by both input modes — speech's onend handler and Type's Send
@@ -4348,9 +3857,7 @@ function checkForPatientReply(reply) {
   replyEl.style.display = 'block';
   const statusEl = document.getElementById('voice-modal-status');
   statusEl.textContent = VOICE_MODE_REPLY_LABELS[mode] || 'Reply:';
-  statusEl.classList.remove('wake-hearing', 'wake-thinking'); // the answer is in — stop the in-flight animation
   _lastChatSentId = null;
-  _wakeSentAtMs = 0; // the reply arrived, so the wake-item timeout has nothing left to release
 
   // Once the reply is done: Assess auto-closes (there's nothing more to do
   // with a finding once you've read/heard it — see CLAUDE.md's note on the
@@ -4364,10 +3871,6 @@ function checkForPatientReply(reply) {
   // Guarded by _voiceModalOpen throughout so a reply that arrives after the
   // student has already closed the modal does nothing.
   const resumeIfConversing = () => {
-    // Wake-word exchange: no modal to resume into, so the job here is just
-    // to leave the reply text up long enough to read before the panel
-    // retires itself and the normal Patient/Scene Info comes back.
-    if (_wakePanelActive && !_voiceModalOpen) { scheduleWakePanelHide(); return; }
     if (!_voiceModalOpen) return;
     if (isExam) { setTimeout(closeVoiceModal, 900); return; } // same brief "let it stay readable" grace period Treat's own send confirmation uses
     if (isConversation) beginCapture();
@@ -4378,9 +3881,8 @@ function checkForPatientReply(reply) {
   } else {
     // No speech at all (e.g. GCS-gated "no verbal response") — pause briefly
     // so the text is readable, then resume listening for the next question.
-    // Called unconditionally now rather than only for chat: resumeIfConversing
-    // guards its own cases, and a silent reply during a wake exchange still
-    // needs the panel retired (nothing else would ever hide it).
+    // resumeIfConversing guards its own cases, so this is safe to call
+    // whatever mode the exchange was.
     setTimeout(resumeIfConversing, 1500);
   }
 }
