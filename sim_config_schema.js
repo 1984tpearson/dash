@@ -633,18 +633,28 @@
             validate: requirePlaceholders(['{{catalogue}}', '{{allergies}}']),
             default: "You are a fast router for a paramedic training simulator. You are given one or more management actions given together in a single entry, and a fixed catalogue of actions the simulator can already handle with zero AI reasoning — either a known no-effect outcome, or a known coded/randomised effect on a specific tracked vital.\n\nCATALOGUE (id | label | outcome):\n{{catalogue}}\n\nTRACKED VITALS in this simulator: HR, RR, SpO2, EtCO2, BP (systolic/diastolic), Temp, BGL, Ketones, Pain score, Nausea score, GCS. Anything NOT affecting one of these is out of scope for reasoning regardless of its real-world effect.\n\nPatient's stated allergies: {{allergies}}\n\nTASK: Split the input into its distinct actions. For each, decide if it fuzzy-matches a catalogue item (handle typos, dose/route wording, synonyms — e.g. \"300mg aspirin chewed\" matches \"aspirin\"). A catalogue match is INVALID if the patient is allergic to that drug/class per the stated allergies above — treat it as needing full reasoning instead. A catalogue match is ALSO INVALID if a stated dose is clearly outside the normal/standard therapeutic range for that drug (grossly excessive, unusually subtherapeutic, or otherwise abnormal) — the catalogue's fixed outcome only holds for an ordinary, appropriately-dosed administration; an unusual dose needs full reasoning to model toxicity, reduced/exaggerated effect, or other dose-dependent consequences. If no dose is stated at all, assume a standard dose and match normally. If an action doesn't clearly match anything in the catalogue, or you're not confident, mark it unmatched — default to unmatched whenever unsure.\n\nReturn ONLY valid JSON, no prose: {\"items\":[{\"text\":\"<verbatim excerpt of this action from the input>\",\"matchId\":\"<catalogue id, or null>\"}]}"
           },
+          // These two defaults are the ONLY ones here that reference another
+          // file rather than carrying their own literal. Both are the live
+          // patient-voice contract, shared with sim_control.html and
+          // sim_patient.html via patient_voice.js — a literal copy here
+          // would be a third place for the same text to drift out of sync,
+          // and "reset to default" in this editor would then write a stale
+          // prompt into the DB for every user. Load patient_voice.js before
+          // this file (all three host pages do). PATIENT_VOICE_PROMPT's
+          // requirePlaceholders validation also blocks saving an empty
+          // value, so a missed load can't silently persist a blank prompt.
           PATIENT_VOICE_PROMPT: {
             type: 'prompt_text',
             label: 'Patient voice reply (callPatientAI, Haiku)',
             help: 'Answers a crew question in character via "Talk to Patient", only reached at GCS-Verbal 4-5 (lower tiers use the fixed GCS_V2_SOUNDS/GCS_V3_WORDS in Medications instead — see CLAUDE.md on why those are deliberately not AI-authored). Placeholders (both required): {{patientName}} — the scenario\'s patient name; {{confusedNote}} — filled from the field below when GCS-Verbal is exactly 4, otherwise empty.',
             validate: requirePlaceholders(['{{patientName}}', '{{confusedNote}}']),
-            default: "You are voicing the PATIENT in a paramedic training scenario, answering a question the crew just asked out loud. Reply only as the patient would speak — first person, in character, brief (1-3 short sentences), plain lay language, no clinical terms the patient wouldn't use.\n\nOnly say what this patient could plausibly know or perceive themselves (their own symptoms, feelings, what happened to them, basic personal details) — never reveal the provisional diagnosis, clinical reasoning, vital sign numbers, or anything a real patient wouldn't know or say. If asked something the patient wouldn't know or that's irrelevant to them, answer in character as a confused/unsure patient would.\n\nLet their current condition colour HOW they answer: e.g. short of breath = short, breathless sentences; distressed/in pain = anxious tone. Never break character, never mention this being a simulation.\n\nYour name is {{patientName}}. If asked your name, or anything requiring you to refer to yourself, you MUST use this exact name — never invent or substitute a different one.\n{{confusedNote}}\n\nReturn ONLY the spoken reply text — no quotation marks, no stage directions, no prose about the answer."
+            default: (window.PatientVoice && window.PatientVoice.DEFAULT_PROMPT)
           },
           PATIENT_VOICE_CONFUSED_NOTE: {
             type: 'string',
             label: 'Confused-patient note (GCS-Verbal 4 only)',
             help: 'Appended into {{confusedNote}} in the prompt above only when the patient\'s GCS-Verbal score is exactly 4 (confused conversation) — empty string otherwise.',
-            default: "This patient’s GCS Verbal score is 4 (confused conversation) — they can hold a real back-and-forth conversation and engage with whatever’s actually asked, but they’re disoriented. Vary how much and in which domains — anywhere from mildly off (e.g. unsure of the exact date but still correctly knows the year, where they are, and who they’re talking to) to broadly disoriented (confused about time, place, the situation, AND who’s with them, e.g. mistaking a paramedic for a relative or hospital staff) — stay consistent about which specific things they’re confused about across the conversation rather than re-rolling it every reply. Let the disorientation show up as specific wrong or uncertain details inside an otherwise coherent, on-topic reply — not as rambling that ignores the question, drifts onto an unrelated tangent, or reads as agitated/erratic (that’s delirium, a different presentation) — and never a fully accurate, correctly-oriented answer."
+            default: (window.PatientVoice && window.PatientVoice.DEFAULT_CONFUSED_NOTE)
           },
           EXAM_FINDING_PROMPT: {
             type: 'prompt_text',

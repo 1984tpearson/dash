@@ -167,12 +167,45 @@ syncing one computed value between them:
   `PATIENT_VOICE_PROMPT`'s system-prompt text also explicitly tells the
   model to trust the given date/time over any date it might otherwise
   assume, rather than relying on the user-turn wording alone.
-- `sim_patient.html`'s `updateScenarioClock()`, called every `tick()`, drives
-  the "Scene time" row in the Patient / Scene Info panel — a 24-hour HH:MM
-  readout of the scenario's own in-fiction time, deliberately separate from
-  the topbar's `#scenario-timer` (a T+mm:ss elapsed-time countup) so a
-  student can tell "what time is it in the scenario" apart from "how long
-  have we been on scene."
+- `sim_patient.html`'s `scenarioFictionalDateTime()` feeds the same prompt
+  line on the Realtime Voice path, and its `updateScenarioClock()`, called
+  every `tick()`, drives the "Scene time" row in the Patient / Scene Info
+  panel — a 24-hour HH:MM readout of the scenario's own in-fiction time,
+  deliberately separate from the topbar's `#scenario-timer` (a T+mm:ss
+  elapsed-time countup) so a student can tell "what time is it in the
+  scenario" apart from "how long have we been on scene."
+
+### The patient's spoken voice lives in `patient_voice.js`
+
+Both pages ask Claude to speak as the patient — `sim_control.html`'s
+`callPatientAI()` (legacy `student_queue` path) and `sim_patient.html`'s
+`generateRealtimePatientReply()` (Realtime Voice). The system prompt, the
+GCS-Verbal-4 confusion note, the GCS tiering and the user-prompt builder
+are shared via **`patient_voice.js`** (`window.PatientVoice`), loaded by
+both pages plus `sim_config_admin.html`.
+
+This was two hand-synced copies with a "keep in sync by hand" comment,
+which is exactly how it failed — three separate drifts, and once Realtime
+Voice became the default the stale copy was the one students actually
+heard: the corrected V4 note reached neither copy for days, real PMHx
+replaced the dead `key_hx` field in only one, and `sim_patient.html` sent
+the *device* wall clock where `sim_control.html` sent the patient's
+in-fiction scenario clock (so a 3am callout answered orientation questions
+with the tester's local time). **Don't reintroduce a local copy of either
+prompt string or the user-prompt shape.**
+
+What deliberately stays per-page: where the scenario/vitals/treatments are
+read from (`currentScenario`/`liveConfig` vs `scenarioMeta`/`testConfig`),
+what happens to the reply afterwards (logged and written back for the
+patient device, vs spoken straight out), and `max_tokens` — 300 in
+`sim_control.html` vs 120 in `sim_patient.html`, a deliberate latency
+tradeoff documented at that call site.
+
+`sim_config_schema.js`'s two prompt defaults *reference*
+`window.PatientVoice` rather than carrying literals — a third copy would
+mean "reset to default" in the admin editor writing stale text into the DB
+for every user. That's why `patient_voice.js` must load before
+`sim_config_schema.js` (all three host pages order it that way).
 
 ### Patient avatar (`sim_patient.html` only)
 
