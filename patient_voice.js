@@ -57,6 +57,37 @@
       .replace(/\{\{confusedNote\}\}/g, note);
   }
 
+  // The patient's own account of what has been happening — the authored
+  // hx block (generator.html writes it; sim_control.html's History tab shows
+  // the assessor the same fields). Without this the patient invented an
+  // answer to "when did this start?" every time it was asked: a different
+  // one each ask, and none of them matching the timeline the assessor is
+  // marking against. Every scenario in the live DB has hx.timeline authored,
+  // so this was pure loss.
+  //
+  // Labelled as the patient's own experience rather than by the field names
+  // the assessor sees, because that is what it is to them — and the system
+  // prompt's "plain lay language" rule still applies on top, so clinically
+  // worded source text ("bilious, no blood") comes out in their words.
+  var HISTORY_FIELDS = [
+    ['timeline', 'When it started, and how it has changed since'],
+    ['prodromal', 'How they felt in the lead-up, before it started'],
+    ['nature', 'What it actually feels like'],
+    ['aggreliev', 'What makes it better or worse'],
+    ['assoc', 'Other symptoms they have alongside it'],
+    ['similar', 'Whether anything like this has happened before']
+  ];
+  function historyBlock(hx) {
+    if (!hx) return '';
+    var lines = HISTORY_FIELDS.map(function (f) {
+      var val = hx[f[0]];
+      return (val && String(val).trim()) ? ('- ' + f[1] + ': ' + String(val).trim()) : null;
+    }).filter(Boolean);
+    if (!lines.length) return '';
+    return 'Their own account of what has been happening. This is what actually happened to them — answer from it rather than inventing, give only the part that answers what was asked, and put it in their own plain words. A patient disoriented to time may be unsure exactly how long ago it was, but what happened is still as described here:\n'
+      + lines.join('\n') + '\n';
+  }
+
   // The fixed disorientation picture for a GCS-Verbal 4 patient — WHICH of
   // time/date/place/person they are wrong about, and what they specifically
   // believe instead. Generated once per scenario and cached (see
@@ -111,6 +142,7 @@
       + 'Medications: ' + listed(s.medications) + '\n'
       + 'Allergies: ' + (s.allergies || 'none documented') + '\n'
       + 'What the patient told the crew on scene: ' + (s.arrival_hx || '') + '\n'
+      + historyBlock(s.hx)
       + 'Current approximate condition: HR ' + v.HR + ', RR ' + v.RR + ', SpO2 ' + v.SpO2 + '%, GCS ' + gcsTotal + '/15 (Verbal component: ' + o.gcsV + '/5), pain ' + (v.pain != null ? v.pain + '/10' : 'unspecified') + '\n'
       + 'Treatments given so far: ' + (actions.length ? actions.join('; ') : 'none yet') + '\n'
       + orientation
@@ -125,6 +157,7 @@
     DEFAULT_CONFUSED_NOTE: DEFAULT_CONFUSED_NOTE,
     tierFor: tierFor,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,
+    HISTORY_FIELDS: HISTORY_FIELDS,
     buildSystemPrompt: buildSystemPrompt,
     buildUserPrompt: buildUserPrompt
   };
