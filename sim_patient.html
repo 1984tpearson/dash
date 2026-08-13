@@ -1469,6 +1469,7 @@ async function connectSession(code) {
       totalPausedMs: row.total_paused_ms,
       spontaneousLines: row.spontaneous_lines || [],
       orientationProfile: row.orientation_profile || {},
+      voiceTranscript: row.voice_transcript || [],
       endedAt: row.ended_at || null
     };
     instantMode = row.instant_mode;
@@ -1538,7 +1539,7 @@ const _processedSkipEpoch = {};
 async function pollSession() {
   if (!sessionCode || !testConfig) return;
   try {
-    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,orientation_profile,ended_at`);
+    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,orientation_profile,voice_transcript,ended_at`);
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1570,6 +1571,9 @@ function applySessionRow(row) {
   actionControls = row.action_controls || {};
   testConfig.spontaneousLines = row.spontaneous_lines || [];
   if (row.orientation_profile) testConfig.orientationProfile = row.orientation_profile;
+  // Merged, not replaced — this device may hold an exchange it just recorded
+  // that the row has not caught up with yet (see recordVoiceExchange).
+  if (row.voice_transcript) testConfig.voiceTranscript = PatientVoice.mergeTranscript(testConfig.voiceTranscript || [], row.voice_transcript);
   checkForPatientReply(row.patient_reply);
 }
 
@@ -3356,6 +3360,27 @@ async function startRealtimeCapture() {
   };
 }
 
+// Appends one exchange to the rolling transcript fed back as message
+// history on later turns. Local mirror first, persisted fire-and-forget:
+// on this path the next question routinely arrives inside one poll
+// interval, so waiting for the row to come back would lose the turn that
+// just happened — and a failed write must never delay the reply the crew
+// is waiting to hear. Mirrors sim_control.html's own recordVoiceExchange
+// so either page answering contributes to the same shared record.
+function recordVoiceExchange(question, replyText) {
+  if (!testConfig || !question || !replyText) return;
+  const entry = {
+    id: PatientVoice.nextTranscriptId(testConfig.voiceTranscript),
+    atMin: (SimEngine.getSimNow(testConfig, Date.now()) - testConfig.startTimeMs) / 60000,
+    q: question, a: replyText
+  };
+  testConfig.voiceTranscript = PatientVoice.mergeTranscript(testConfig.voiceTranscript || [], [entry]);
+  sbPatch(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}`, {
+    voice_transcript: testConfig.voiceTranscript,
+    updated_at: new Date().toISOString()
+  }).catch(() => {});
+}
+
 // --- One question/answer exchange -----------------------------------------
 async function handleRealtimeUtterance(text, callId) {
   if (!text || callId !== _rtCallId) return;
@@ -3377,6 +3402,7 @@ async function handleRealtimeUtterance(text, callId) {
   statusEl.textContent = 'Patient replied:';
   replyEl.textContent = `“${reply}”`;
   replyEl.style.display = 'block';
+  recordVoiceExchange(text, reply);
   // Push the exchange to the assessor's Log. This mode answers entirely on
   // this device, so sim_control.html never sees the question — without this
   // it has no idea any conversation happened at all. Goes onto the SAME
@@ -3420,10 +3446,11 @@ async function generateRealtimePatientReply(question) {
   // authored as a 3am callout must have its patient believe it's 3am, which
   // matters most for exactly the orientation questions a GCS V4 patient gets
   // asked.
+  const history = testConfig.voiceTranscript || [];
   const userPrompt = PatientVoice.buildUserPrompt({
     scenario: scenarioMeta, patientName, gcsV, vitals: v,
     treatments: testConfig.treatments, fictionalDateTime: scenarioFictionalDateTime(), question,
-    orientationProfile: testConfig.orientationProfile
+    orientationProfile: testConfig.orientationProfile, history
   });
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -3436,7 +3463,7 @@ async function generateRealtimePatientReply(question) {
     // prompt actually asks for ("1-3 short sentences" is realistically
     // 60-80 tokens), so this shouldn't visibly truncate real replies, only
     // cut off the rare runaway completion faster.
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 120, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 120, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
   });
   if (!response.ok) throw new Error(`Anthropic call failed (${response.status})`);
   const data = await response.json();

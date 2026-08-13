@@ -201,6 +201,37 @@ patient device, vs spoken straight out), and `max_tokens` — 300 in
 `sim_control.html` vs 120 in `sim_patient.html`, a deliberate latency
 tradeoff documented at that call site.
 
+The prompt carries three things beyond the scenario basics, all built in
+that one file so both paths get them identically:
+- the scenario's authored `hx` block (onset/nature/aggravating/associated/
+  similar), so the patient answers "when did this start?" from the same
+  text the assessor is marking against instead of inventing it;
+- at GCS-Verbal 4 only, the **orientation profile** — see below;
+- **conversation history**, as real user/assistant turns rather than a text
+  blob, so the patient stays consistent with what they have already said
+  about anything the scenario never authored. Stored in
+  `sim_sessions.voice_transcript` (`{id, atMin, q, a}`, trimmed to the last
+  12), appended by whichever page answered, and merged rather than replaced
+  on poll (`PatientVoice.mergeTranscript`) because a page routinely holds a
+  just-recorded exchange the row has not caught up with. Only exchanges
+  that actually reached the model are recorded — the canned V2/V3 sounds
+  are not the patient holding a conversation. Ids come from
+  `PatientVoice.nextTranscriptId()`, not a bare `Date.now()`: two turns in
+  the same millisecond collide, and the merge dedupes by id, so one would
+  be silently dropped.
+
+The **orientation profile** (`scenario_sim_timelines.orientation_profile`,
+copied onto the session row at creation) fixes what a V4 patient is
+confused about — which of time/date/place/person/event they have wrong,
+and what they believe instead — generated once per scenario by a cheap
+Haiku call and cached under the same `source_updated_at` key as the
+trajectory, so every student meets the same confused patient and their
+orientation assessments are comparable. `sim_control.html`'s Med Hx tab
+shows it to the assessor while the patient is actually at V4. It exists
+because the per-turn calls are stateless: asked the same question twice,
+the patient invented a different wrong answer each time. History covers
+the open-ended rest; the profile pins the closed set absolutely.
+
 `sim_config_schema.js`'s two prompt defaults *reference*
 `window.PatientVoice` rather than carrying literals — a third copy would
 mean "reset to default" in the admin editor writing stale text into the DB

@@ -146,10 +146,80 @@
       + 'Current approximate condition: HR ' + v.HR + ', RR ' + v.RR + ', SpO2 ' + v.SpO2 + '%, GCS ' + gcsTotal + '/15 (Verbal component: ' + o.gcsV + '/5), pain ' + (v.pain != null ? v.pain + '/10' : 'unspecified') + '\n'
       + 'Treatments given so far: ' + (actions.length ? actions.join('; ') : 'none yet') + '\n'
       + orientation
+      + historyReminder(o.history)
       + '\n'
       + 'The crew just asked/said: "' + o.question + '"\n'
       + '\n'
       + 'Reply as the patient.';
+  }
+
+  // --- Conversation history ------------------------------------------------
+  // Each reply is otherwise an independent call with no memory, so the
+  // patient re-invented anything the scenario had not authored: ask twice
+  // whether their partner knows they are here, get two different answers.
+  // The V4 orientation profile fixes a small CLOSED set of facts; this
+  // covers the open-ended rest, which cannot be pre-authored because a crew
+  // can ask anything.
+  //
+  // Fed as genuine user/assistant turns rather than a "here is what you said
+  // earlier" text blob: the model's own previous replies, in its own voice,
+  // are the strongest consistency signal available, and it keeps the live
+  // context (vitals, treatments, the new question) in the LAST message so
+  // current state still wins over anything stale in the history.
+  var VOICE_HISTORY_TURNS = 12;
+
+  // Only exchanges that actually reached the model are recorded, so the
+  // history is exactly "the coherent conversation so far" — the canned V2
+  // sounds and V3 word fragments are not the patient holding a conversation
+  // and would just be noise in it.
+  function buildMessages(opts) {
+    var o = opts || {};
+    var history = (o.history || [])
+      .filter(function (h) { return h && h.q && h.a; })
+      .slice(-VOICE_HISTORY_TURNS);
+    var messages = [];
+    history.forEach(function (h) {
+      messages.push({ role: 'user', content: String(h.q) });
+      messages.push({ role: 'assistant', content: String(h.a) });
+    });
+    messages.push({ role: 'user', content: o.userPrompt });
+    return messages;
+  }
+
+  // Appended to the final user message only when there IS history, so a
+  // first question is worded exactly as it was before this existed.
+  function historyReminder(history) {
+    var n = (history || []).filter(function (h) { return h && h.q && h.a; }).length;
+    if (!n) return '';
+    return '\nYou have already said the earlier replies above, in this same conversation. Stay consistent with them — same facts, same details. Do not repeat them back unless the crew actually asks again, and do not treat being asked something new as a reason to revise what you already said.\n';
+  }
+
+  // Ids must be strictly increasing, and Date.now() alone is not: two
+  // exchanges inside the same millisecond (a typed question answered
+  // instantly, two fast realtime turns) collide, and since mergeTranscript
+  // dedupes by id one of them is silently dropped. Clamping to "later than
+  // whatever is already there" keeps them unique and still time-ordered.
+  function nextTranscriptId(existing) {
+    var last = 0;
+    (existing || []).forEach(function (h) { if (h && h.id > last) last = h.id; });
+    return Math.max(Date.now(), last + 1);
+  }
+
+  // Both pages hold a local mirror and append to it immediately (a realtime
+  // exchange is often followed by the next question well inside one poll
+  // interval, so waiting for the row to come back would lose it), while the
+  // persisted copy catches up in the background. Merging by id rather than
+  // taking whichever side looks newer means neither a local append nor
+  // another device's append can silently drop the other.
+  function mergeTranscript(local, remote) {
+    var byId = {};
+    (local || []).concat(remote || []).forEach(function (h) {
+      if (h && h.id != null) byId[h.id] = h;
+    });
+    return Object.keys(byId)
+      .map(function (k) { return byId[k]; })
+      .sort(function (a, b) { return a.id - b.id; })
+      .slice(-VOICE_HISTORY_TURNS);
   }
 
   window.PatientVoice = {
@@ -158,6 +228,10 @@
     tierFor: tierFor,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,
     HISTORY_FIELDS: HISTORY_FIELDS,
+    VOICE_HISTORY_TURNS: VOICE_HISTORY_TURNS,
+    buildMessages: buildMessages,
+    nextTranscriptId: nextTranscriptId,
+    mergeTranscript: mergeTranscript,
     buildSystemPrompt: buildSystemPrompt,
     buildUserPrompt: buildUserPrompt
   };

@@ -1210,7 +1210,8 @@ async function createSession() {
         totalPausedMs: 0,
         patientConnected: false,
         endedAt: null,
-        orientationProfile: timeline.orientation_profile || {}
+        orientationProfile: timeline.orientation_profile || {},
+        voiceTranscript: []
       });
       return;
     } catch (e) {
@@ -1322,7 +1323,8 @@ async function joinSession() {
       totalPausedMs: row.total_paused_ms || 0,
       patientConnected: !!row.patient_connected,
       endedAt: null,
-      orientationProfile: row.orientation_profile || {}
+      orientationProfile: row.orientation_profile || {},
+      voiceTranscript: row.voice_transcript || []
     });
     // Anything the patient device queued while no control tab was attached
     // is still sitting on the row unacked — drain it immediately rather than
@@ -1672,7 +1674,7 @@ function confirmResumeFromPrompt() {
 async function pollSession() {
   if (!sessionCode || !liveConfig) return;
   try {
-    const rows = await sbFetch(`sim_sessions?session_code=eq.${sessionCode}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,patient_connected,patient_actions,action_controls,student_queue,student_queue_ack_id,ended_at`, { method: 'GET' });
+    const rows = await sbFetch(`sim_sessions?session_code=eq.${sessionCode}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,patient_connected,patient_actions,action_controls,student_queue,student_queue_ack_id,voice_transcript,ended_at`, { method: 'GET' });
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1687,6 +1689,10 @@ function applySessionRow(row) {
   processStudentQueue(row); // fire-and-forget — auto-applies any new voice-queued items from sim_patient.html (see below)
   processDefibFollowUps(row); // fire-and-forget — re-projects the trajectory after a ROSC/cardioversion shock (see below)
   liveConfig.treatments = row.treatments || [];
+  // Merged, not replaced: this page may hold a just-recorded exchange the
+  // row has not caught up with yet, and the patient device may have added
+  // one of its own — see PatientVoice.mergeTranscript.
+  if (row.voice_transcript) liveConfig.voiceTranscript = PatientVoice.mergeTranscript(liveConfig.voiceTranscript || [], row.voice_transcript);
   // A real session's overrides object always carries at least a seeded
   // 'rhythm' key (see createSession) — it is never legitimately null/absent
   // once a session exists. A payload with overrides missing means the
@@ -3892,6 +3898,22 @@ let GCS_V3_WORDS = SimEngine.GCS_V3_WORDS;
 // (oriented). Told explicitly which tier applies so a V4 patient is
 // instructed to be disoriented/rambling rather than left to infer it from
 // a bare GCS number, which is an easy thing for the model to underweight.
+// Appends one exchange to the rolling transcript that gets fed back as
+// message history on later turns. Written to the local mirror FIRST and
+// persisted fire-and-forget: on the realtime path the next question often
+// arrives well inside one poll interval, so waiting for the row to come
+// back would lose the turn that just happened — and a failed write must
+// never delay a reply the crew is waiting to hear.
+function recordVoiceExchange(question, replyText) {
+  if (!liveConfig || !question || !replyText) return;
+  const entry = { id: PatientVoice.nextTranscriptId(liveConfig.voiceTranscript), atMin: (simNow() - liveConfig.startTimeMs) / 60000, q: question, a: replyText };
+  liveConfig.voiceTranscript = PatientVoice.mergeTranscript(liveConfig.voiceTranscript || [], [entry]);
+  sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: JSON.stringify({ voice_transcript: liveConfig.voiceTranscript, updated_at: new Date().toISOString() })
+  }).catch(() => {});
+}
+
 async function callPatientAI(question, v, gcsV) {
   let replyText = "...sorry, I didn't catch that.";
   const patientName = (currentScenario.patient_meta && currentScenario.patient_meta.name) || 'the patient';
@@ -3900,20 +3922,22 @@ async function callPatientAI(question, v, gcsV) {
     const systemPrompt = PatientVoice.buildSystemPrompt({
       promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV
     });
+    const history = (liveConfig && liveConfig.voiceTranscript) || [];
     const userPrompt = PatientVoice.buildUserPrompt({
       scenario: currentScenario, patientName, gcsV, vitals: v, treatments,
       fictionalDateTime: scenarioFictionalDateTime(), question,
-      orientationProfile: liveConfig && liveConfig.orientationProfile
+      orientationProfile: liveConfig && liveConfig.orientationProfile, history
     });
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
     });
     if (response.ok) {
       const data = await response.json();
       addAiCost('claude-haiku-4-5-20251001', data.usage);
       replyText = (data.content || []).map(b => b.text || '').join('').trim() || replyText;
+      recordVoiceExchange(question, replyText);
     }
   } catch (e) { /* fall through with the apologetic default reply */ }
   return replyText;
