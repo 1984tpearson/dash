@@ -2725,6 +2725,17 @@ function pickDifferent(pool, avoid) {
 }
 function maybeSaySpontaneousLine(v) {
   if (_voiceModalOpen || _isSpeaking) return; // never interrupt/overlap a real exchange or an already-playing line
+  // A live Realtime Voice call owns the patient's voice for its WHOLE life,
+  // not just the moments the two flags above happen to cover. Those two miss
+  // real windows in that mode: the entire connect gap (key fetch, mic
+  // permission, WS handshake — startRealtimeCall() to socket.onopen, before
+  // revealRealtimeModal() has set _voiceModalOpen), and the "Thinking…" gap
+  // between the student finishing a sentence and Deepgram's audio actually
+  // starting (_isSpeaking is only set once audio.play() resolves). A line
+  // starting in either window plays through the legacy Piper/Web Speech
+  // path while the call answers in Deepgram Aura-2 — two voices, two
+  // different voice types, talking over each other.
+  if (_rtActive) return;
   if (Date.now() - _lastSpontaneousAt < _nextSpontaneousDelayMs) return;
   const app = SimEngine.getAppearanceState(v);
   if (app.unresponsive) return;
@@ -3431,6 +3442,14 @@ function startRealtimeCall() {
   unlockRealtimeChime(); // same reason — see its own comment
   stopWakeListening();
   hideWakePanel();
+  // The other direction of the same overlap guarded in
+  // maybeSaySpontaneousLine(): an ambient line that started a moment before
+  // this tap is still playing through the legacy Piper/Web Speech path, and
+  // nothing else would cut it off — the realtime call would just start
+  // talking over the top of it in a different voice. Same helper the legacy
+  // path already uses on itself for exactly this ("talking over himself" —
+  // see stopAnyPatientAudio()'s own comment).
+  stopAnyPatientAudio();
   _rtCallId++;
   _rtActive = true;
   _rtMicClosed = false;
@@ -3769,7 +3788,15 @@ async function speakRealtimeReply(text, callId) {
     if (!res.ok) throw new Error(`Deepgram TTS call failed (${res.status})`);
     if (callId !== _rtCallId) return;
 
-    const audio = _rtAudioEl || new Audio();
+    // Adopted as _rtAudioEl rather than kept local when the unlock never ran:
+    // stopRealtimeAudio(), requestEndRealtimeCall() and the barge-in path all
+    // reach for _rtAudioEl by name, so a purely local element here would keep
+    // playing through every one of them — including this function's own catch
+    // below, which stops "the" audio and then speaks the same line again
+    // through the fallback voice, i.e. the reply audible twice at once in two
+    // different voices.
+    if (!_rtAudioEl) _rtAudioEl = new Audio();
+    const audio = _rtAudioEl;
     // Stream via MediaSource where possible — see playStreamedMp3() for why
     // this is the actual latency win over the old res.blob()-then-play
     // approach (audio starts on the FIRST chunk instead of the whole file).
