@@ -282,13 +282,14 @@ stops two keywords landing in one value in the first place ("anxious — close
 to tears" then resolves the way it reads). Verified across the full canonical
 keyword set of both parsers.
 
-**Nothing backfills, deliberately.** `trait` is written at generation time, so
-scenarios generated before it existed have no field and resolve to `plain` —
-no note, byte-identical output to the pre-trait prompt. That is a non-problem
-rather than a migration waiting to happen, because the assessor pickers work
-on any scenario regardless of what was authored: an old scenario can still be
-given a trait for the length of a session. Same story for `mood`, which most
-of the library also predates (11 of 94 at the time of writing).
+**Nothing backfills, deliberately** — see the Gotchas entry on existing
+scenarios not being precious, which is the general rule this is one instance
+of. `trait` is written at generation time, so scenarios generated before it
+existed have no field and resolve to `plain`: no note, byte-identical output
+to the pre-trait prompt. The assessor pickers work on any scenario regardless
+of what was authored, so an old scenario can still be given a trait for the
+length of a session. Same story for `mood`, which most of the library also
+predates (11 of 94 at the time of writing).
 
 **Both are assessor-editable live, via `sim_sessions.manner`.**
 `sim_control.html`'s **Manner** tab (its own tab in the Scenario Info panel —
@@ -894,6 +895,25 @@ editing.
   trusted users — worth revisiting if a wider cohort ever gets logins.
 
 ## Gotchas
+
+- **Existing scenarios are NOT precious — never bend code to fit them.**
+  Per Tim: the scenario library is disposable and cheaply regenerated. Do
+  not add backfills, migrations, compatibility shims, or defensive
+  fallbacks whose only purpose is to keep already-generated scenarios
+  working with a new feature, and do not water a design down because the
+  current library predates a field. Build the feature the way it should
+  be, and **tell Tim** which existing scenarios won't exercise it — he is
+  happy to delete old ones and generate fresh ones to test against.
+  This has come up repeatedly and the answer has been the same every time:
+  of 94 scenarios, most predate `patient_meta.age`, `mood`, `trait` and
+  `baseline_cognitive_status` entirely, and none has ever had a non-normal
+  cognitive baseline.
+  Two things this does NOT license. Fields still need a sane fallback when
+  absent, because a missing field must never throw or render as "undefined"
+  mid-session — that is ordinary robustness, not retrofitting. And it says
+  nothing about the *live* `sim_sessions` rows or DB columns, where an
+  in-progress session breaking is a real problem; it is about the authored
+  scenario content only.
 
 - **Keep a casual eye out for dead code — flag it, don't hunt for it.**
   Same posture as the AV-text entry below: while working in a file for
