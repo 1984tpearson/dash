@@ -458,6 +458,28 @@ which survives the substitution), and **nothing escalates in response to the
 crew** — the note says so explicitly to the model, on top of SAT only ever
 moving from the series.
 
+**Neither TTS engine has emotional prosody**, so an agitated reply is spoken
+in exactly the same calm voice as a normal one — Deepgram Aura-2 cannot sound
+angry and Web Speech certainly cannot. Two things compensate, and the first
+matters more than the second:
+- **Written form.** `SAT_NOTES` asks for short shouted bursts, repetition and
+  cut-offs rather than flowing sentences, because punctuation and sentence
+  length are what TTS engines actually take their delivery from. An angry line
+  written as one even sentence comes out sounding calm however hostile the
+  words are. (No capitals — some engines spell them out.)
+- **Speaking rate.** `SAT_SPEECH_RATE` (1.05/1.12/1.18 by level) is applied as
+  `utterance.rate` on the Web Speech path and `audio.playbackRate` on Realtime
+  Voice. It is set on **every** utterance, not only when agitated, because
+  `_rtAudioEl` is reused for the whole session and a rate left over from a +3
+  reply would otherwise keep a sedated patient talking fast. `preservesPitch`
+  is switched off whenever the rate is above 1 so pitch rises with speed —
+  that is the tightening you hear in an angry voice rather than just a faster
+  calm one. Past ~1.2 it stops sounding urgent and starts sounding comic.
+
+The same trick is available in reverse and is NOT used yet: a slower rate plus
+ellipsis-heavy phrasing would suit hypoactive delirium and depression, which
+currently sound exactly like everyone else.
+
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
 `mood` to carry it either. On the avatar it outranks mood at +2/+3 (its own
 `satAgitated`/`satSevere` mouth states, not the mood ones — mood `angry` is a

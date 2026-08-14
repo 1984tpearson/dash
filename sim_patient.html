@@ -634,6 +634,7 @@ async function loadSimConfig() {
     VOICE_MODE_LABELS = pick(field('voice', 'VOICE_MODE_LABELS'), VOICE_MODE_LABELS);
     VOICE_MODE_REPLY_LABELS = pick(field('voice', 'VOICE_MODE_REPLY_LABELS'), VOICE_MODE_REPLY_LABELS);
     YOUTH_VOICE_RATE_AT_ZERO = pick(field('voice', 'YOUTH_VOICE_RATE_AT_ZERO'), YOUTH_VOICE_RATE_AT_ZERO);
+    SAT_SPEECH_RATE = pick(field('voice', 'SAT_SPEECH_RATE'), SAT_SPEECH_RATE);
 
     // Realtime Voice reads the SAME admin-editable 'prompts' section
     // sim_control.html's callPatientAI() does — the default text below is a
@@ -2818,6 +2819,25 @@ function youthVoiceRate(years) {
   return ageRamp(years, YOUTH_VOICE_RATE_AT_ZERO, 1.0);
 }
 
+// Neither TTS engine here has any emotional prosody — Aura-2 cannot sound
+// angry and Web Speech certainly cannot — so an agitated patient reads as
+// perfectly calm no matter how hostile the words are. Speaking rate is the
+// one delivery knob both paths expose, and a wound-up person genuinely does
+// talk faster, so agitation nudges it up. Deliberately small: past about
+// 1.2x it stops sounding urgent and starts sounding comic.
+//
+// The written form of the reply does more of this work than the rate does —
+// see PatientVoice.SAT_NOTES, which asks for short shouted bursts rather
+// than flowing sentences, because punctuation is what TTS engines actually
+// take their delivery from. This is the second-order effect on top.
+let SAT_SPEECH_RATE = { 1: 1.05, 2: 1.12, 3: 1.18 };
+function satSpeechRate() {
+  if (!testConfig) return 1;
+  const sat = SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now()));
+  if (sat == null) return 1;
+  return SAT_SPEECH_RATE[Math.min(3, Math.round(sat))] || 1;
+}
+
 // A new reply always interrupts whatever's still playing from a previous
 // one — "cancel, don't queue", via speechSynthesis.cancel(). Also called by
 // startRealtimeCall(), so a realtime call taking the floor cuts off any
@@ -2846,6 +2866,7 @@ async function speakPatientReply(text, resumeIfConversing, isConversation) {
       if (voice) utter.voice = voice;
       utter.lang = 'en-AU';
       utter.pitch = youthVoiceRate(avatarBuild.ageYears); // paediatric approximation, via the API's native pitch control
+      utter.rate = satSpeechRate(); // 1 unless the scenario has scripted agitation
       utter.onstart = startTalkAnimation;
       utter.onend = () => { stopTalkAnimation(); resumeIfConversing(); };
       utter.onerror = () => { stopTalkAnimation(); resumeIfConversing(); };
@@ -3599,6 +3620,16 @@ async function speakRealtimeReply(text, callId) {
     // different voices.
     if (!_rtAudioEl) _rtAudioEl = new Audio();
     const audio = _rtAudioEl;
+    // Set every time rather than only when agitated: _rtAudioEl is reused for
+    // the whole session, so a rate left over from a +3 reply would keep the
+    // patient talking fast after they have been sedated.
+    // preservesPitch defaults to true (Chrome keeps the original pitch when
+    // you change speed); switching it off lets pitch rise with the rate,
+    // which is the tightening you actually hear in an angry voice rather than
+    // just a faster calm one.
+    const rtRate = satSpeechRate();
+    audio.playbackRate = rtRate;
+    audio.preservesPitch = rtRate === 1;
     // Stream via MediaSource where possible — see playStreamedMp3() for why
     // this is the actual latency win over the old res.blob()-then-play
     // approach (audio starts on the FIRST chunk instead of the whole file).

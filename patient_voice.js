@@ -336,7 +336,17 @@
     var level = Math.round(sat);
     if (level < 1) return '';
     var note = SAT_NOTES[Math.min(3, level)];
-    return '\n' + note + '\nThis is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.\n';
+    // Written form matters as much as content here, because the reply is
+    // spoken aloud by a TTS engine with no emotional prosody of its own —
+    // neither Deepgram Aura-2 nor Web Speech can sound angry. What they DO
+    // respond to is punctuation and sentence length, so an agitated line
+    // written as one flowing sentence comes out sounding perfectly calm no
+    // matter how hostile the words are. Short bursts and repetition are also
+    // simply how people actually talk when they are furious.
+    var delivery = level >= 2
+      ? 'Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. "Get off me. I said get off! I am not going anywhere with you." — not one long even sentence. Never write in capitals.'
+      : 'Write it clipped and impatient — short sentences, not long even ones.';
+    return '\n' + note + '\n' + delivery + '\nThis is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.\n';
   }
 
   // --- Mood ------------------------------------------------------------

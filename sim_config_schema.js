@@ -618,6 +618,12 @@
             label: 'Youth voice pitch/rate multiplier at newborn',
             help: 'Approximates a younger-sounding voice by pitching up the adult voice (real vocal pitch does run higher in young children). Ramps linearly down to 1.0/no-change by age 18 — same ageRamp() shape as the avatar’s age-scaling constants. Applied as utterance.pitch on the standard Web Speech voice; Realtime Voice’s Deepgram Aura-2 replies have no equivalent knob and are not pitch-shifted. Kept deliberately moderate — too high reads as "chipmunk".',
             default: 1.22
+          },
+          SAT_SPEECH_RATE: {
+            type: 'map_str_str',
+            label: 'Speaking-rate multiplier per SAT level',
+            help: 'Applied as utterance.rate on the Web Speech path and audio.playbackRate on Realtime Voice, keyed by agitation level 1-3. Neither TTS engine has emotional prosody, so speaking faster is the only delivery cue available; above about 1.2 it stops sounding urgent and starts sounding comic. Ignored entirely on scenarios with no agitation.',
+            default: { 1: 1.05, 2: 1.12, 3: 1.18 }
           }
         }
       },
