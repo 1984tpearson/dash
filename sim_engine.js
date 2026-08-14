@@ -1413,9 +1413,18 @@
     { mood: 'angry', keywords: ['angry', 'hostile', 'aggressive', 'combative', 'furious', 'irate'] },
     { mood: 'agitated', keywords: ['agitat', 'restless', 'irritable', 'uncooperative', 'on edge'] },
     { mood: 'tearful', keywords: ['tearful', 'crying', 'weeping', 'sobbing'] },
-    { mood: 'anxious', keywords: ['anxious', 'worried', 'frightened', 'scared', 'fearful', 'panick'] },
-    { mood: 'confused', keywords: ['confus', 'disorient', 'vague', 'bewildered'] }
+    { mood: 'anxious', keywords: ['anxious', 'worried', 'frightened', 'scared', 'fearful', 'panick'] }
   ];
+  // 'confused' deliberately is NOT a mood. Real confusion is GCS-Verbal 4
+  // ("confused conversation"), pinned by the cached orientation profile, and
+  // the patient voice reads it from there. As a mood it only ever selected an
+  // eyebrow shape, so it produced a bewildered face on a patient who answered
+  // every question correctly — a clinical state masquerading as an affect.
+  // sim_patient.html's updateAvatarFace() now derives that brow from gcsV
+  // instead, so the face agrees with the actual GCS.
+  // Fluctuating confusion with disorganised thinking is delirium, which is
+  // acute behavioural state — see CLAUDE.md; that belongs on the SAT-style
+  // time-varying axis with agitation, not here.
   function parseScenarioMood(text) {
     const s = String(text || '').toLowerCase().trim();
     if (!s) return 'calm';

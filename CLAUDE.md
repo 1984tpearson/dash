@@ -616,7 +616,20 @@ rendered as a literal middle-aged adult:
 prompt, e.g. "Anxious and tearful", "Agitated and uncooperative" — same
 free-text-plus-fuzzy-match pattern as `vitals.Rhythm`), fuzzy-mapped by
 `SimEngine.parseScenarioMood()` into one of calm/anxious/tearful/agitated/
-angry/confused, stored in `patientMood`. Re-resolved whenever the session
+angry, stored in `patientMood`. **`confused` is deliberately NOT a mood**
+(it used to be): real confusion is GCS-Verbal 4, pinned by the cached
+orientation profile and read by the voice from there, whereas as a mood it
+only ever selected an eyebrow shape — a bewildered face on a patient who
+answered every question correctly, i.e. a clinical state masquerading as an
+affect. `updateAvatarFace()` now derives that brow from `gcsV === 4` instead,
+so the face agrees with the actual GCS, and any real mood outranks it.
+Fluctuating confusion with disorganised thinking is *delirium* — acute
+behavioural state, belonging on the time-varying axis with agitation, not
+here. Mood also reaches the **voice** now (`PatientVoice.MOOD_NOTES`, passed
+in already-resolved by both pages): until that landed it drove the avatar
+only, so an angry patient answered in the same even tone as a calm one while
+the assessor's picker advertised "voice + avatar". The notes colour tone and
+rhythm only — the answer-scope rule still governs what is actually said. Re-resolved whenever the session
 row changes rather than only at connect — the assessor can now override it
 live (see the Manner pickers below), so `applyResolvedMood()` recomputes
 `patientMood` from `mannerOverride.mood || authoredMood` on every

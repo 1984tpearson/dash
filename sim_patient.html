@@ -1404,8 +1404,16 @@ function updateAvatarFace(v) {
   // neutral/relaxed expression regardless of mood ("if GCS 3, it doesn't
   // matter if they're angry"), and severe pain/physiological distress still
   // grimace/look-distressed through an angry or anxious mood, not around it.
+  // A genuinely confused patient is one at GCS-Verbal 4 ("confused
+  // conversation"), so the puzzled brow is derived from that rather than
+  // offered as a mood: mood only ever picked an eyebrow shape, so selecting
+  // "confused" there produced a bewildered face on a patient who still
+  // answered every question perfectly. Real confusion lives on the GCS and
+  // in the orientation profile; this just makes the face agree with it.
+  // Loses to any actual mood, which is a stronger signal than the default.
   const moodActive = !app.unresponsive && patientMood !== 'calm';
-  setEyebrows(moodActive ? MOOD_EYEBROW[patientMood] : null);
+  const confusedByGcs = !app.unresponsive && Math.round(v.gcsV || 0) === 4;
+  setEyebrows(moodActive ? MOOD_EYEBROW[patientMood] : (confusedByGcs ? MOOD_EYEBROW.confused : null));
   let mouthState;
   if (app.unresponsive) mouthState = 'slack';
   else if (app.pain >= 7) mouthState = 'grimace';
@@ -3497,7 +3505,7 @@ async function generateRealtimePatientReply(question) {
   const patientName = (scenarioMeta && scenarioMeta.patient_meta && scenarioMeta.patient_meta.name) || 'the patient';
   const systemPrompt = PatientVoice.buildSystemPrompt({
     promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
-    scenario: scenarioMeta, trait: mannerOverride.trait
+    scenario: scenarioMeta, trait: mannerOverride.trait, mood: patientMood
   });
   // The patient's own in-fiction clock, NOT this device's — a scenario
   // authored as a 3am callout must have its patient believe it's 3am, which

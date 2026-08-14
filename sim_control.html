@@ -814,8 +814,7 @@ const MOOD_PICKER_LABELS = {
   anxious: 'Anxious / frightened',
   tearful: 'Tearful',
   agitated: 'Agitated / restless',
-  angry: 'Angry / hostile',
-  confused: 'Confused / disoriented'
+  angry: 'Angry / hostile'
 };
 
 // 'plain'/'calm' are each parser's fall-through default and so are absent
@@ -871,7 +870,7 @@ function mannerPickerHtml() {
     + '<div class="info-block"><div class="info-label">Mood / affect <span class="manner-scope">voice + avatar</span>'
     + mannerOverrideTag(!!manner.mood) + '</div><div class="info-value">'
     + mannerSelectHtml('mood', moodPickerKeys(), MOOD_PICKER_LABELS, meta.mood, SimEngine.parseScenarioMood(meta.mood), manner.mood || '')
-    + '<div class="manner-note">Emotional state for this encounter — also drives the patient avatar\'s expression. Physiology still wins: an unresponsive patient shows a neutral face whatever is set here.</div>'
+    + '<div class="manner-note">Emotional state for this encounter — colours the patient\'s tone of voice and drives the avatar\'s expression. Physiology still wins: an unresponsive patient shows a neutral face whatever is set here. Genuine confusion is not here — that is GCS-Verbal 4, and the face follows it automatically.</div>'
     + '</div></div>';
 }
 
@@ -907,6 +906,10 @@ function setMannerOverride(kind, value) {
 function resolvedTrait() {
   const manner = (liveConfig && liveConfig.manner) || {};
   return manner.trait || ((currentScenario && currentScenario.patient_meta) || {}).trait;
+}
+function resolvedMood() {
+  const manner = (liveConfig && liveConfig.manner) || {};
+  return SimEngine.parseScenarioMood(manner.mood || ((currentScenario && currentScenario.patient_meta) || {}).mood);
 }
 
 function infoBlock(label, value) {
@@ -4097,7 +4100,7 @@ async function callPatientAI(question, v, gcsV) {
     const apiKey = await getAnthropicKey();
     const systemPrompt = PatientVoice.buildSystemPrompt({
       promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
-      scenario: currentScenario, trait: resolvedTrait()
+      scenario: currentScenario, trait: resolvedTrait(), mood: resolvedMood()
     });
     const history = (liveConfig && liveConfig.voiceTranscript) || [];
     const userPrompt = PatientVoice.buildUserPrompt({

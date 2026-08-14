@@ -122,6 +122,29 @@
     return note ? ('\nHow this patient talks: ' + note + ' This colours their wording and manner only — it never changes the rule above about answering just what was asked.\n') : '';
   }
 
+  // --- Mood ------------------------------------------------------------
+  // Emotional affect for THIS encounter, resolved by SimEngine.parseScenarioMood
+  // and passed in already-resolved (both host pages have it to hand). Until
+  // now mood reached the avatar's face but never the patient's speech, so an
+  // angry patient answered in the same even tone as a calm one — and the
+  // assessor's mood picker, which advertises "voice + avatar", only changed
+  // the eyebrows.
+  //
+  // Deliberately thinner than the trait notes: affect changes delivery, and
+  // the model is already good at that once told the state. Nothing here
+  // licenses volunteering more (or less) clinical information — the scope
+  // rule above still governs WHAT is said, mood only colours HOW.
+  var MOOD_NOTES = {
+    anxious: 'frightened and on edge — quick, uneven sentences, asking whether they are going to be alright',
+    tearful: 'crying, or close to it — their voice keeps breaking and they have to stop and restart',
+    agitated: 'restless and irritable — snappy, impatient, does not want to be crowded or fussed over',
+    angry: 'angry and hostile toward the crew — short, sharp, openly annoyed at being questioned'
+  };
+  function moodNoteFor(moodKey) {
+    var note = MOOD_NOTES[moodKey];
+    return note ? ('\nRight now this patient is ' + note + '. Let that colour the tone and rhythm of what they say, not how much they disclose.\n') : '';
+  }
+
   // The confusion note is appended ONLY at V4, which is what makes it a
   // tier marker rather than a general "seems a bit off" instruction.
   //
@@ -138,11 +161,20 @@
     var note = tierFor(o.gcsV) === 'confused' ? ('\n' + noteText) : '';
     var meta = (o.scenario && o.scenario.patient_meta) || {};
     var traitNote = traitNoteFor(parseTrait(o.trait != null ? o.trait : meta.trait), o.gcsV);
+    var moodNote = moodNoteFor(o.mood);
     var out = promptText
       .replace(/\{\{patientName\}\}/g, o.patientName || 'the patient')
       .replace(/\{\{confusedNote\}\}/g, note);
-    if (out.indexOf('{{traitNote}}') !== -1) return out.replace(/\{\{traitNote\}\}/g, traitNote);
-    return traitNote ? (out + '\n' + traitNote) : out;
+    // Same token-with-fallback-append handling as {{traitNote}}, and for the
+    // same reason: both tokens postdate prompts that may already be saved in
+    // sim_config, and a stale override must degrade to "note at the end"
+    // rather than silently dropping the note altogether.
+    var extras = traitNote + moodNote;
+    if (out.indexOf('{{traitNote}}') !== -1) {
+      out = out.replace(/\{\{traitNote\}\}/g, traitNote);
+      return moodNote ? (out + '\n' + moodNote) : out;
+    }
+    return extras ? (out + '\n' + extras) : out;
   }
 
   // The patient's own account of what has been happening — the authored
@@ -316,6 +348,7 @@
     DEFAULT_CONFUSED_NOTE: DEFAULT_CONFUSED_NOTE,
     tierFor: tierFor,
     TRAIT_MAP: TRAIT_MAP,
+    MOOD_NOTES: MOOD_NOTES,
     TRAIT_NOTES: TRAIT_NOTES,
     parseTrait: parseTrait,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,
