@@ -122,6 +122,67 @@
     return note ? ('\nHow this patient talks: ' + note + ' This colours their wording and manner only — it never changes the rule above about answering just what was asked.\n') : '';
   }
 
+  // --- Baseline cognition ---------------------------------------------------
+  // patient_meta.baseline_cognitive_status is the patient's NORMAL mental state
+  // when well — dementia, intellectual disability, acquired brain injury. The
+  // generator has authored it on every scenario since long before this file
+  // existed, defaulting to "Normal baseline cognition", and until now nothing
+  // read it at all.
+  //
+  // It is deliberately a DIFFERENT axis from everything else here, on the one
+  // dimension that matters clinically: it does not move. Trait is stable but
+  // is personality; GCS-V4 confusion and (later) delirium are acute and can
+  // change during the scenario. This is the patient's floor. The whole reason
+  // the field exists is so a crew is not marked as missing an acute
+  // deterioration that is actually how this person always is — and so a
+  // student has to work out which of the two they are looking at.
+  //
+  // It therefore COMPOSES with the V4 confusion note rather than replacing it:
+  // an elderly patient with baseline dementia who is now acutely confused on
+  // top of it is both, and is the most common presentation in this group.
+  // Nothing here is suppressed by GCS tier (unlike trait) for that reason.
+  var COGNITIVE_NOTES = {
+    dementia: "This patient has dementia. That is their BASELINE, not something new today: they may repeat themselves or ask the same question again, lose the thread of a longer question, reach for words, or fill a gap with something plausible but wrong rather than saying they do not know. They are not distressed by any of it — this is ordinary for them. Keep it consistent and fairly mild unless the description below says otherwise, and never announce or explain the diagnosis; they simply talk this way.",
+    intellectual: "This patient has an intellectual disability. That is their BASELINE, not an acute change: they speak plainly and concretely, may take a question literally, need things asked simply and one at a time, and may look to a carer or family member for an answer. They can absolutely describe how they feel when asked in plain words. Never portray this as confusion or as being unwell, and never have them announce the diagnosis.",
+    braininjury: "This patient has an acquired brain injury. That is their BASELINE: they may be slow to answer, lose track mid-sentence, repeat themselves, or be unexpectedly blunt or disinhibited, while still knowing who and where they are. Never portray this as an acute deterioration, and never have them explain the diagnosis.",
+    other: "The line below describes this patient's NORMAL baseline mental state, not a change today. Let it shape how they speak, keep it consistent, and never have them announce or explain it."
+  };
+
+  // Checked BEFORE the keyword map, because the overwhelmingly common value is
+  // the generator's own default and it must produce no note at all — an
+  // ordinary patient has to render byte-identical to a prompt with no field.
+  var COGNITIVE_NORMAL = ['normal baseline', 'normal cognition', 'no cognitive', 'nil cognitive', 'cognitively intact', 'not applicable', 'unremarkable', 'none'];
+  var COGNITIVE_MAP = [
+    { kind: 'dementia', keywords: ['dementia', 'alzheimer', 'cognitive decline', 'cognitive impairment', 'memory loss', 'memory problems'] },
+    { kind: 'intellectual', keywords: ['intellectual disability', 'intellectually disabled', 'developmental delay', 'down syndrome', 'learning disability', 'global developmental'] },
+    { kind: 'braininjury', keywords: ['brain injury', 'acquired brain', 'traumatic brain', ' abi', ' tbi', 'post-stroke cognitive'] }
+  ];
+  // Returns null for a normal baseline (the common case) so callers can treat
+  // "no cognitive baseline to mention" and "field absent" identically.
+  function parseCognitiveBaseline(text) {
+    var raw = String(text || '').trim();
+    if (!raw) return null;
+    var s = raw.toLowerCase();
+    if (COGNITIVE_NORMAL.some(function (k) { return s.indexOf(k) !== -1; })) return null;
+    for (var i = 0; i < COGNITIVE_MAP.length; i++) {
+      if (COGNITIVE_MAP[i].keywords.some(function (k) { return s.indexOf(k) !== -1; })) {
+        return { kind: COGNITIVE_MAP[i].kind, text: raw };
+      }
+    }
+    // Authored, non-normal, but unrecognised — still worth sending. The
+    // authored sentence is the useful part; the generic note just frames it.
+    return { kind: 'other', text: raw };
+  }
+
+  // The authored sentence goes over verbatim alongside the note: the specifics
+  // ("usually oriented to person only, lives with family support") are what
+  // make the baseline assessable, and no generic note can carry them.
+  function cognitiveNoteFor(baseline) {
+    if (!baseline) return '';
+    return '\nTheir baseline (how they always are, NOT a change today): ' + baseline.text
+      + '\n' + COGNITIVE_NOTES[baseline.kind] + '\n';
+  }
+
   // --- Mood ------------------------------------------------------------
   // Emotional affect for THIS encounter, resolved by SimEngine.parseScenarioMood
   // and passed in already-resolved (both host pages have it to hand). Until
@@ -162,6 +223,8 @@
     var meta = (o.scenario && o.scenario.patient_meta) || {};
     var traitNote = traitNoteFor(parseTrait(o.trait != null ? o.trait : meta.trait), o.gcsV);
     var moodNote = moodNoteFor(o.mood);
+    var cognitiveNote = cognitiveNoteFor(parseCognitiveBaseline(
+      o.cognitiveBaseline != null ? o.cognitiveBaseline : meta.baseline_cognitive_status));
     var out = promptText
       .replace(/\{\{patientName\}\}/g, o.patientName || 'the patient')
       .replace(/\{\{confusedNote\}\}/g, note);
@@ -169,10 +232,11 @@
     // same reason: both tokens postdate prompts that may already be saved in
     // sim_config, and a stale override must degrade to "note at the end"
     // rather than silently dropping the note altogether.
-    var extras = traitNote + moodNote;
+    var extras = traitNote + moodNote + cognitiveNote;
     if (out.indexOf('{{traitNote}}') !== -1) {
       out = out.replace(/\{\{traitNote\}\}/g, traitNote);
-      return moodNote ? (out + '\n' + moodNote) : out;
+      var rest = moodNote + cognitiveNote;
+      return rest ? (out + '\n' + rest) : out;
     }
     return extras ? (out + '\n' + extras) : out;
   }
@@ -349,6 +413,8 @@
     tierFor: tierFor,
     TRAIT_MAP: TRAIT_MAP,
     MOOD_NOTES: MOOD_NOTES,
+    COGNITIVE_NOTES: COGNITIVE_NOTES,
+    parseCognitiveBaseline: parseCognitiveBaseline,
     TRAIT_NOTES: TRAIT_NOTES,
     parseTrait: parseTrait,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,

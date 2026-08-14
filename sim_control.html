@@ -871,6 +871,24 @@ function mannerPickerHtml() {
     + mannerOverrideTag(!!manner.mood) + '</div><div class="info-value">'
     + mannerSelectHtml('mood', moodPickerKeys(), MOOD_PICKER_LABELS, meta.mood, SimEngine.parseScenarioMood(meta.mood), manner.mood || '')
     + '<div class="manner-note">Emotional state for this encounter — colours the patient\'s tone of voice and drives the avatar\'s expression. Physiology still wins: an unresponsive patient shows a neutral face whatever is set here. Genuine confusion is not here — that is GCS-Verbal 4, and the face follows it automatically.</div>'
+    + '</div></div>'
+    + cognitiveBaselineHtml();
+}
+
+// Read-only, unlike the two pickers above: this is the patient's permanent
+// floor rather than something to dial for this session. Shown here because it
+// is the single thing that stops a crew being marked down for missing an
+// "acute" confusion that is actually how this person always is — and because
+// the assessor needs it to judge whether the student correctly worked out
+// which of the two they were looking at. Hidden entirely for a normal
+// baseline, which is the overwhelming majority of scenarios.
+function cognitiveBaselineHtml() {
+  const meta = (currentScenario && currentScenario.patient_meta) || {};
+  const baseline = PatientVoice.parseCognitiveBaseline(meta.baseline_cognitive_status);
+  if (!baseline) return '';
+  return '<div class="info-block"><div class="info-label">Baseline cognition <span class="manner-scope">not a change today</span></div>'
+    + '<div class="info-value">' + escapeHtml(baseline.text)
+    + '<div class="manner-note">This is how the patient always is. Anything beyond it is the acute change the crew should be identifying.</div>'
     + '</div></div>';
 }
 

@@ -341,6 +341,34 @@ Three things worth knowing:
   `liveConfig`, and rendering first made a *resumed* session display "Scenario
   default" while the patient device was actually running the override.
 
+**`patient_meta.baseline_cognitive_status` — the patient's permanent floor,
+and a third distinct axis.** Dementia, intellectual disability, acquired brain
+injury: how this person always is, as opposed to trait (personality) or mood
+(today's affect) or GCS-V4 confusion (acute). Authored by `generator.html`
+since long before `patient_voice.js` existed and, until now, **read by
+nothing**. Wired into the voice via `PatientVoice.parseCognitiveBaseline()`
+(returns `null` for a normal baseline, so an ordinary patient renders
+byte-identical to a prompt without the field) plus `COGNITIVE_NOTES` per kind,
+with the **authored sentence passed verbatim** alongside the note — the
+specifics ("usually oriented to person only, lives with family support") are
+what make a baseline assessable and no generic note can carry them. Unlike
+trait it is NOT suppressed by GCS tier, because the point is that it
+*composes* with the V4 confusion note: baseline dementia plus acute delirium
+on top is the commonest presentation in this whole group, and the assessment
+being trained is telling those two apart. Shown read-only on the Manner tab
+(read-only because it is a floor, not something to dial for a session), and
+hidden entirely for a normal baseline.
+
+A trap worth knowing if this ever looks broken: the generator instruction used
+to say to deviate from "Normal baseline cognition" only when
+`medical_conditions` already listed a qualifying condition, but nothing ever
+told it to *add* one — so across 94 scenarios, **zero** had dementia,
+cognitive impairment, ID or brain injury in their condition list, and the
+field had never once been non-normal. Wiring alone would therefore have
+changed nothing visible. The instruction now asks for baseline impairment at
+roughly its real prevalence in older patients, and requires
+`medical_conditions` and this field to agree.
+
 **Acute behavioural state is NOT this field, and deliberately doesn't exist
 yet.** Intoxication, delirium, agitation/aggression, acute psychosis and
 depression are clinical findings, not personality: they change management
