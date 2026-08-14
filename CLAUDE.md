@@ -261,8 +261,8 @@ Substituted via a `{{traitNote}}` token, but with a **fallback append when the
 token is absent** — unlike `{{confusedNote}}` this token postdates prompts that
 may already be saved in `sim_config`, and a stale override would otherwise drop
 traits silently. Unset/older scenarios produce byte-identical output to the
-pre-trait prompt. `sim_control.html`'s History tab shows trait and mood to the
-assessor under "Manner", so a scripted poor historian isn't marked as the
+pre-trait prompt. `sim_control.html` shows trait and mood to the assessor on
+their own **Manner** tab, so a scripted poor historian isn't marked as the
 student failing to elicit.
 
 **Both fields are authored as "one keyword — then your own clause", and that
@@ -290,10 +290,23 @@ on any scenario regardless of what was authored: an old scenario can still be
 given a trait for the length of a session. Same story for `mood`, which most
 of the library also predates (11 of 94 at the time of writing).
 
-**Both are assessor-editable live, via `sim_sessions.manner`.** The Manner
-block on `sim_control.html`'s History tab is two pickers (`mannerPickerHtml()`
-→ `setMannerOverride()`) writing `{trait, mood}` as **canonical keys** to a
-`manner` jsonb column. Canonical keys, not free text, because both parsers
+**Both are assessor-editable live, via `sim_sessions.manner`.**
+`sim_control.html`'s **Manner** tab (its own tab in the Scenario Info panel —
+these are the only live controls in an otherwise read-only reference panel,
+and they were easy to miss and slow to reach as a block buried under
+History's presenting-complaint rows) is two pickers (`mannerPickerHtml()` →
+`setMannerOverride()`) writing `{trait, mood}` as **canonical keys** to a
+`manner` jsonb column. Adding a tab means adding a button AND an entry to
+`INFO_TAB_ORDER` in the same position — `switchInfoTab()` matches buttons to
+tab names **by index**, so a button added without the array entry silently
+activates the wrong panel. Each picker's default option shows the *resolved*
+label, with the authored sentence rendered underneath rather than inside the
+option: a `<select>` clips option text at the control's width with no
+wrapping, so the authored free text pushed the resolved key out of view — the
+one part the assessor most needs. An "overridden" tag appears next to any
+field currently carrying an override, since with the authored value available
+as an option there is otherwise no way to tell "the scenario asked for this"
+from "I changed it earlier". Canonical keys, not free text, because both parsers
 collapse free text to those keys anyway — offering a text box would mean the
 assessor types something and silently gets a different one. Every key in both
 sets round-trips through its own parser unchanged (verified), which is what

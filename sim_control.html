@@ -79,6 +79,10 @@ body.embed #topbar { display: none; }
 .info-value { font-size: 12px; color: #1e2a36; line-height: 1.4; white-space: pre-wrap; }
 .manner-select { font-family: 'Courier New', monospace; font-size: 12px; color: #1e2a36; background: #fff; border: 1px solid #d7dee6; border-radius: 6px; padding: 8px 6px; min-height: 40px; width: 100%; max-width: 100%; }
 .manner-scope { font-size: 9px; font-weight: 400; color: #6b8299; letter-spacing: 0; text-transform: none; margin-left: 4px; }
+.manner-tag { font-size: 9px; font-weight: 700; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 4px; padding: 1px 4px; letter-spacing: 0; text-transform: none; margin-left: 4px; }
+.manner-hint { font-size: 11px; color: #6b8299; line-height: 1.45; margin: 0 0 10px; }
+.manner-note { font-size: 10px; color: #6b8299; line-height: 1.45; margin-top: 5px; white-space: normal; }
+.manner-authored { font-size: 10px; color: #8aa0b4; line-height: 1.45; margin-top: 4px; white-space: normal; font-style: italic; }
 .info-tabs { display: flex; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid #d7dee6; flex-wrap: wrap; }
 .info-tab-btn { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #6b8299; background: #f3f6fa; border: 1px solid #d7dee6; border-bottom: none; border-radius: 6px 6px 0 0; padding: 10px 10px; cursor: pointer; min-height: 40px; }
 .info-tab-btn.active { color: #0369a1; background: #fff; border-color: #0369a1; }
@@ -313,6 +317,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
           <div class="info-tabs" id="info-tabs">
             <button class="info-tab-btn active" onclick="switchInfoTab('dispatch')">Dispatch</button>
             <button class="info-tab-btn" onclick="switchInfoTab('history')">History</button>
+            <button class="info-tab-btn" onclick="switchInfoTab('manner')">Manner</button>
             <button class="info-tab-btn" onclick="switchInfoTab('medhx')">Medical Hx</button>
             <button class="info-tab-btn" onclick="switchInfoTab('appearance')">Appearance</button>
             <button class="info-tab-btn" onclick="switchInfoTab('survey')">Survey</button>
@@ -333,6 +338,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
             </div>
           </div>
           <div class="info-tab-content" id="info-tab-history"></div>
+          <div class="info-tab-content" id="info-tab-manner"></div>
           <div class="info-tab-content" id="info-tab-medhx"></div>
           <div class="info-tab-content" id="info-tab-appearance"></div>
           <div class="info-tab-content" id="info-tab-survey"></div>
@@ -728,7 +734,7 @@ function escapeHtml(s) {
 }
 
 let activeInfoTab = 'dispatch';
-let INFO_TAB_ORDER = ['dispatch', 'history', 'medhx', 'appearance', 'survey', 'clinical'];
+let INFO_TAB_ORDER = ['dispatch', 'history', 'manner', 'medhx', 'appearance', 'survey', 'clinical'];
 
 function switchInfoTab(tab) {
   activeInfoTab = tab;
@@ -818,24 +824,51 @@ function moodPickerKeys() {
 // and get back to it after experimenting. Selecting it clears the override
 // rather than writing the resolved key, so a later scenario edit still flows
 // through.
+// The default option carries the RESOLVED label rather than the authored free
+// text: an authored value is a whole sentence, and a <select> clips its option
+// text at the control's width with no wrapping, so putting it in the option
+// truncated away the one part the assessor most needs to see (which canonical
+// state the scenario actually resolves to). The authored sentence is rendered
+// underneath instead, where it can wrap.
 function mannerSelectHtml(kind, keys, labels, authoredText, parsed, current) {
-  const opts = ['<option value="">Scenario default — ' + escapeHtml(authoredText || 'not specified')
-    + ' (' + escapeHtml(labels[parsed] || parsed) + ')</option>']
+  const opts = ['<option value="">Scenario default \u2014 ' + escapeHtml(labels[parsed] || parsed) + '</option>']
     .concat(keys.map(k => '<option value="' + escapeHtml(k) + '"' + (current === k ? ' selected' : '') + '>'
       + escapeHtml(labels[k] || k) + '</option>'));
   return '<select class="manner-select" id="manner-select-' + kind + '" onchange="setMannerOverride(\'' + kind + '\', this.value)">'
-    + opts.join('') + '</select>';
+    + opts.join('') + '</select>'
+    + '<div class="manner-authored">Scenario: ' + escapeHtml(authoredText || 'not specified') + '</div>';
+}
+
+// The "(overridden)" marker matters more than it looks: with the authored
+// value sitting in the first option, a glance at the tab otherwise cannot
+// distinguish "the scenario asked for this" from "I changed it earlier in
+// this session", and the assessor debriefing the crew needs to know which.
+function mannerOverrideTag(isSet) {
+  return isSet ? ' <span class="manner-tag">overridden</span>' : '';
 }
 
 function mannerPickerHtml() {
   const meta = (currentScenario && currentScenario.patient_meta) || {};
   const manner = (liveConfig && liveConfig.manner) || {};
-  return '<div class="info-block"><div class="info-label">Communication style <span class="manner-scope">voice only</span></div><div class="info-value">'
+  return infoSubheading('Patient Manner')
+    + '<div class="manner-hint">How this patient comes across to the crew. Both are authored per scenario; changing one here applies immediately, for this session only, and never edits the scenario itself.</div>'
+    + '<div class="info-block"><div class="info-label">Communication style <span class="manner-scope">voice only</span>'
+    + mannerOverrideTag(!!manner.trait) + '</div><div class="info-value">'
     + mannerSelectHtml('trait', traitPickerKeys(), TRAIT_PICKER_LABELS, meta.trait, PatientVoice.parseTrait(meta.trait), manner.trait || '')
+    + '<div class="manner-note">Changes how they speak — how much they volunteer, how precisely they recall, whether they play things down. A scripted vague historian is meant to be hard work; that is the scenario, not the crew.</div>'
     + '</div></div>'
-    + '<div class="info-block"><div class="info-label">Mood / affect <span class="manner-scope">voice + avatar</span></div><div class="info-value">'
+    + '<div class="info-block"><div class="info-label">Mood / affect <span class="manner-scope">voice + avatar</span>'
+    + mannerOverrideTag(!!manner.mood) + '</div><div class="info-value">'
     + mannerSelectHtml('mood', moodPickerKeys(), MOOD_PICKER_LABELS, meta.mood, SimEngine.parseScenarioMood(meta.mood), manner.mood || '')
+    + '<div class="manner-note">Emotional state for this encounter — also drives the patient avatar\'s expression. Physiology still wins: an unresponsive patient shows a neutral face whatever is set here.</div>'
     + '</div></div>';
+}
+
+// Re-rendered on change rather than left alone, so the "overridden" markers
+// track the current state. Cheap (two selects) and keeps the tab honest.
+function renderMannerTab() {
+  const el = document.getElementById('info-tab-manner');
+  if (el) el.innerHTML = mannerPickerHtml();
 }
 
 // Writes through to the session row so sim_patient.html picks it up on its
@@ -850,6 +883,7 @@ function setMannerOverride(kind, value) {
   const manner = Object.assign({}, liveConfig.manner || {});
   if (value) manner[kind] = value; else delete manner[kind];
   liveConfig.manner = manner;
+  renderMannerTab();
   sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
     method: 'PATCH', prefer: 'return=minimal',
     body: JSON.stringify({ manner, updated_at: new Date().toISOString() })
@@ -915,17 +949,17 @@ function renderScenarioInfoPanel() {
     infoBlock('Aggravating / Relieving', hx.aggreliev) +
     infoBlock('Associated Symptoms', hx.assoc) +
     infoBlock('Similar Episodes', hx.similar) +
-    // Shown so the assessor can tell a scripted communication style apart
-    // from a student failing to elicit: a "vague, poor historian" patient is
-    // SUPPOSED to be hard to get a timeline out of, and marking that against
-    // the crew would be wrong. Editable because the authored value is a
-    // one-shot guess by the scenario generator and the assessor is the one
-    // who can see whether it's working for this crew.
-    infoSubheading('Manner') +
-    mannerPickerHtml() +
     infoSubheading('Social / Environment') +
     infoBlock('Exposure', s.ps_exposure) +
     infoBlock('Social', s.social);
+
+  // Its own tab rather than a block on History: these are the only live
+  // CONTROLS in an otherwise read-only reference panel, and burying two
+  // dropdowns under five rows of presenting-complaint text made them easy to
+  // miss and slow to reach mid-scenario. Being shown at all matters for
+  // marking fairness — a scripted vague historian must not read as the crew
+  // failing to elicit — so it should not need scrolling to find.
+  renderMannerTab();
 
   document.getElementById('info-tab-medhx').innerHTML =
     infoSubheading('Past Medical History') +
