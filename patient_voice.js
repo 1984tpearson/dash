@@ -301,6 +301,44 @@
     return lines.join('\n') + '\n';
   }
 
+  // --- Agitation (SAT +1..+3) -----------------------------------------------
+  // Passed in as a resolved number by both host pages (SimEngine.getSatAt),
+  // and null on almost every scenario. Unlike trait/mood/behavioural state
+  // this one is read from the LIVE series at prompt-build time, so it changes
+  // during a scenario as the patient escalates or is sedated.
+  //
+  // This is occupational violence and aggression training. Paramedics are
+  // sworn at, threatened and propositioned in the course of the job, and a
+  // sanitised version of it teaches nothing — a student who has only ever
+  // practised on a polite patient is the one who freezes. So the notes are
+  // written to be genuinely confronting at the top of the scale rather than
+  // gestured at.
+  //
+  // Two limits are deliberate rather than accidental. Discriminatory abuse is
+  // described in register rather than written out as slurs — the training
+  // value is in the crew's response to being abused, which survives the
+  // substitution intact. And nothing here escalates in response to the crew:
+  // SAT moves from the series only (assessor or clinical change), never from
+  // the model's opinion of how it was spoken to.
+  var SAT_NOTES = {
+    1: "This patient is restless and will not settle (SAT +1). They fidget, shift about, want to get up, and answer in a clipped, impatient way. They are still cooperative and still answering, just visibly wound up and hard to keep still for anything.",
+    2: "This patient is agitated and hostile (SAT +2). They are loud, they swear freely, and they are openly resistant — objecting to being touched or examined, telling the crew to leave them alone, calling them names, refusing to answer questions properly and demanding to know who called an ambulance. Real profanity and real insults directed at the crew, not implied ones. They are not yet threatening violence. Answers to clinical questions come grudgingly, half-answered, or not at all.",
+    3: "This patient is severely agitated and out of control (SAT +3). Continuous shouting, sustained abuse and explicit threats of violence toward the crew — telling them what they will do to them, that they will find them, that they should get away before something happens. They will not be redirected, will not tolerate being approached or touched, and do not answer clinical questions at all; anything they say is refusal, abuse or threat. If it fits the person, this can include crude sexual remarks aimed at a crew member. Do not soften this into a merely grumpy patient: the point of the scenario is a crew deciding they are not safe and acting on it. What you must NOT write is slurs about race, religion, sexuality, disability or gender identity — if the person would be abusive in that register, convey it as the crew being abused in those terms without producing the words themselves."
+  };
+
+  // Deliberately excludes distress. Pain, fear and breathlessness are
+  // getAppearanceState().distressLevel and are already handled by the main
+  // prompt's "let their condition colour HOW they answer" line — a STEMI
+  // patient wound up by chest pain is NOT agitated in this sense, and letting
+  // the two blur fires all of the above on every painful presentation.
+  function satNoteFor(sat) {
+    if (sat == null) return '';
+    var level = Math.round(sat);
+    if (level < 1) return '';
+    var note = SAT_NOTES[Math.min(3, level)];
+    return '\n' + note + '\nThis is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.\n';
+  }
+
   // --- Mood ------------------------------------------------------------
   // Emotional affect for THIS encounter, resolved by SimEngine.parseScenarioMood
   // and passed in already-resolved (both host pages have it to hand). Until
@@ -345,6 +383,9 @@
       o.cognitiveBaseline != null ? o.cognitiveBaseline : meta.baseline_cognitive_status));
     var behaviouralNote = behaviouralNoteFor(parseBehaviouralState(
       o.behaviouralState != null ? o.behaviouralState : meta.behavioural_state));
+    // Last of the notes, so it reads as the thing happening on top of
+    // everything else — and because at +2/+3 it dominates the encounter.
+    var satNote = satNoteFor(o.sat);
     var out = promptText
       .replace(/\{\{patientName\}\}/g, o.patientName || 'the patient')
       .replace(/\{\{confusedNote\}\}/g, note);
@@ -355,10 +396,10 @@
     // Cognitive baseline before behavioural state, deliberately: the floor
     // reads first, then the acute change on top of it, which is the order the
     // assessment itself is made in.
-    var extras = traitNote + moodNote + cognitiveNote + behaviouralNote;
+    var extras = traitNote + moodNote + cognitiveNote + behaviouralNote + satNote;
     if (out.indexOf('{{traitNote}}') !== -1) {
       out = out.replace(/\{\{traitNote\}\}/g, traitNote);
-      var rest = moodNote + cognitiveNote + behaviouralNote;
+      var rest = moodNote + cognitiveNote + behaviouralNote + satNote;
       return rest ? (out + '\n' + rest) : out;
     }
     return extras ? (out + '\n' + extras) : out;
@@ -540,6 +581,7 @@
     parseCognitiveBaseline: parseCognitiveBaseline,
     BEHAVIOURAL_NOTES: BEHAVIOURAL_NOTES,
     parseBehaviouralState: parseBehaviouralState,
+    SAT_NOTES: SAT_NOTES,
     TRAIT_NOTES: TRAIT_NOTES,
     parseTrait: parseTrait,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,

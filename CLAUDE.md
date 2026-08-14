@@ -401,18 +401,67 @@ realistic and better assessments. An unqualified `delirium` gets the neutral
 note, never the hyperactive one. Agitation is a separate opt-in axis (below);
 nothing in `patient_voice.js` may imply it.
 
-**Agitation (SAT) does not exist yet — this is the one still deferred.**
-It is not a tag like the states above but a *scale*, and it is the output
-several of them can produce rather than a peer of them: delirium, stimulant
-intoxication and withdrawal can each present with or without it. A static
-field can't represent a scenario whose success criterion is changing the
-value, so the plan (agreed with Tim) is a time-varying series in the override
-system like any vital, modelled on the **SAT (Sedation Assessment Tool)** but
-**+1..+3 only** — the negative half is sedation depth, which GCS already
-represents, and only matters post-sedation. That gets the treatment-response
-reasoning, the assessor graph and the manual Add/Move/Remove tools for free.
-Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into it, and don't extend `mood`
-to carry it either.
+### Agitation — `overrides.sat`, a series, absent by default
+
+Not a tag like the states above but a *scale*, and the output several of them
+can produce rather than a peer of them: delirium, stimulant intoxication and
+withdrawal each present with or without it. **`SimEngine.getSatAt(cfg, nowMs,
+gcsTotalOpt)` returns `null`, not 0, when nothing has scripted it** — the same
+shape as `getRhythmAt` and for the same reason. Agitation is irrelevant to the
+overwhelming majority of scenarios, and 0 would assert "measured, and calm"
+where null says "not a thing here": no tile, no graph trace, no prompt text,
+no token cost. `isAgitationScripted(cfg)` is the presence test (baseline key
+or a non-empty override array).
+
+**+1..+3 only.** The real SAT runs −3..+3, but the negative half is sedation
+depth, which GCS already represents here; modelling it twice would let the two
+disagree.
+
+Deliberate details, several of which are the opposite of how vitals behave:
+- **Not in `getVitalsRaw`.** It is not a vital. `vitalsSnapshotWithSat()` in
+  `sim_control.html` is the "vitals at this instant" snapshot used for the
+  splice/fork helpers and the AI user prompts, and it adds the key **only when
+  the scenario has agitation** — so ordinary prompts are byte-identical to
+  before the feature existed and the model is never shown a `sat: 0` it might
+  feel obliged to act on.
+- **Gated to 0 at GCS ≤ 8**, the opposite gating to pain/nausea: those ask
+  "can the patient report it", this asks "can the patient do it". Matters most
+  right after sedation, where the scripted plan and the GCS it caused would
+  otherwise contradict each other on the graph.
+- `'sat'` **is** in `VITAL_KEYS`, so `clearFutureFromFork`/`spliceAiOverridePlan`
+  fork it like any other series. Both truncate an in-progress override to
+  `vitalsNow[key]`, which is exactly why the snapshot helper above exists — a
+  plain `getVitalsRaw` would write `undefined`.
+- `rawTrendAt` treats a **missing baseline as 0** rather than `NaN`, so
+  agitation can be scripted into a live session that never had a baseline for
+  it. Every physiological key is always seeded, so this changes nothing for
+  them.
+- The **tile is the toggle** (`toggleVitalVisibility`), so filtering the SAT
+  tile out of `tickVitals()` when unscripted is what hides the whole feature —
+  and `graphSeriesOn.sat` is switched on at `enterSession` when the scenario
+  *is* about agitation, so it doesn't need finding.
+- **Four `sim_config_schema.js` copies had to be updated** for this one
+  feature — `VITAL_DEFS` (plus a new `isSat` column), `GRAPH_DEFAULT_ON`,
+  `OVERRIDE_KEY_LABELS`, `MOUTH_VARIANT`. Those schema defaults are preferred
+  over the in-page values, so a change in the page alone does nothing. This is
+  the same trap that broke the Manner tab's highlighting.
+
+**The voice ladder** (`PatientVoice.SAT_NOTES`) is read from the live series at
+prompt-build time, so it changes mid-scenario as the patient escalates or is
+sedated — unlike trait/mood/behavioural state, which are static. It is written
+to be genuinely confronting at +3 (real profanity, explicit threats, crude
+sexual remarks where they fit the person) because this is occupational
+violence and aggression training and a sanitised version teaches nothing. Two
+limits are deliberate: discriminatory abuse is conveyed **in register rather
+than as written-out slurs** (the training value is in the crew's response,
+which survives the substitution), and **nothing escalates in response to the
+crew** — the note says so explicitly to the model, on top of SAT only ever
+moving from the series.
+
+Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
+`mood` to carry it either. On the avatar it outranks mood at +2/+3 (its own
+`satAgitated`/`satSevere` mouth states, not the mood ones — mood `angry` is a
+closed mouth, wrong for someone shouting).
 
 Design decisions already agreed with Tim for when that lands, so they don't
 get re-litigated:

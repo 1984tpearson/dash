@@ -347,7 +347,10 @@
             type: 'map_str_str',
             label: 'Series visible by default',
             help: 'true/false per series key.',
-            default: { HR: true, BPsys: true, BPdia: true, SpO2: true, RR: true, EtCO2: true, temp: false, bgl: false, ketones: false, gcs: false, pain: false, nausea: false, health: false }
+            // NOTE: this default is preferred over the copy in sim_control.html
+            // (see applyConfigOverrides), so a series added there must be added
+            // here too or it can never be switched on.
+            default: { HR: true, BPsys: true, BPdia: true, SpO2: true, RR: true, EtCO2: true, temp: false, bgl: false, ketones: false, gcs: false, pain: false, nausea: false, health: false, sat: false }
           },
           VITAL_DEFS: {
             type: 'table',
@@ -359,7 +362,8 @@
               { name: 'unit', type: 'string' },
               { name: 'overrideKeys', type: 'string_list' },
               { name: 'isGCS', type: 'boolean' },
-              { name: 'isHealth', type: 'boolean' }
+              { name: 'isHealth', type: 'boolean' },
+              { name: 'isSat', type: 'boolean' }
             ],
             default: [
               { key: 'HR', label: 'HR', unit: 'bpm', overrideKeys: ['HR'] },
@@ -372,6 +376,10 @@
               { key: 'Ketones', label: 'Ketones', unit: 'mmol/L', overrideKeys: ['ketones'] },
               { key: 'Pain', label: 'Pain', unit: '/10', overrideKeys: ['pain'] },
               { key: 'Nausea', label: 'Nausea', unit: '/10', overrideKeys: ['nausea'] },
+              // Filtered out at render time unless the scenario scripted
+              // agitation — see tickVitals(). As with GRAPH_DEFAULT_ON above,
+              // this copy is the one that actually runs.
+              { key: 'SAT', label: 'Agitation', unit: '/3', overrideKeys: ['sat'], isSat: true },
               { key: 'GCS', label: 'GCS', unit: '/15', overrideKeys: ['gcsE', 'gcsV', 'gcsM'], isGCS: true },
               { key: 'Health', label: 'Health', unit: '', overrideKeys: [], isHealth: true }
             ]
@@ -392,7 +400,7 @@
             default: {
               HR: 'HR', BPsys: 'BP Sys', BPdia: 'BP Dia', SpO2: 'SpO₂', RR: 'RR', EtCO2: 'EtCO₂',
               temp: 'Temp', bgl: 'BGL', ketones: 'Ketones', pain: 'Pain',
-              gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor'
+              gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor', sat: 'Agitation'
             }
           },
           INFO_TAB_ORDER: {
@@ -546,7 +554,11 @@
             validate: assetKeyValidate('mouth'),
             default: {
               neutral: 'default', mild: 'serious', distress: 'concerned', grimace: 'grimace', slack: 'sad', talkOpen: 'screamOpen',
-              angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief'
+              angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief',
+              // As with the other defaults in this file, THIS copy is the one
+              // that runs — a mouth state added in sim_patient.html alone
+              // resolves to undefined and renders no mouth at all.
+              satAgitated: 'serious', satSevere: 'screamOpen'
             }
           },
           MOOD_EYEBROW: {

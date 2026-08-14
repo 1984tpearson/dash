@@ -89,7 +89,12 @@
   }
   function rawTrendAt(cfg, key, tMs) {
     const deltas = rawTrendDeltasAt(cfg, tMs);
-    const raw = cfg.baseline[key] + (deltas[key] || 0);
+    // Missing baseline treated as 0 rather than producing NaN. Every
+    // physiological key is always seeded, so this changes nothing for them —
+    // it exists for 'sat', which is absent on most scenarios and can be
+    // scripted into a live session that never had a baseline for it.
+    const base = cfg.baseline[key];
+    const raw = (base == null ? 0 : base) + (deltas[key] || 0);
     return key === 'SpO2' ? Math.min(100, raw) : raw;
   }
 
@@ -279,6 +284,53 @@
       if (ev.startMs <= nowMs) current = ev.label; else break;
     }
     return current;
+  }
+
+  // ---- Agitation (SAT) -----------------------------------------------------
+  // Deliberately NOT part of getVitalsRaw, and deliberately null rather than 0
+  // when nothing has scripted it — the same shape as getRhythmAt above, and
+  // for the same reason. Agitation is irrelevant to the overwhelming majority
+  // of scenarios, and 0 would assert "measured, and calm" where null says "not
+  // a thing in this scenario": no graph trace, no tile, no prompt text, no
+  // token cost. Being a normal override series once it DOES exist is what
+  // gives it the trajectory AI, the assessor graph and the manual
+  // Add/Move/Remove tools for free.
+  //
+  // Only +1..+3 is modelled. The real SAT runs -3..+3, but the negative half
+  // is sedation depth, which GCS already represents in this sim, and modelling
+  // it twice would let the two disagree.
+  //
+  // NOT the same thing as distress. A patient wound up by pain or
+  // breathlessness is getAppearanceState().distressLevel; agitation is a
+  // behavioural state that changes management (scene safety, de-escalation,
+  // sedation). Conflating them fires the whole aggression apparatus on every
+  // painful presentation.
+  function isAgitationScripted(cfg) {
+    if (!cfg) return false;
+    if (cfg.baseline && cfg.baseline.sat != null) return true;
+    return !!(cfg.overrides && cfg.overrides.sat && cfg.overrides.sat.length);
+  }
+
+  // gcsTotalOpt lets a caller that has already computed GCS for this instant
+  // pass it in — renderGraph samples this hundreds of times per draw and would
+  // otherwise recompute the three GCS components for every sample.
+  function getSatAt(cfg, nowMs, gcsTotalOpt) {
+    if (!isAgitationScripted(cfg)) return null;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    let gcsTotal = gcsTotalOpt;
+    if (gcsTotal == null) {
+      gcsTotal = clamp(applyOverrides(cfg, 'gcsE', nowMs), 1, 4)
+        + clamp(applyOverrides(cfg, 'gcsV', nowMs), 1, 5)
+        + clamp(applyOverrides(cfg, 'gcsM', nowMs), 1, 6);
+    }
+    // Agitation is an OBSERVED behaviour, not a reported symptom, so it is
+    // gated the opposite way to pain/nausea: those ask "can the patient tell
+    // us", this asks "can the patient do it". An unresponsive patient cannot
+    // be agitated, whatever the series says — which matters most right after
+    // sedation, where the scripted plan and the GCS it caused would otherwise
+    // contradict each other on the graph.
+    if (gcsTotal <= 8) return 0;
+    return clamp(applyOverrides(cfg, 'sat', nowMs), 0, 3);
   }
 
   // ---- Defibrillation (shared, deterministic — no AI call) ----------------
@@ -1021,7 +1073,12 @@
   // the new action doesn't address — rather than assuming the old schedule
   // still covers whatever it leaves out. See regenerateTimelineAfterTreatment
   // /regenerateTimelineForScriptedEvent's DIVERGENCE_NOTE in sim_control.html.
-  const VITAL_KEYS = ['HR', 'RR', 'SpO2', 'EtCO2', 'BPsys', 'BPdia', 'temp', 'bgl', 'ketones', 'pain', 'nausea', 'gcsE', 'gcsV', 'gcsM'];
+  // 'sat' is included so a scripted agitation plan is forked like any other
+  // series. It is absent from most scenarios, where freshOverrides.sat is
+  // empty and this iteration is a no-op — but when it IS present, vitalsNow
+  // must carry a sat value or an in-progress override would be truncated to
+  // undefined. See vitalsSnapshotWithSat() in sim_control.html.
+  const VITAL_KEYS = ['HR', 'RR', 'SpO2', 'EtCO2', 'BPsys', 'BPdia', 'temp', 'bgl', 'ketones', 'pain', 'nausea', 'gcsE', 'gcsV', 'gcsM', 'sat'];
   function clearFutureFromFork(freshOverrides, vitalsNow, givenAtMs) {
     VITAL_KEYS.forEach(key => {
       const arr = freshOverrides[key] || [];
@@ -1493,6 +1550,7 @@
     getActionDurationSec, getVitals, getVitalsRaw, getSimNow, getStaticVitalAt, getRhythmAt, getAppearanceState,
     parseTimeOfDay, getScenarioFictionalNow,
     getHealthScore, getHealthTrendLevel, getDisplayHealthScore, getDisplayHealthTrendLevel,
+    getSatAt, isAgitationScripted,
     deriveRhythmFromHR, classifyRhythmForDefib, classifyRhythmForPulse, getPulseState, computeSurvivabilityScore, computeDefibrillationEffect, computeCprEffect, spliceAiOverridePlan, spliceRhythmPlan, clearFutureFromFork,
     parseAgeFromScenario, parseScenarioMood, cleanSpontaneousLines,
     hrSeverity, rrSeverity, spo2Severity, painSeverity, bpSysSeverity,

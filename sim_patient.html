@@ -1353,7 +1353,13 @@ function setSweat(moistureState, frac) {
 // serious both start with `<rect`) and mapped them to the wrong shapes
 // ('vomit'/'default') as a result. Fixed back to the real ones.
 let MOUTH_VARIANT = { neutral: 'default', mild: 'serious', distress: 'concerned', grimace: 'grimace', slack: 'sad', talkOpen: 'screamOpen',
-  angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief' };
+  angry: 'default', agitated: 'concerned', tearful: 'sad', anxious: 'concerned', confused: 'disbelief',
+  // Agitation gets its own two rather than reusing the mood entries above:
+  // mood 'angry' maps to a plain closed mouth, which is fine for someone
+  // quietly furious and wrong for someone shouting abuse. SAT +3 rests on an
+  // open mouth because that patient is shouting continuously — the talk
+  // animation then has nothing to flap to, which is the correct look here.
+  satAgitated: 'serious', satSevere: 'screamOpen' };
 function setMouth(stateKey) {
   const variant = MOUTH_VARIANT[stateKey] || MOUTH_VARIANT.neutral;
   document.getElementById('av-mouth').innerHTML = AvatarAssets.mouth[variant];
@@ -1411,11 +1417,23 @@ function updateAvatarFace(v) {
   // answered every question perfectly. Real confusion lives on the GCS and
   // in the orientation profile; this just makes the face agree with it.
   // Loses to any actual mood, which is a stronger signal than the default.
+  // Agitation outranks mood on the face: at SAT +2/+3 the behavioural state
+  // IS the presentation, and a scripted-agitated patient showing anxious
+  // eyebrows because the scenario also authored a mood reads as the wrong
+  // thing entirely. Null on almost every scenario, in which case nothing here
+  // changes. Already gated to 0 for an unresponsive patient by getSatAt, but
+  // app.unresponsive is checked too so this agrees with every other branch.
+  const satNow = SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now()),
+    (v.gcsE || 0) + (v.gcsV || 0) + (v.gcsM || 0));
+  const agitated = !app.unresponsive && satNow != null && Math.round(satNow) >= 2;
   const moodActive = !app.unresponsive && patientMood !== 'calm';
   const confusedByGcs = !app.unresponsive && Math.round(v.gcsV || 0) === 4;
-  setEyebrows(moodActive ? MOOD_EYEBROW[patientMood] : (confusedByGcs ? MOOD_EYEBROW.confused : null));
+  setEyebrows(agitated ? MOOD_EYEBROW.angry
+    : (moodActive ? MOOD_EYEBROW[patientMood] : (confusedByGcs ? MOOD_EYEBROW.confused : null)));
   let mouthState;
   if (app.unresponsive) mouthState = 'slack';
+  // Above pain, unlike mood: a shouting patient looks angry even in pain.
+  else if (agitated) mouthState = Math.round(satNow) >= 3 ? 'satSevere' : 'satAgitated';
   else if (app.pain >= 7) mouthState = 'grimace';
   else if (app.distressLevel >= 2) mouthState = 'distress';
   else if (moodActive) mouthState = patientMood;
@@ -3505,7 +3523,11 @@ async function generateRealtimePatientReply(question) {
   const patientName = (scenarioMeta && scenarioMeta.patient_meta && scenarioMeta.patient_meta.name) || 'the patient';
   const systemPrompt = PatientVoice.buildSystemPrompt({
     promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
-    scenario: scenarioMeta, trait: mannerOverride.trait, mood: patientMood
+    scenario: scenarioMeta, trait: mannerOverride.trait, mood: patientMood,
+    // Read live rather than at connect: unlike trait/mood this one moves
+    // during the scenario as the patient escalates or is sedated.
+    sat: SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now()),
+      (v.gcsE || 0) + (v.gcsV || 0) + (v.gcsM || 0))
   });
   // The patient's own in-fiction clock, NOT this device's — a scenario
   // authored as a 3am callout must have its patient believe it's 3am, which
