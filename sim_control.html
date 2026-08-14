@@ -77,6 +77,8 @@ body.embed #topbar { display: none; }
 .info-block:last-child { margin-bottom: 0; }
 .info-label { font-size: 10px; color: #6b8299; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; font-weight: 700; }
 .info-value { font-size: 12px; color: #1e2a36; line-height: 1.4; white-space: pre-wrap; }
+.manner-select { font-family: 'Courier New', monospace; font-size: 12px; color: #1e2a36; background: #fff; border: 1px solid #d7dee6; border-radius: 6px; padding: 8px 6px; min-height: 40px; width: 100%; max-width: 100%; }
+.manner-scope { font-size: 9px; font-weight: 400; color: #6b8299; letter-spacing: 0; text-transform: none; margin-left: 4px; }
 .info-tabs { display: flex; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid #d7dee6; flex-wrap: wrap; }
 .info-tab-btn { font-family: 'Courier New', monospace; font-size: 11px; font-weight: 700; color: #6b8299; background: #f3f6fa; border: 1px solid #d7dee6; border-bottom: none; border-radius: 6px 6px 0 0; padding: 10px 10px; cursor: pointer; min-height: 40px; }
 .info-tab-btn.active { color: #0369a1; background: #fff; border-color: #0369a1; }
@@ -762,6 +764,106 @@ function orientationProfileInfoHtml() {
   return infoSubheading('Orientation (GCS V4 — what this patient believes)') + rows;
 }
 
+// --- Assessor-editable patient manner (trait + mood) ------------------------
+// Both are authored per-scenario (patient_meta.trait / .mood) and were fixed
+// for the life of the session. They are overridable here because the two
+// things the generator cannot know are how a given crew is actually going,
+// and whether the style it picked is producing a useful assessment — an
+// assessor who wants to make history-taking harder can switch the patient to
+// guarded mid-session, or drop a distracting mood that isn't earning its
+// place.
+//
+// Stored as canonical keys in sim_sessions.manner, NOT as the free text the
+// generator writes: both parsers collapse free text to these keys anyway, so
+// offering free text here would mean the assessor types something and silently
+// gets a different one. Canonical keys round-trip cleanly through the same
+// parsers (verified for every key in both sets), which is what lets an
+// override and an authored value share one code path on the reading side.
+//
+// The two are NOT symmetric in reach, which the labels below make explicit:
+// trait is voice-only, while mood also drives the avatar's live expression.
+const TRAIT_PICKER_LABELS = {
+  plain: 'Straightforward (no particular manner)',
+  stoic: 'Stoic — plays it down',
+  guarded: 'Guarded — short answers, must be drawn out',
+  talkative: 'Talkative — wanders onto tangents',
+  precise: 'Precise — reliable historian',
+  vague: 'Vague — poor historian',
+  deferential: 'Deferential — apologetic, no fuss',
+  blunt: 'Blunt — gruff, impatient'
+};
+const MOOD_PICKER_LABELS = {
+  calm: 'Calm and cooperative',
+  anxious: 'Anxious / frightened',
+  tearful: 'Tearful',
+  agitated: 'Agitated / restless',
+  angry: 'Angry / hostile',
+  confused: 'Confused / disoriented'
+};
+
+// 'plain'/'calm' are each parser's fall-through default and so are absent
+// from TRAIT_MAP/MOOD_MAP (nothing maps TO them explicitly) — prepended here
+// so they are still selectable. Everything else is read from the maps
+// themselves rather than listed again, so adding a trait or mood to either
+// map puts it in this picker automatically.
+function traitPickerKeys() {
+  return ['plain'].concat((window.PatientVoice && PatientVoice.TRAIT_MAP || []).map(t => t.trait));
+}
+function moodPickerKeys() {
+  return ['calm'].concat((window.SimEngine && SimEngine.MOOD_MAP || []).map(m => m.mood));
+}
+
+// The authored value is shown as the first option rather than hidden behind
+// the resolved key, so the assessor can always see what the scenario intended
+// and get back to it after experimenting. Selecting it clears the override
+// rather than writing the resolved key, so a later scenario edit still flows
+// through.
+function mannerSelectHtml(kind, keys, labels, authoredText, parsed, current) {
+  const opts = ['<option value="">Scenario default — ' + escapeHtml(authoredText || 'not specified')
+    + ' (' + escapeHtml(labels[parsed] || parsed) + ')</option>']
+    .concat(keys.map(k => '<option value="' + escapeHtml(k) + '"' + (current === k ? ' selected' : '') + '>'
+      + escapeHtml(labels[k] || k) + '</option>'));
+  return '<select class="manner-select" id="manner-select-' + kind + '" onchange="setMannerOverride(\'' + kind + '\', this.value)">'
+    + opts.join('') + '</select>';
+}
+
+function mannerPickerHtml() {
+  const meta = (currentScenario && currentScenario.patient_meta) || {};
+  const manner = (liveConfig && liveConfig.manner) || {};
+  return '<div class="info-block"><div class="info-label">Communication style <span class="manner-scope">voice only</span></div><div class="info-value">'
+    + mannerSelectHtml('trait', traitPickerKeys(), TRAIT_PICKER_LABELS, meta.trait, PatientVoice.parseTrait(meta.trait), manner.trait || '')
+    + '</div></div>'
+    + '<div class="info-block"><div class="info-label">Mood / affect <span class="manner-scope">voice + avatar</span></div><div class="info-value">'
+    + mannerSelectHtml('mood', moodPickerKeys(), MOOD_PICKER_LABELS, meta.mood, SimEngine.parseScenarioMood(meta.mood), manner.mood || '')
+    + '</div></div>';
+}
+
+// Writes through to the session row so sim_patient.html picks it up on its
+// next poll/realtime update — the patient device is where both of these
+// actually land (the spoken reply and the avatar), so a local-only change
+// would do nothing visible. Applied to liveConfig immediately rather than
+// waiting for the write, matching how every other control here behaves; a
+// failed write is surfaced rather than swallowed, since a silently-ignored
+// manner change would just look like the setting not working.
+function setMannerOverride(kind, value) {
+  if (!liveConfig || !sessionCode) return;
+  const manner = Object.assign({}, liveConfig.manner || {});
+  if (value) manner[kind] = value; else delete manner[kind];
+  liveConfig.manner = manner;
+  sbFetch(`sim_sessions?session_code=eq.${sessionCode}`, {
+    method: 'PATCH', prefer: 'return=minimal',
+    body: JSON.stringify({ manner, updated_at: new Date().toISOString() })
+  }).catch(() => { alert('Could not save the manner change — check the connection and try again.'); });
+}
+
+// The resolved values the voice prompt actually uses: assessor override if
+// one is set, otherwise whatever the scenario authored. Kept as one helper so
+// the prompt call and the picker can never disagree about which wins.
+function resolvedTrait() {
+  const manner = (liveConfig && liveConfig.manner) || {};
+  return manner.trait || ((currentScenario && currentScenario.patient_meta) || {}).trait;
+}
+
 function infoBlock(label, value) {
   const v = (value === null || value === undefined || value === '') ? '—' : escapeHtml(value);
   return `<div class="info-block"><div class="info-label">${escapeHtml(label)}</div><div class="info-value">${v}</div></div>`;
@@ -813,14 +915,14 @@ function renderScenarioInfoPanel() {
     infoBlock('Aggravating / Relieving', hx.aggreliev) +
     infoBlock('Associated Symptoms', hx.assoc) +
     infoBlock('Similar Episodes', hx.similar) +
-    // Both are authored characteristics of the patient, shown so the assessor
-    // can tell a scripted communication style apart from a student failing to
-    // elicit: a "vague, poor historian" patient is SUPPOSED to be hard to get
-    // a timeline out of, and marking that against the crew would be wrong.
-    // Static for the session, so this one-shot render is enough.
+    // Shown so the assessor can tell a scripted communication style apart
+    // from a student failing to elicit: a "vague, poor historian" patient is
+    // SUPPOSED to be hard to get a timeline out of, and marking that against
+    // the crew would be wrong. Editable because the authored value is a
+    // one-shot guess by the scenario generator and the assessor is the one
+    // who can see whether it's working for this crew.
     infoSubheading('Manner') +
-    infoBlock('Communication style', (s.patient_meta || {}).trait) +
-    infoBlock('Mood / affect', (s.patient_meta || {}).mood) +
+    mannerPickerHtml() +
     infoSubheading('Social / Environment') +
     infoBlock('Exposure', s.ps_exposure) +
     infoBlock('Social', s.social);
@@ -1219,6 +1321,9 @@ async function createSession() {
         patientConnected: false,
         endedAt: null,
         orientationProfile: timeline.orientation_profile || {},
+        // No overrides at creation — both trait and mood fall back to what
+        // the scenario authored until the assessor changes one.
+        manner: {},
         voiceTranscript: []
       });
       return;
@@ -1241,8 +1346,12 @@ function enterSession(code, scenario, cfg) {
   subscribeSessionRealtime(code);
   currentScenario = scenario;
   switchInfoTab('dispatch');
-  renderScenarioInfoPanel();
+  // liveConfig must be set BEFORE the info panel renders: the Manner pickers
+  // read the saved assessor overrides off it, so rendering first made a
+  // resumed session show "Scenario default" while the patient device was
+  // actually running the override.
   liveConfig = cfg;
+  renderScenarioInfoPanel();
   _joinInfoManuallyShown = false;
   treatments = cfg.treatments || [];
   undoStack = [];
@@ -1332,6 +1441,10 @@ async function joinSession() {
       patientConnected: !!row.patient_connected,
       endedAt: null,
       orientationProfile: row.orientation_profile || {},
+      // Deliberately read on resume but NOT in applySessionRow's poll: this
+      // page is the only writer, so re-reading it would only ever risk a
+      // stale row briefly reverting a change the assessor just made.
+      manner: row.manner || {},
       voiceTranscript: row.voice_transcript || []
     });
     // Anything the patient device queued while no control tab was attached
@@ -3939,7 +4052,7 @@ async function callPatientAI(question, v, gcsV) {
     const apiKey = await getAnthropicKey();
     const systemPrompt = PatientVoice.buildSystemPrompt({
       promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
-      scenario: currentScenario
+      scenario: currentScenario, trait: resolvedTrait()
     });
     const history = (liveConfig && liveConfig.voiceTranscript) || [];
     const userPrompt = PatientVoice.buildUserPrompt({

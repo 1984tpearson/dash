@@ -266,6 +266,36 @@ pre-trait prompt. `sim_control.html`'s History tab shows trait and mood to the
 assessor under "Manner", so a scripted poor historian isn't marked as the
 student failing to elicit.
 
+**Both are assessor-editable live, via `sim_sessions.manner`.** The Manner
+block on `sim_control.html`'s History tab is two pickers (`mannerPickerHtml()`
+→ `setMannerOverride()`) writing `{trait, mood}` as **canonical keys** to a
+`manner` jsonb column. Canonical keys, not free text, because both parsers
+collapse free text to those keys anyway — offering a text box would mean the
+assessor types something and silently gets a different one. Every key in both
+sets round-trips through its own parser unchanged (verified), which is what
+lets an override and an authored value share one read path: resolve
+`override || authored`, then run the same fuzzy matcher over whichever it is.
+The first option is always "Scenario default — <authored text> (<resolved
+key>)" with an empty value, so selecting it *clears* the override rather than
+freezing today's resolved key, and a later scenario edit still flows through.
+The option lists are built from `PatientVoice.TRAIT_MAP` and
+`SimEngine.MOOD_MAP` (newly exposed for this) rather than relisted, so adding
+a trait or mood shows up in the picker automatically — only the fall-through
+defaults `plain`/`calm` are prepended by hand, since nothing maps *to* them.
+Three things worth knowing:
+- The two differ in reach, and the picker labels say so: **trait is voice-only,
+  mood is voice + avatar.** Mood is resolved eagerly in
+  `sim_patient.html`'s `applySessionRow` because the avatar reads `patientMood`
+  every tick; trait is read at prompt-build time and only needs storing.
+- `sim_control.html` is the **only writer**, so `manner` is read on resume but
+  deliberately left out of `applySessionRow`'s poll select there — re-reading
+  it could only ever let a stale row briefly revert a change just made. The
+  patient device does poll it, since it is purely a reader.
+- `enterSession()` had to be reordered so `liveConfig = cfg` precedes
+  `renderScenarioInfoPanel()`: the pickers read the saved override off
+  `liveConfig`, and rendering first made a *resumed* session display "Scenario
+  default" while the patient device was actually running the override.
+
 **Acute behavioural state is NOT this field, and deliberately doesn't exist
 yet.** Intoxication, delirium, agitation/aggression, acute psychosis and
 depression are clinical findings, not personality: they change management
@@ -539,10 +569,14 @@ rendered as a literal middle-aged adult:
 
 `patient_meta.mood` is scenario-authored free text (generator.html's AI
 prompt, e.g. "Anxious and tearful", "Agitated and uncooperative" — same
-free-text-plus-fuzzy-match pattern as `vitals.Rhythm`), fuzzy-mapped once
-per session (not every tick — it can't change mid-scenario) by
+free-text-plus-fuzzy-match pattern as `vitals.Rhythm`), fuzzy-mapped by
 `SimEngine.parseScenarioMood()` into one of calm/anxious/tearful/agitated/
-angry/confused, stored in `patientMood`. `calm` (the default/unset case)
+angry/confused, stored in `patientMood`. Re-resolved whenever the session
+row changes rather than only at connect — the assessor can now override it
+live (see the Manner pickers below), so `applyResolvedMood()` recomputes
+`patientMood` from `mannerOverride.mood || authoredMood` on every
+`applySessionRow`. It is still NOT recomputed per tick: nothing about it
+varies with time, only with an explicit assessor change. `calm` (the default/unset case)
 deliberately has no eyebrow-shape entry in `MOOD_EYEBROW` — it means "use
 this patient's own per-scenario neutral eyebrow pick"
 (`avatarBuild.eyebrowStyle`, chosen once for variety, same as hair/eyebrow

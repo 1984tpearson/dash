@@ -689,6 +689,14 @@ let scenarioMeta = null; // title/subtitle/dispatch/vitals/medical_conditions �
 // updateAvatarFace(), gated off entirely whenever the patient is too
 // unresponsive to plausibly express it.
 let patientMood = 'calm';
+// The scenario-authored mood, kept separately from the resolved patientMood
+// above because the assessor can override it live (sim_sessions.manner) and
+// clearing that override has to fall back to something. patientMood is the
+// resolved value the avatar actually renders; this is the fallback.
+let authoredMood = '';
+// Assessor overrides for trait/mood, as canonical keys — see
+// sim_control.html's mannerPickerHtml(). Empty means "use what was authored".
+let mannerOverride = {};
 let _skipNextOverridesPoll = false; // guards against pollSession() clobbering an in-flight local defib write with a stale server copy — see handleShockBtn()
 let instantMode = false; // synced from the session row; assessor-controlled, not editable here
 // Temp/BGL/Ketones/Pain/GCS now go through the same overrides mechanism as
@@ -1513,7 +1521,12 @@ async function connectSession(code) {
           }
           if (gender === 'male' || gender === 'female') patientGender = gender;
           const age = meta.age != null ? meta.age : SimEngine.parseAgeFromScenario(scen);
-          patientMood = SimEngine.parseScenarioMood(meta.mood);
+          authoredMood = meta.mood || '';
+          // The row (and so any override) has already been applied by the
+          // time this scenario fetch resolves, so resolve against it rather
+          // than the authored value alone — otherwise an override set before
+          // the patient device connected would be ignored until the next poll.
+          applyResolvedMood();
           buildAvatarBase(row.scenario_id, meta.skin_colour, gender, age);
           renderPatientInfoPanel(scen, meta, gender, age);
         })
@@ -1539,7 +1552,7 @@ const _processedSkipEpoch = {};
 async function pollSession() {
   if (!sessionCode || !testConfig) return;
   try {
-    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,orientation_profile,voice_transcript,ended_at`);
+    const rows = await sbGet(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}&select=treatments,overrides,instant_mode,has_started,is_paused,paused_at_ms,total_paused_ms,action_controls,patient_reply,spontaneous_lines,orientation_profile,voice_transcript,manner,ended_at`);
     if (!rows.length) return;
     applySessionRow(rows[0]);
   } catch (e) { /* transient network hiccup — try again next poll */ }
@@ -1571,6 +1584,10 @@ function applySessionRow(row) {
   actionControls = row.action_controls || {};
   testConfig.spontaneousLines = row.spontaneous_lines || [];
   if (row.orientation_profile) testConfig.orientationProfile = row.orientation_profile;
+  // Mood is resolved eagerly (the avatar reads patientMood every tick and
+  // would otherwise keep the old expression until something else changed);
+  // trait is read at prompt-build time, so it just has to be stored.
+  if (row.manner) { mannerOverride = row.manner; applyResolvedMood(); }
   // Merged, not replaced — this device may hold an exchange it just recorded
   // that the row has not caught up with yet (see recordVoiceExchange).
   if (row.voice_transcript) testConfig.voiceTranscript = PatientVoice.mergeTranscript(testConfig.voiceTranscript || [], row.voice_transcript);
@@ -3462,6 +3479,13 @@ async function handleRealtimeUtterance(text, callId) {
 // with its own actionLog/Supabase-write side effects this path doesn't
 // have. Returns null for "no verbal response" (V<=1) so the caller can
 // distinguish that from a real (possibly canned) reply string.
+// Assessor override wins over the scenario's authored mood; clearing it falls
+// back. Both go through parseScenarioMood, which is what lets a canonical key
+// from the picker and free text from the generator share one path.
+function applyResolvedMood() {
+  patientMood = SimEngine.parseScenarioMood(mannerOverride.mood || authoredMood);
+}
+
 async function generateRealtimePatientReply(question) {
   const v = SimEngine.getVitalsRaw(testConfig, SimEngine.getSimNow(testConfig, Date.now()));
   const gcsV = Math.round(v.gcsV || 0);
@@ -3473,7 +3497,7 @@ async function generateRealtimePatientReply(question) {
   const patientName = (scenarioMeta && scenarioMeta.patient_meta && scenarioMeta.patient_meta.name) || 'the patient';
   const systemPrompt = PatientVoice.buildSystemPrompt({
     promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
-    scenario: scenarioMeta
+    scenario: scenarioMeta, trait: mannerOverride.trait
   });
   // The patient's own in-fiction clock, NOT this device's — a scenario
   // authored as a 3am callout must have its patient believe it's 3am, which

@@ -1477,6 +1477,10 @@
     get GCS_V2_SOUNDS() { return _cfg.GCS_V2_SOUNDS; },
     get GCS_V3_WORDS() { return _cfg.GCS_V3_WORDS; },
     get GENERIC_SPONTANEOUS_LINES() { return _cfg.GENERIC_SPONTANEOUS_LINES; },
+    // Exposed so sim_control.html's assessor-side mood picker offers exactly
+    // the set parseScenarioMood can actually produce, rather than a second
+    // hand-maintained list that could drift out of step with MOOD_MAP.
+    get MOOD_MAP() { return _cfg.MOOD_MAP; },
     getActionDurationSec, getVitals, getVitalsRaw, getSimNow, getStaticVitalAt, getRhythmAt, getAppearanceState,
     parseTimeOfDay, getScenarioFictionalNow,
     getHealthScore, getHealthTrendLevel, getDisplayHealthScore, getDisplayHealthTrendLevel,
