@@ -3472,7 +3472,8 @@ async function generateRealtimePatientReply(question) {
   const apiKey = await getAnthropicKey();
   const patientName = (scenarioMeta && scenarioMeta.patient_meta && scenarioMeta.patient_meta.name) || 'the patient';
   const systemPrompt = PatientVoice.buildSystemPrompt({
-    promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV
+    promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
+    scenario: scenarioMeta
   });
   // The patient's own in-fiction clock, NOT this device's — a scenario
   // authored as a 3am callout must have its patient believe it's 3am, which

@@ -813,6 +813,14 @@ function renderScenarioInfoPanel() {
     infoBlock('Aggravating / Relieving', hx.aggreliev) +
     infoBlock('Associated Symptoms', hx.assoc) +
     infoBlock('Similar Episodes', hx.similar) +
+    // Both are authored characteristics of the patient, shown so the assessor
+    // can tell a scripted communication style apart from a student failing to
+    // elicit: a "vague, poor historian" patient is SUPPOSED to be hard to get
+    // a timeline out of, and marking that against the crew would be wrong.
+    // Static for the session, so this one-shot render is enough.
+    infoSubheading('Manner') +
+    infoBlock('Communication style', (s.patient_meta || {}).trait) +
+    infoBlock('Mood / affect', (s.patient_meta || {}).mood) +
     infoSubheading('Social / Environment') +
     infoBlock('Exposure', s.ps_exposure) +
     infoBlock('Social', s.social);
@@ -3930,7 +3938,8 @@ async function callPatientAI(question, v, gcsV) {
   try {
     const apiKey = await getAnthropicKey();
     const systemPrompt = PatientVoice.buildSystemPrompt({
-      promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV
+      promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE, patientName, gcsV,
+      scenario: currentScenario
     });
     const history = (liveConfig && liveConfig.voiceTranscript) || [];
     const userPrompt = PatientVoice.buildUserPrompt({

@@ -220,6 +220,67 @@ that one file so both paths get them identically:
   the same millisecond collide, and the merge dedupes by id, so one would
   be silently dropped.
 
+**Answer scope vs. personality are separate concerns, and both prompts hold
+the line between them.** The patient used to volunteer unasked findings — "what's
+going on?" returned a full OPQRST account, "any medical history?" returned the
+conditions plus how the diabetes was managed. The cause was prompt shape, not
+the model: `historyBlock()` ships the whole authored hx every turn under labels
+reading "answer from it", the PMHx/meds/allergies lines are flat lists, and the
+only restrictive rules were about diagnosis/reasoning/vitals — nothing told the
+patient to withhold something they legitimately know, and "brief (1-3 short
+sentences)" is a length cap that the model satisfies by compressing rather than
+omitting. Fixed prompt-side: a scope rule in the system prompt (match answer
+breadth to question breadth, under-reporting is in character), the hx block
+reframed as REFERENCE ONLY with "do not add the next line unprompted", and the
+same "not a list to read out" framing on the PMHx lines. The occasional
+unprompted aside is deliberately preserved — real patients do that; reciting a
+whole medication list off one question is what isn't real. **Constrain what the
+patient SAYS, not what it KNOWS** — the hx block still goes over in full every
+turn, because trimming it is what brings back the invention bug it was added to
+fix.
+
+**`patient_meta.trait` — communication style, deliberately a different axis
+from `mood`.** Trait is who the patient is when you talk to them (stoic /
+guarded / talkative / precise / vague / deferential / blunt, plus `plain` for
+no distinctive style), stable for the whole scenario, and it changes only the
+texture of speech. `mood` is emotional affect for THIS encounter, is
+avatar-facing (`SimEngine.parseScenarioMood()` drives eyebrows/mouth), and
+loses to physiology. They compose rather than compete — a stoic patient who is
+frightened is a frightened person understating their symptoms. Authored as free
+text by `generator.html` (told explicitly to pick it from who the *person* is,
+not from the severity of the emergency, and not to make it agree with `mood`),
+fuzzy-matched by **`PatientVoice.parseTrait()`** — which lives in
+`patient_voice.js`, not `sim_engine.js`, because nothing outside the voice
+prompt consumes it and keeping it there means `patient_voice.js` still depends
+on no other file. Every trait note is written to leave the answer-scope rule
+above intact; `talkative` is the one that could quietly undo it, so its note is
+explicit that the tangents are personal life detail and never extra clinical
+findings. Suppressed below V5: a V4 patient is already being told to give
+specific wrong details, and layering "poor historian" on top muddies the one
+signal the student is meant to read (`precise` outright contradicts it).
+Substituted via a `{{traitNote}}` token, but with a **fallback append when the
+token is absent** — unlike `{{confusedNote}}` this token postdates prompts that
+may already be saved in `sim_config`, and a stale override would otherwise drop
+traits silently. Unset/older scenarios produce byte-identical output to the
+pre-trait prompt. `sim_control.html`'s History tab shows trait and mood to the
+assessor under "Manner", so a scripted poor historian isn't marked as the
+student failing to elicit.
+
+**Acute behavioural state is NOT this field, and deliberately doesn't exist
+yet.** Intoxication, delirium, agitation/aggression, acute psychosis and
+depression are clinical findings, not personality: they change management
+(scene safety, de-escalation, capacity, sedation), several of them *move*
+during the scenario in response to how the crew behaves and to treatment, and
+they need to reach the avatar and the assessor as well as the voice. A static
+free-text field can't represent a scenario whose success criterion is changing
+the value, which is why they don't belong in `patient_meta` alongside trait —
+the plan (agreed with Tim, deferred) is a time-varying series in the override
+system like any vital, most likely modelled on the **SAT (Sedation Assessment
+Tool, −3 to +3)** so one series spans both agitation and over-sedation. That
+gets the treatment-response reasoning, the assessor graph and the manual
+Add/Move/Remove tools for free. Don't grow `TRAIT_MAP` into it, and don't
+extend `mood` to carry it either.
+
 The **orientation profile** (`scenario_sim_timelines.orientation_profile`,
 copied onto the session row at creation) fixes what a V4 patient is
 confused about — which of time/date/place/person/event they have wrong,

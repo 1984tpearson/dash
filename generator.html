@@ -1224,12 +1224,12 @@ async function classifyCPGFromText(freeText) {
   }
 }
 
-const SCENARIO_JSON_TEMPLATE = `{"title":"","subtitle":"","category":"CAT","subcategory":"SUB","type":"","cpg":"","additional_cpgs":[],"level":"C/D","dispatch":"","vitals":{"GCS":{"E":0,"V":0,"M":0,"total":0,"description":""},"SpO2":"","RR":"","HR":"","BP":"","Temp":"","BGL":"","Rhythm":"","Weight":"","Ketones":"","EtCO2":"","PainScore":0,"NauseaScore":0},"caller_hx":"","arrival_hx":"","hx":{"timeline":"","nature":"","prodromal":"","aggreliev":"","assoc":"","similar":""},"medical_conditions":["","",""],"medications":["","",""],"allergies":"","flags":{"red":[],"yellow":[]},"ddx":["","","",""],"provisional":"","ra":{"wob":"","skin":""},"ps_exposure":"","social":"","rsa":{"appearance":"","speech":"","breath_sounds":"","rhythm":"","wob":""},"secondary_survey":{},"life_threats":["",""],"baseline_cognitive_status":"","pregnancy_status":"","mood":"","kq":[{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":1,"answer":"","cpgCode":""}]}`;
+const SCENARIO_JSON_TEMPLATE = `{"title":"","subtitle":"","category":"CAT","subcategory":"SUB","type":"","cpg":"","additional_cpgs":[],"level":"C/D","dispatch":"","vitals":{"GCS":{"E":0,"V":0,"M":0,"total":0,"description":""},"SpO2":"","RR":"","HR":"","BP":"","Temp":"","BGL":"","Rhythm":"","Weight":"","Ketones":"","EtCO2":"","PainScore":0,"NauseaScore":0},"caller_hx":"","arrival_hx":"","hx":{"timeline":"","nature":"","prodromal":"","aggreliev":"","assoc":"","similar":""},"medical_conditions":["","",""],"medications":["","",""],"allergies":"","flags":{"red":[],"yellow":[]},"ddx":["","","",""],"provisional":"","ra":{"wob":"","skin":""},"ps_exposure":"","social":"","rsa":{"appearance":"","speech":"","breath_sounds":"","rhythm":"","wob":""},"secondary_survey":{},"life_threats":["",""],"baseline_cognitive_status":"","pregnancy_status":"","mood":"","trait":"","kq":[{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":2,"answer":"","cpgCode":""},{"q":"","max":1,"answer":"","cpgCode":""}]}`;
 // Note: medical_conditions = short list e.g. ["Asthma (previous ICU admission)", "Type 2 Diabetes", "Hypertension"]
 // medications = short list e.g. ["Metoprolol 50mg daily", "Aspirin 100mg", "Candesartan 8mg"]
 // kq[].cpgCode = the CPG code (e.g. "A0402") from the "--- CPG: title (code) ---" context blocks below,
 // identifying which specific guideline that question is testing. Must exactly match one shown in context.
-// baseline_cognitive_status and pregnancy_status are folded into scenario.patient_meta after generation —
+// baseline_cognitive_status, pregnancy_status, mood and trait are folded into scenario.patient_meta after generation —
 // see the post-processing block in generateAIScenario(). patient_name/gender/ethnicity/skin_colour are NOT
 // AI-generated at all — they're set from the code-generated `patient` object so the exact name fed
 // into the prompt is guaranteed to match what's stored, rather than hoping the AI echoes it back.
@@ -1413,6 +1413,7 @@ For vitals.NauseaScore: an integer 0–10 (numeric nausea severity, not a string
 For "baseline_cognitive_status": a short phrase describing the patient's NORMAL baseline mental state when well — default "Normal baseline cognition" for the great majority of scenarios. Only deviate from this if medical_conditions includes a condition that would genuinely alter baseline presentation (e.g. dementia, intellectual disability, acquired brain injury) — in that case, describe it briefly (e.g. "Baseline mild dementia — usually oriented to person only, lives with family support"). This exists so an assessor doesn't mistake a patient's normal baseline for acute deterioration.
 For "pregnancy_status": for any female patient of reproductive age (roughly teens to 50s), state pregnancy status even if not clinically relevant to the presenting complaint — either "Not pregnant" or "Pregnant, approximately N weeks gestation" (choose a clinically sensible gestation if pregnant). Use "Not applicable" for male, paediatric, or clearly post-menopausal patients.
 For "mood": the patient's emotional demeanour/affect during this encounter (distinct from their physical distress level, which is derived separately from vitals) — free text, e.g. "Calm and cooperative", "Anxious and tearful", "Agitated and uncooperative", "Angry, hostile to crew", "Confused and disoriented". Base it on what the presentation and context would plausibly produce — a frightening acute event (chest pain, breathlessness, trauma) often reads as anxious; hypoxia, a head injury, intoxication, or a psychiatric presentation can produce agitation or aggression; a long-running frustrating complaint might read as irritable. Default to "Calm and cooperative" if nothing about the presentation suggests otherwise. This drives the patient avatar's live facial expression (eyebrows especially) — but note the avatar will override it with a neutral/unresponsive look whenever the patient's GCS is too low to plausibly express mood, so don't feel obliged to make an unconscious/critically unwell patient's mood dramatic.
+For "trait": how this patient COMMUNICATES as a person — their stable personality when spoken to, not how today's emergency has affected them. Free text, but write it around one of these recognisable styles so it can be matched: stoic/minimising ("Stoic, plays down how bad it is"), guarded/reserved ("Reserved, short answers, has to be drawn out"), talkative ("Chatty, wanders off on tangents"), precise ("Precise and organised, a reliable historian"), vague ("Vague, poor historian, hazy on times"), deferential/apologetic ("Apologetic, worries he's wasting your time"), blunt ("Gruff and impatient with questions"), or straightforwardly unremarkable ("Straightforward, no particular manner") for a patient with no distinctive style. Choose it from who the PERSON is — age, occupation, social context, how they'd behave on an ordinary day — NOT from the severity or type of the emergency, and do not make it agree with "mood": a stoic patient can be frightened, a chatty one can be critically unwell. Vary it genuinely across scenarios so students meet a real spread of communication styles rather than the same cooperative historian every time; roughly one patient in three should be the unremarkable option. This is a communication style ONLY — never use this field for intoxication, delirium, agitation/aggression, psychosis or depression, which are clinical findings rather than personality and are handled elsewhere.
 For the "ra" field (Rapid Assessment — what is seen at a glance on approach):
 - ra.wob: brief visual impression of breathing effort — one of: "Adequate" | "Increased effort" | "Decreased effort" | "Agonal" | "Not breathing" | "Laboured" | "Shallow"
 - ra.skin: brief visual impression of skin on approach — concise phrase describing colour, moisture, and temperature (e.g. "Warm, pink, dry" | "Pale, diaphoretic" | "Cyanosed, mottled" | "Flushed, warm" | "Cold, pale, mottled" | "Jaundiced" | "Urticarial rash"). Match to patient's clinical state and ethnicity where relevant.
@@ -1504,6 +1505,12 @@ ${SCENARIO_JSON_TEMPLATE.replace('CAT', category).replace('SUB', subcategory)}`;
     // mood is free text, fuzzy-matched by SimEngine.parseScenarioMood() into
     // a small canonical set that drives the avatar's live eyebrow/mouth
     // expression — see sim_patient.html.
+    // trait is the separate, deliberately independent axis: mood is emotional
+    // affect for THIS encounter and is avatar-facing; trait is the patient's
+    // stable communication style and is voice-only, fuzzy-matched by
+    // PatientVoice.parseTrait() into the note the spoken-reply prompt uses.
+    // Older scenarios predate the field and fall back to the neutral default,
+    // which produces exactly the prompt that shipped before traits existed.
     scenario.patient_meta = {
       name: patient.name,
       gender: patient.gender,
@@ -1512,10 +1519,12 @@ ${SCENARIO_JSON_TEMPLATE.replace('CAT', category).replace('SUB', subcategory)}`;
       skin_colour: pickSkinToneForEthnicity(patient.ethnicity),
       baseline_cognitive_status: (scenario.baseline_cognitive_status || '').trim() || 'Normal baseline cognition',
       pregnancy_status: (scenario.pregnancy_status || '').trim() || 'Not applicable',
-      mood: (scenario.mood || '').trim() || 'Calm and cooperative'
+      mood: (scenario.mood || '').trim() || 'Calm and cooperative',
+      trait: (scenario.trait || '').trim() || 'Straightforward, no particular manner'
     };
     delete scenario.baseline_cognitive_status;
     delete scenario.mood;
+    delete scenario.trait;
     delete scenario.pregnancy_status;
     // Sanity-check the AI actually followed patientNote's instruction above
     // — it's free text, and (confirmed via a real generated scenario) can
