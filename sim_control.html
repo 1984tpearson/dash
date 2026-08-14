@@ -315,13 +315,13 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
         <div class="panel" id="scenario-info-panel">
           <h2>Scenario Info</h2>
           <div class="info-tabs" id="info-tabs">
-            <button class="info-tab-btn active" onclick="switchInfoTab('dispatch')">Dispatch</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('history')">History</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('manner')">Manner</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('medhx')">Medical Hx</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('appearance')">Appearance</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('survey')">Survey</button>
-            <button class="info-tab-btn" onclick="switchInfoTab('clinical')">Clinical</button>
+            <button data-tab="dispatch" class="info-tab-btn active" onclick="switchInfoTab('dispatch')">Dispatch</button>
+            <button data-tab="history" class="info-tab-btn" onclick="switchInfoTab('history')">History</button>
+            <button data-tab="manner" class="info-tab-btn" onclick="switchInfoTab('manner')">Manner</button>
+            <button data-tab="medhx" class="info-tab-btn" onclick="switchInfoTab('medhx')">Medical Hx</button>
+            <button data-tab="appearance" class="info-tab-btn" onclick="switchInfoTab('appearance')">Appearance</button>
+            <button data-tab="survey" class="info-tab-btn" onclick="switchInfoTab('survey')">Survey</button>
+            <button data-tab="clinical" class="info-tab-btn" onclick="switchInfoTab('clinical')">Clinical</button>
           </div>
           <div class="info-tab-content active" id="info-tab-dispatch">
             <div class="info-block">
@@ -736,10 +736,21 @@ function escapeHtml(s) {
 let activeInfoTab = 'dispatch';
 let INFO_TAB_ORDER = ['dispatch', 'history', 'manner', 'medhx', 'appearance', 'survey', 'clinical'];
 
+// Buttons are matched to tabs by their own data-tab attribute, NOT by their
+// position in INFO_TAB_ORDER. The positional version silently broke the moment
+// the Manner tab was added: INFO_TAB_ORDER has a second copy in
+// sim_config_schema.js, applyConfigOverrides() prefers that copy over the one
+// in this file, and it still listed six tabs against seven buttons — so Manner
+// highlighted nothing and every tab after it highlighted its neighbour, while
+// the panels themselves (looked up by id) switched correctly and hid the cause.
+// Matching on the attribute means a future tab only has to be added in one
+// place to highlight correctly. INFO_TAB_ORDER is kept as the fallback for any
+// button that predates the attribute.
 function switchInfoTab(tab) {
   activeInfoTab = tab;
   document.querySelectorAll('#info-tabs .info-tab-btn').forEach((btn, i) => {
-    btn.classList.toggle('active', INFO_TAB_ORDER[i] === tab);
+    const name = btn.dataset.tab || INFO_TAB_ORDER[i];
+    btn.classList.toggle('active', name === tab);
   });
   document.querySelectorAll('#scenario-info-panel .info-tab-content').forEach(el => el.classList.remove('active'));
   const target = document.getElementById(`info-tab-${tab}`);

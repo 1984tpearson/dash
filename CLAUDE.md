@@ -296,10 +296,18 @@ these are the only live controls in an otherwise read-only reference panel,
 and they were easy to miss and slow to reach as a block buried under
 History's presenting-complaint rows) is two pickers (`mannerPickerHtml()` →
 `setMannerOverride()`) writing `{trait, mood}` as **canonical keys** to a
-`manner` jsonb column. Adding a tab means adding a button AND an entry to
-`INFO_TAB_ORDER` in the same position — `switchInfoTab()` matches buttons to
-tab names **by index**, so a button added without the array entry silently
-activates the wrong panel. Each picker's default option shows the *resolved*
+`manner` jsonb column. Adding it exposed a real trap in `switchInfoTab()`,
+now fixed: it matched buttons to tab names **by index** into
+`INFO_TAB_ORDER`, and that array has a **second copy in
+`sim_config_schema.js`** whose default `applyConfigOverrides()` *prefers over
+the in-page value* — so the schema copy is the one that actually runs. Adding
+the tab to `sim_control.html` alone left seven buttons against a six-name
+array: Manner highlighted nothing and every tab after it highlighted its
+neighbour, while the panels (looked up by id) switched correctly and hid the
+cause. Buttons now carry `data-tab` and are matched on that, so a new tab
+highlights correctly from the markup alone; `INFO_TAB_ORDER` remains only as
+a fallback. Both copies are updated, but **if you add a tab, update the
+schema copy too** — it is the live one. Each picker's default option shows the *resolved*
 label, with the authored sentence rendered underneath rather than inside the
 option: a `<select>` clips option text at the control's width with no
 wrapping, so the authored free text pushed the resolved key out of view — the

@@ -398,7 +398,13 @@
           INFO_TAB_ORDER: {
             type: 'string_list',
             label: 'Scenario Info tab order',
-            default: ['dispatch', 'history', 'medhx', 'appearance', 'survey', 'clinical']
+            // Must list every tab button in sim_control.html's #info-tabs, in
+            // DOM order. This is a SECOND copy of the list that also lives in
+            // sim_control.html, and because applyConfigOverrides() prefers the
+            // schema default over the in-page value, this copy is the one that
+            // actually runs — a tab added to the page but not here goes
+            // unhighlighted and shifts every tab after it (see switchInfoTab).
+            default: ['dispatch', 'history', 'manner', 'medhx', 'appearance', 'survey', 'clinical']
           }
         }
       },
