@@ -370,20 +370,49 @@ changed nothing visible. The instruction now asks for baseline impairment at
 roughly its real prevalence in older patients, and requires
 `medical_conditions` and this field to agree.
 
-**Acute behavioural state is NOT this field, and deliberately doesn't exist
-yet.** Intoxication, delirium, agitation/aggression, acute psychosis and
-depression are clinical findings, not personality: they change management
-(scene safety, de-escalation, capacity, sedation), several of them *move*
-during the scenario in response to how the crew behaves and to treatment, and
-they need to reach the avatar and the assessor as well as the voice. A static
-free-text field can't represent a scenario whose success criterion is changing
-the value, which is why they don't belong in `patient_meta` alongside trait —
-the plan (agreed with Tim, deferred) is a time-varying series in the override
-system like any vital, most likely modelled on the **SAT (Sedation Assessment
-Tool, −3 to +3)** so one series spans both agitation and over-sedation. That
-gets the treatment-response reasoning, the assessor graph and the manual
-Add/Move/Remove tools for free. Don't grow `TRAIT_MAP` into it, and don't
-extend `mood` to carry it either.
+**`patient_meta.behavioural_state` — the acute behavioural presentation, and
+a fourth axis.** Delirium (hypoactive/hyperactive), intoxication, withdrawal,
+depression: what is different about this patient TODAY, as opposed to trait
+(personality), mood (affect) or `baseline_cognitive_status` (their permanent
+floor). Parsed by **`PatientVoice.parseBehaviouralState()`** into
+`{kind, subkind, substance, text}`, with the authored sentence passed verbatim
+alongside the per-kind note, same as the cognitive baseline. Absent on almost
+every scenario and renders nothing at all when absent — `generator.html`
+deliberately writes **no default**, because unlike trait and mood there is no
+neutral value: the absence of the field *is* "no acute behavioural
+disturbance". Not suppressed by GCS tier.
+
+Two things about the parser worth not undoing:
+- It matches the **leading keyword** (the authored format is "one keyword —
+  then a clause"), falling back to a deliberately narrow substring scan only
+  if the value ignored the format. Free substring scanning over the whole
+  value is what made `depression — flat and WITHDRAWN` parse as *withdrawal*.
+- `delirium tremens` is special-cased to **withdrawal** ahead of everything
+  else, since it starts with the word "delirium" and would otherwise win the
+  anchored match, losing the entire alcohol-withdrawal picture.
+
+**A behavioural state does NOT imply agitation, and every note is written
+defensively about it.** The model's stereotype is strong enough that
+"delirium" alone produces a shouting patient nearly every time. Hypoactive
+delirium is the presentation that actually gets missed in the field, the
+pleasantly confused patient is more common than the combative one, and most
+drunk people are not fighting anyone — so the quiet versions are both more
+realistic and better assessments. An unqualified `delirium` gets the neutral
+note, never the hyperactive one. Agitation is a separate opt-in axis (below);
+nothing in `patient_voice.js` may imply it.
+
+**Agitation (SAT) does not exist yet — this is the one still deferred.**
+It is not a tag like the states above but a *scale*, and it is the output
+several of them can produce rather than a peer of them: delirium, stimulant
+intoxication and withdrawal can each present with or without it. A static
+field can't represent a scenario whose success criterion is changing the
+value, so the plan (agreed with Tim) is a time-varying series in the override
+system like any vital, modelled on the **SAT (Sedation Assessment Tool)** but
+**+1..+3 only** — the negative half is sedation depth, which GCS already
+represents, and only matters post-sedation. That gets the treatment-response
+reasoning, the assessor graph and the manual Add/Move/Remove tools for free.
+Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into it, and don't extend `mood`
+to carry it either.
 
 Design decisions already agreed with Tim for when that lands, so they don't
 get re-litigated:

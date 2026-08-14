@@ -872,7 +872,26 @@ function mannerPickerHtml() {
     + mannerSelectHtml('mood', moodPickerKeys(), MOOD_PICKER_LABELS, meta.mood, SimEngine.parseScenarioMood(meta.mood), manner.mood || '')
     + '<div class="manner-note">Emotional state for this encounter — colours the patient\'s tone of voice and drives the avatar\'s expression. Physiology still wins: an unresponsive patient shows a neutral face whatever is set here. Genuine confusion is not here — that is GCS-Verbal 4, and the face follows it automatically.</div>'
     + '</div></div>'
+    + behaviouralStateHtml()
     + cognitiveBaselineHtml();
+}
+
+// The acute behavioural presentation, shown above the baseline below it so
+// the panel reads in the order the assessment is made: what is different
+// today, then what this person is normally like. Read-only for now — it is a
+// scenario-authored clinical finding rather than a dial. Absent on almost
+// every scenario, and renders nothing at all when it is.
+function behaviouralStateHtml() {
+  const meta = (currentScenario && currentScenario.patient_meta) || {};
+  const state = PatientVoice.parseBehaviouralState(meta.behavioural_state);
+  if (!state) return '';
+  const bits = [state.kind.replace('_', ' ')];
+  if (state.subkind) bits.push(state.subkind === 'hypo' ? 'hypoactive' : 'hyperactive');
+  if (state.substance) bits.push(state.substance);
+  return '<div class="info-block"><div class="info-label">Acute behavioural state <span class="manner-scope">' + escapeHtml(bits.join(' \u00b7 ')) + '</span></div>'
+    + '<div class="info-value">' + escapeHtml(state.text)
+    + '<div class="manner-note">An acute change, not this patient\'s normal self \u2014 detecting that difference is the assessment. Does not imply agitation.</div>'
+    + '</div></div>';
 }
 
 // Read-only, unlike the two pickers above: this is the patient's permanent

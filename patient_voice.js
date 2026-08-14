@@ -64,13 +64,12 @@
   // recognisable presentation.
   //
   // This is also NOT the place for acute behavioural state — intoxication,
-  // delirium, agitation/aggression, psychosis, depression. Those are clinical
-  // findings that change management (scene safety, de-escalation, capacity,
-  // sedation), several of them move during the scenario in response to
-  // treatment, and they need to reach the avatar and the assessor as well as
-  // the voice. They want their own time-varying axis alongside the vitals,
-  // not a static free-text field here. Deliberately left for later; do not
-  // grow TRAIT_MAP into it.
+  // delirium, withdrawal, depression. Those are clinical findings rather than
+  // personality: they change management, and they are an acute change to be
+  // detected against this patient's normal self rather than part of it. They
+  // live in patient_meta.behavioural_state, parsed further down this file.
+  // Agitation is separate again (SAT, see CLAUDE.md) and is opt-in per
+  // scenario. Do not grow TRAIT_MAP into any of them.
   //
   // Every note below has to hold the "answer what was asked" scope rule in
   // the main prompt intact — these change the TEXTURE of a reply, never how
@@ -183,6 +182,125 @@
       + '\n' + COGNITIVE_NOTES[baseline.kind] + '\n';
   }
 
+  // --- Acute behavioural state ----------------------------------------------
+  // What is going on with this patient's behaviour TODAY, as distinct from
+  // trait (their personality), mood (their affect) and baseline_cognitive_status
+  // (their permanent floor). Delirium, intoxication, withdrawal, depression.
+  //
+  // The single most important rule here, and the reason several of these notes
+  // are worded defensively: A BEHAVIOURAL STATE DOES NOT IMPLY AGITATION.
+  // The model's stereotype is strong enough that "delirium" alone produces a
+  // shouting patient nearly every time, and that is both clinically wrong and
+  // bad training — hypoactive delirium is the presentation that actually gets
+  // missed in the field, the pleasantly confused dementia patient is more
+  // common than the combative one, and most drunk people are not fighting
+  // anyone. Agitation is a separate, opt-in axis (SAT, see CLAUDE.md); nothing
+  // in this file may imply it.
+  //
+  // Same authored shape as trait and baseline_cognitive_status: one keyword,
+  // then a clause written for this patient. The keyword picks the note, the
+  // clause carries the specifics, and both go to the model.
+  var BEHAVIOURAL_NOTES = {
+    delirium: "This patient is delirious — an ACUTE, fluctuating disturbance of attention and thinking, on top of however they normally are. They lose the thread of a question, drift between topics, and their attention comes and goes: they may follow one question well and be somewhere else entirely by the next. Their sense of what is happening and where they are is unreliable and can shift within the same conversation, which is what separates this from a stable confusion.",
+    delirium_hypo: "This patient has HYPOACTIVE delirium — drowsy, withdrawn, slowed down, barely engaging. They answer late, in very few words, sometimes drift off mid-sentence, and volunteer nothing at all. Their attention wanders and their answers can be wrong or vague. They are NOT distressed, NOT restless and NOT difficult; the whole point of this presentation is that a quiet patient is seriously unwell and easy to under-call.",
+    delirium_hyper: "This patient has HYPERACTIVE delirium — restless and unsettled, attention jumping, starting to answer one thing and arriving somewhere else, sometimes misinterpreting what is going on around them. Unsettled and hard to hold on topic is the presentation; do NOT make them aggressive or abusive toward the crew unless separately told they are agitated.",
+    intoxicated: "This patient is intoxicated. Their speech and judgement are affected: slower or slurred, repeating themselves, losing track, and hazy on times, amounts and the order things happened in. They tend to under-report how much they have had and may genuinely not remember parts of it. Being intoxicated is NOT the same as being aggressive — unless separately told otherwise, play them as cooperative in their own disorganised way.",
+    withdrawal: "This patient is in withdrawal. They feel dreadful — shaky, sweating, queasy, unable to get comfortable, and preoccupied with how bad they feel. They are focused on their own symptoms and may be irritable about being kept waiting, but do NOT make them aggressive toward the crew unless separately told they are agitated.",
+    depression: "This patient is significantly depressed. Flat, quiet, slow to answer, minimal engagement — short answers with long gaps, little spontaneous speech, no real interest in what is happening around them. They are not being obstructive; there is simply very little there. Never volunteer anything about self-harm or wanting to die, and if the crew asks about it directly, answer briefly and flatly without elaborating.",
+    other: "The line below describes an acute behavioural state affecting how this patient is presenting today. Let it shape how they speak and stay consistent with it. Do not make them aggressive or abusive toward the crew unless it explicitly says so."
+  };
+
+  // Substance is parsed out of the same free text rather than being its own
+  // field: the presentations differ enough to be worth naming (opioid vs
+  // stimulant vs alcohol are not one behaviour), but the authored clause
+  // already says which, so a second field would just be a thing to disagree
+  // with itself.
+  var SUBSTANCE_NOTES = {
+    alcohol: 'The substance is alcohol — slurred, repetitive, unsteady, breath smells of it.',
+    opioid: 'The substance is an opioid — drowsy, drifting, very slow to answer, drops off between questions.',
+    stimulant: 'The substance is a stimulant — fast, pressured, jumpy speech, hard to interrupt, may be suspicious of what the crew is doing.',
+    benzo: 'The substance is a sedative — drowsy, slurred, poor recall of the last few hours.',
+    cannabis: 'The substance is cannabis — vague, slowed, easily sidetracked, sometimes anxious about their own symptoms.'
+  };
+  var SUBSTANCE_MAP = [
+    { key: 'alcohol', words: ['alcohol', 'etoh', 'drunk', 'drinking', 'beer', 'spirits', 'wine', 'intoxicated by drink'] },
+    { key: 'opioid', words: ['opioid', 'heroin', 'fentanyl', 'oxycod', 'morphine', 'methadone'] },
+    { key: 'stimulant', words: ['stimulant', 'methamph', 'meth', 'ice', 'amphetamine', 'cocaine', 'mdma'] },
+    { key: 'benzo', words: ['benzo', 'diazepam', 'alprazolam', 'sedative', 'temazepam'] },
+    { key: 'cannabis', words: ['cannabis', 'marijuana', 'weed', 'thc'] }
+  ];
+
+  var BEHAVIOURAL_NONE = ['none', 'nil', 'not applicable', 'no acute behavioural', 'unremarkable', 'normal'];
+  // Anchored forms, matched against the START of the value. The authored
+  // format is "one keyword — then a clause", so the first word is the reliable
+  // signal and the clause is prose that happens to contain whatever words it
+  // contains. Free substring scanning over the whole value is what made
+  // "depression — flat and WITHDRAWN" parse as withdrawal.
+  var BEHAVIOURAL_LEADS = [
+    { kind: 'withdrawal', words: ['withdrawal', 'withdrawing', 'detox'] },
+    { kind: 'delirium', words: ['delirium', 'delirious'] },
+    { kind: 'intoxicated', words: ['intoxicated', 'intoxication'] },
+    { kind: 'depression', words: ['depression', 'depressed'] }
+  ];
+  // Fallback for a value that ignored the format. Deliberately narrower than
+  // the anchored list — every word here has to be one that cannot plausibly
+  // turn up in another state's descriptive clause.
+  var BEHAVIOURAL_MAP = [
+    { kind: 'withdrawal', words: ['withdrawal', 'withdrawing', 'detoxing', 'coming down'] },
+    { kind: 'delirium', words: ['deliri'] },
+    { kind: 'intoxicated', words: ['intoxicat', 'under the influence', 'drunk', 'overdose', 'high on', 'substance affected', 'drug affected'] },
+    { kind: 'depression', words: ['depress', 'low mood', 'anhedoni'] }
+  ];
+
+  function parseBehaviouralState(text) {
+    var raw = String(text || '').trim();
+    if (!raw) return null;
+    var s = raw.toLowerCase();
+    if (BEHAVIOURAL_NONE.some(function (k) { return s === k || s.indexOf(k) === 0; })) return null;
+    var kind = null;
+    // Delirium tremens IS withdrawal, and reading it as plain delirium would
+    // lose the whole alcohol-withdrawal picture the scenario is about. Checked
+    // ahead of everything else because it starts with the word "delirium" and
+    // would otherwise win the anchored match below.
+    if (/delirium tremens|\bdts\b/.test(s)) kind = 'withdrawal';
+    for (var i = 0; !kind && i < BEHAVIOURAL_LEADS.length; i++) {
+      if (BEHAVIOURAL_LEADS[i].words.some(function (w) { return s.indexOf(w) === 0; })) kind = BEHAVIOURAL_LEADS[i].kind;
+    }
+    for (var k = 0; !kind && k < BEHAVIOURAL_MAP.length; k++) {
+      if (BEHAVIOURAL_MAP[k].words.some(function (w) { return s.indexOf(w) !== -1; })) kind = BEHAVIOURAL_MAP[k].kind;
+    }
+    if (!kind) kind = 'other';
+    var substance = null;
+    if (kind === 'intoxicated' || kind === 'withdrawal') {
+      for (var j = 0; j < SUBSTANCE_MAP.length; j++) {
+        if (SUBSTANCE_MAP[j].words.some(function (w) { return s.indexOf(w) !== -1; })) { substance = SUBSTANCE_MAP[j].key; break; }
+      }
+    }
+    // Hypo/hyperactive is read out of the same clause rather than being its
+    // own keyword, so the authored value still reads as one plain sentence.
+    // An unqualified delirium gets the neutral note, which explicitly does
+    // NOT make them agitated — the safe default given the stereotype.
+    var subkind = null;
+    if (kind === 'delirium') {
+      if (/hypoactive|withdrawn|drowsy|quiet|lethargic|somnolen/.test(s)) subkind = 'hypo';
+      else if (/hyperactive|restless|agitat|plucking|unsettled/.test(s)) subkind = 'hyper';
+    }
+    return { kind: kind, subkind: subkind, substance: substance, text: raw };
+  }
+
+  function behaviouralNoteFor(state) {
+    if (!state) return '';
+    var key = state.kind;
+    if (state.kind === 'delirium' && state.subkind) key = 'delirium_' + state.subkind;
+    var lines = ['\nHow they are presenting today (an acute change, not their normal self): ' + state.text,
+      BEHAVIOURAL_NOTES[key] || BEHAVIOURAL_NOTES.other];
+    if (state.substance && SUBSTANCE_NOTES[state.substance]) lines.push(SUBSTANCE_NOTES[state.substance]);
+    // Repeated here rather than left to the individual notes because it is the
+    // one thing that must survive every combination of them.
+    lines.push('This affects how they come across and how reliable they are, not how much they disclose — the rule about answering only what was asked still applies.');
+    return lines.join('\n') + '\n';
+  }
+
   // --- Mood ------------------------------------------------------------
   // Emotional affect for THIS encounter, resolved by SimEngine.parseScenarioMood
   // and passed in already-resolved (both host pages have it to hand). Until
@@ -225,6 +343,8 @@
     var moodNote = moodNoteFor(o.mood);
     var cognitiveNote = cognitiveNoteFor(parseCognitiveBaseline(
       o.cognitiveBaseline != null ? o.cognitiveBaseline : meta.baseline_cognitive_status));
+    var behaviouralNote = behaviouralNoteFor(parseBehaviouralState(
+      o.behaviouralState != null ? o.behaviouralState : meta.behavioural_state));
     var out = promptText
       .replace(/\{\{patientName\}\}/g, o.patientName || 'the patient')
       .replace(/\{\{confusedNote\}\}/g, note);
@@ -232,10 +352,13 @@
     // same reason: both tokens postdate prompts that may already be saved in
     // sim_config, and a stale override must degrade to "note at the end"
     // rather than silently dropping the note altogether.
-    var extras = traitNote + moodNote + cognitiveNote;
+    // Cognitive baseline before behavioural state, deliberately: the floor
+    // reads first, then the acute change on top of it, which is the order the
+    // assessment itself is made in.
+    var extras = traitNote + moodNote + cognitiveNote + behaviouralNote;
     if (out.indexOf('{{traitNote}}') !== -1) {
       out = out.replace(/\{\{traitNote\}\}/g, traitNote);
-      var rest = moodNote + cognitiveNote;
+      var rest = moodNote + cognitiveNote + behaviouralNote;
       return rest ? (out + '\n' + rest) : out;
     }
     return extras ? (out + '\n' + extras) : out;
@@ -415,6 +538,8 @@
     MOOD_NOTES: MOOD_NOTES,
     COGNITIVE_NOTES: COGNITIVE_NOTES,
     parseCognitiveBaseline: parseCognitiveBaseline,
+    BEHAVIOURAL_NOTES: BEHAVIOURAL_NOTES,
+    parseBehaviouralState: parseBehaviouralState,
     TRAIT_NOTES: TRAIT_NOTES,
     parseTrait: parseTrait,
     ORIENTATION_DOMAINS: ORIENTATION_DOMAINS,
