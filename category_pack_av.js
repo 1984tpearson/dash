@@ -15,7 +15,7 @@
  */
 
 const CATEGORIES = [
-  {key:'Adult',icon:'🧑',color:'var(--navy)',subcats:{'Cardiac Arrest':['Medical Cardiac Arrest','Traumatic Cardiac Arrest','ROSC Management','Withholding or Ceasing Resuscitation'],'Airway Management':['Essential Airway Management','Endotracheal Intubation (RSI)','Difficult Airway Guideline','Choking'],'Cardiac':['ACS / STEMI','Bradycardia','Narrow Complex Tachycardia (SVT/AF)','Broad Complex Tachycardia (VT)','Cardiogenic Pulmonary Oedema','Inadequate Perfusion (Cardiogenic)','STEMI Management','Hypertension'],'Pain Relief':['Pain Relief','Headache'],'Respiratory':['Asthma','COPD Exacerbation','Upper Airway Obstruction','Undifferentiated Dyspnoea','Pulmonary Embolism'],'Medical':['Seizures / Status Epilepticus','Hypoglycaemia','Hyperglycaemia / DKA / HHS','Suspected Stroke / TIA','Anaphylaxis','Shock','Hyperkalaemia','Adrenal Insufficiency / Crisis','Nausea and Vomiting','Syncope'],'Infection':['Sepsis','Meningococcal Septicaemia'],'Mental Health':['Acute Behavioural Disturbance','Mental Health Conditions'],'Palliative Care':['Palliative Care'],'Trauma':['Major Trauma','Traumatic Head Injury','Chest Injury','Spinal Injury','Burns','Fracture/dislocation','Elderly/Frail non injury-fall'],'Environment':['Hypothermia','Heat Stress / Heat Stroke'],'Toxicology':['Opioid Toxicity','Tricyclic Antidepressant (TCA) Overdose','Beta-Blocker Toxicity','Calcium Channel Blocker Toxicity','Organophosphate / Pesticide Toxicity','Drug-Induced Hyperthermia / Stimulant Toxidrome','Quetiapine (Antipsychotic) Toxicity','Cyanide Toxicity','Acute Alcohol Intoxication','Alcohol Withdrawal Syndrome']}},
+  {key:'Adult',icon:'🧑',color:'var(--navy)',subcats:{'Cardiac Arrest':['Medical Cardiac Arrest','Traumatic Cardiac Arrest','ROSC Management','Withholding or Ceasing Resuscitation'],'Airway Management':['Essential Airway Management','Endotracheal Intubation (RSI)','Difficult Airway Guideline','Choking'],'Cardiac':['ACS / STEMI','Bradycardia','Narrow Complex Tachycardia (SVT/AF)','Broad Complex Tachycardia (VT)','Cardiogenic Pulmonary Oedema','Inadequate Perfusion (Cardiogenic)','STEMI Management','Hypertension'],'Pain Relief':['Pain Relief','Headache'],'Respiratory':['Asthma','COPD Exacerbation','Upper Airway Obstruction','Undifferentiated Dyspnoea','Pulmonary Embolism'],'Medical':['Seizures / Status Epilepticus','Hypoglycaemia','Hyperglycaemia / DKA / HHS','Suspected Stroke / TIA','Anaphylaxis','Shock','Hyperkalaemia','Adrenal Insufficiency / Crisis','Nausea and Vomiting','Syncope','Acute Behavioural Disturbance'],'Infection':['Sepsis','Meningococcal Septicaemia'],'Mental Health':['Mental Health Conditions'],'Palliative Care':['Palliative Care'],'Trauma':['Major Trauma','Traumatic Head Injury','Chest Injury','Spinal Injury','Burns','Fracture/dislocation','Elderly/Frail non injury-fall'],'Environment':['Hypothermia','Heat Stress / Heat Stroke'],'Toxicology':['Opioid Toxicity','Tricyclic Antidepressant (TCA) Overdose','Beta-Blocker Toxicity','Calcium Channel Blocker Toxicity','Organophosphate / Pesticide Toxicity','Drug-Induced Hyperthermia / Stimulant Toxidrome','Quetiapine (Antipsychotic) Toxicity','Cyanide Toxicity','Acute Alcohol Intoxication','Alcohol Withdrawal Syndrome']}},
   {key:'Paediatric',icon:'🧒',color:'var(--blue)',subcats:{'Cardiac Arrest':['Medical Cardiac Arrest','Traumatic Cardiac Arrest','ROSC Management','Withholding or Ceasing Resuscitation'],'Airway Management':['Essential Airway Management','Endotracheal Intubation (RSI)','Difficult Airway Guideline'],'Pain Relief':['Pain Relief'],'Respiratory':['Asthma','Croup','Upper Airway Obstruction'],'Medical':['Seizures / Status Epilepticus','Hypoglycaemia','Anaphylaxis','Hyperglycaemia / DKA / HHS'],'Infection':['Sepsis'],'Trauma':['Major Trauma','Traumatic Head Injury','Chest Injury','Burns'],'Environment':['Hypothermia','Heat Stress / Heat Stroke'],'Toxicology':['Opioid Toxicity','Tricyclic Antidepressant (TCA) Overdose','Acute Alcohol Intoxication','Organophosphate / Pesticide Toxicity','Drug-Induced Hyperthermia / Stimulant Toxidrome']}},
   {key:'Maternity',icon:'🤰',color:'var(--purple)',subcats:{'Antepartum Haemorrhage':['Antepartum Haemorrhage'],'Pre-eclampsia / Eclampsia':['Pre-eclampsia / Eclampsia'],'Normal Birth':['Normal Birth'],'Breech / Compound':['Breech / Compound Presentation'],'Preterm Labour':['Preterm Labour'],'Cord Prolapse':['Cord Prolapse'],'Shoulder Dystocia':['Shoulder Dystocia'],'Primary Postpartum Haemorrhage':['Primary Postpartum Haemorrhage'],'Miscarriage':['Miscarriage']}},
   {key:'Newborn',icon:'👶',color:'var(--green)',subcats:{'Newborn Resuscitation':['Newborn Resuscitation','Newborn Assessment']}},
@@ -29,9 +29,9 @@ const CATEGORY_TO_CPG = {
   'Adult|Cardiac': ['acs', 'bradycardia', 'tachycardia_narrow', 'tachycardia_broad', 'pulmonary_oedema', 'inadequate_perfusion_cardiogenic', 'stemi_management', 'hypertension'],
   'Adult|Pain Relief': ['pain_relief', 'headache'],
   'Adult|Respiratory': ['asthma', 'copd', 'upper_airway_obstruction', 'dyspnoea', 'pulmonary_embolism'],
-  'Adult|Medical': ['seizures', 'hypoglycaemia', 'stroke', 'anaphylaxis', 'hyperkalaemia', 'hyperglycaemia', 'adrenal_insufficiency', 'nausea_vomiting', 'shock'],
+  'Adult|Medical': ['seizures', 'hypoglycaemia', 'stroke', 'anaphylaxis', 'hyperkalaemia', 'hyperglycaemia', 'adrenal_insufficiency', 'nausea_vomiting', 'shock', 'acute_behavioural_disturbance'],
   'Adult|Infection': ['sepsis', 'meningococcal'],
-  'Adult|Mental Health': ['acute_behavioural_disturbance', 'mental_health_conditions'],
+  'Adult|Mental Health': ['mental_health_conditions'],
   'Adult|Palliative Care': ['palliative_care'],
   'Adult|Syncope': ['syncope'],
   'Adult|Trauma': ['major_trauma', 'head_injury', 'chest_injury', 'spinal_injury', 'burns', 'fracture_dislocation_a0806', 'elderly_frail_non_injury_fall'],
@@ -104,11 +104,16 @@ const COND_TO_CPG_KEY = {
   'Adrenal Insufficiency / Crisis':      'adrenal_insufficiency',
   'Nausea and Vomiting':                 'nausea_vomiting',
   'Syncope':                             'syncope',
+  'Acute Behavioural Disturbance':       'acute_behavioural_disturbance',
   // Infection
   'Sepsis':                              'sepsis',
   'Meningococcal Septicaemia':           'meningococcal',
-  // Mental Health
-  'Acute Behavioural Disturbance':       'acute_behavioural_disturbance',
+  // Mental Health — Acute Behavioural Disturbance is deliberately listed
+  // under Medical above, not here: it is a medical presentation with a
+  // behavioural manifestation (hypoxia, sepsis, hypoglycaemia, head injury,
+  // intoxication, delirium), and filing it under Mental Health invites
+  // exactly the wrong assessment approach. The CPG's own title is what
+  // misleads. This lookup is flat, so only the grouping moved.
   'Mental Health Conditions':            'mental_health_conditions',
   // Palliative
   'Palliative Care':                     'palliative_care',

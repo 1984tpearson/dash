@@ -385,6 +385,47 @@ gets the treatment-response reasoning, the assessor graph and the manual
 Add/Move/Remove tools for free. Don't grow `TRAIT_MAP` into it, and don't
 extend `mood` to carry it either.
 
+Design decisions already agreed with Tim for when that lands, so they don't
+get re-litigated:
+- **Absent by default, on the `rhythm` precedent.** SAT is `null` (not 0)
+  unless a scenario authored it or something scripted it — no trace, no tile,
+  no prompt text, no token cost on the ~99% of scenarios where agitation is
+  irrelevant. 0 would mean "measured, and calm"; null means "not a thing
+  here". Only +1..+3 is modelled: the negative half is sedation depth, which
+  GCS already represents, and only matters post-sedation.
+- **Agitation is not distress.** A STEMI patient wound up by pain is
+  `distressLevel` (already derived from vitals by `getAppearanceState()`),
+  NOT agitation. Both prompts must exclude pain/fear/breathlessness
+  explicitly or the whole aggression apparatus fires on every painful
+  presentation.
+- **A behavioural state does NOT imply agitation, and this needs to be an
+  explicit anti-default** — the model's stereotype is strong enough that
+  "delirium" alone will otherwise produce a shouting patient every time.
+  Hypoactive delirium, the pleasantly confused dementia patient and the
+  happy drunk are more common in reality and better training. Agitation is
+  an authored exception to these presentations, never a consequence of them.
+- **Never inferred from how the crew speaks.** An app that decides the crew
+  was rude and escalates the patient is the wrong product; it is also not
+  what SAT measures. Killed, not deferred. Escalation comes from the
+  assessor (Script an Event, graph tools) or from a genuine clinical change.
+- The clinical changes that MAY introduce it: withdrawal progressing,
+  stimulant intoxication, naloxone reversal, worsening hypoxia, head injury,
+  and delirium/dementia only where the scenario already established
+  agitation. Hypoglycaemia and post-ictal states are deliberately excluded
+  as their own separate thing.
+- **Scenarios generated under "Acute Behavioural Disturbance" ALWAYS get
+  agitation** — that subcategory is exactly what the feature is for, whatever
+  its poorly-worded CPG title suggests.
+
+**"Acute Behavioural Disturbance" lives under Medical, not Mental Health**
+(moved in both `category_pack_av.js` and `category_pack_none.js` — the
+`CATEGORIES` subcat list AND the `CATEGORY_TO_CPG` grouping; the flat
+`COND_TO_CPG_KEY`/`CPG_SUBTYPE_LABELS` lookups are unaffected by grouping).
+It is a medical presentation with a behavioural manifestation — hypoxia,
+sepsis, hypoglycaemia, head injury, intoxication, delirium — and filing it
+under Mental Health invites exactly the wrong assessment approach from a
+student. The CPG's own title is what misleads.
+
 The **orientation profile** (`scenario_sim_timelines.orientation_profile`,
 copied onto the session row at creation) fixes what a V4 patient is
 confused about — which of time/date/place/person/event they have wrong,
