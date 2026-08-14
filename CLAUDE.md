@@ -246,10 +246,9 @@ no distinctive style), stable for the whole scenario, and it changes only the
 texture of speech. `mood` is emotional affect for THIS encounter, is
 avatar-facing (`SimEngine.parseScenarioMood()` drives eyebrows/mouth), and
 loses to physiology. They compose rather than compete — a stoic patient who is
-frightened is a frightened person understating their symptoms. Authored as free
-text by `generator.html` (told explicitly to pick it from who the *person* is,
-not from the severity of the emergency, and not to make it agree with `mood`),
-fuzzy-matched by **`PatientVoice.parseTrait()`** — which lives in
+frightened is a frightened person understating their symptoms. Authored by `generator.html` (told explicitly to pick it from who the *person*
+is, not from the severity of the emergency, and not to make it agree with
+`mood`), fuzzy-matched by **`PatientVoice.parseTrait()`** — which lives in
 `patient_voice.js`, not `sim_engine.js`, because nothing outside the voice
 prompt consumes it and keeping it there means `patient_voice.js` still depends
 on no other file. Every trait note is written to leave the answer-scope rule
@@ -265,6 +264,31 @@ traits silently. Unset/older scenarios produce byte-identical output to the
 pre-trait prompt. `sim_control.html`'s History tab shows trait and mood to the
 assessor under "Manner", so a scripted poor historian isn't marked as the
 student failing to elicit.
+
+**Both fields are authored as "one keyword — then your own clause", and that
+shape is load-bearing.** A quoted example in one of these free-text
+instructions gets copied verbatim far more often than it gets used as a
+pattern: of the 11 scenarios that had a `mood` before this format landed, 6
+were the literal string "Anxious and tearful" — the single example the prompt
+gave. So neither instruction offers a sample answer any more. Both require the
+value to *begin with exactly one* recognised keyword (the parsers' canonical
+set) followed by a clause written fresh for that patient, and both say
+explicitly that the bracketed descriptions are definitions, not text to reuse.
+"Exactly one" also removes a real ambiguity: both parsers are first-match-wins
+over a map whose order encodes priority (most specific/severe first), so
+"Anxious and tearful" resolves to `tearful`, not `anxious`. That ordering is
+deliberate — don't reorder `MOOD_MAP` to "fix" it; the format rule is what
+stops two keywords landing in one value in the first place ("anxious — close
+to tears" then resolves the way it reads). Verified across the full canonical
+keyword set of both parsers.
+
+**Nothing backfills, deliberately.** `trait` is written at generation time, so
+scenarios generated before it existed have no field and resolve to `plain` —
+no note, byte-identical output to the pre-trait prompt. That is a non-problem
+rather than a migration waiting to happen, because the assessor pickers work
+on any scenario regardless of what was authored: an old scenario can still be
+given a trait for the length of a session. Same story for `mood`, which most
+of the library also predates (11 of 94 at the time of writing).
 
 **Both are assessor-editable live, via `sim_sessions.manner`.** The Manner
 block on `sim_control.html`'s History tab is two pickers (`mannerPickerHtml()`
