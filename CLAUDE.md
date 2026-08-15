@@ -609,6 +609,39 @@ confirmed-barge-in and call-teardown paths, because `stopRealtimeAudio()` is
 finishing their sentence. `playRealtimeSegment()` deliberately does NOT clear
 `_rtSpeaking` at its end — the queue does that once, after the last segment.
 
+**Cancellation has to be re-checked after every `await`, not just at the
+queue gate.** Both segments' Hume requests are fired up front, so the instant
+segment one ends, segment two is already *inside* `playRealtimeSegment`
+awaiting its fetch — past the `run.cancelled` check the queue does before
+calling it. A barge-in doesn't change `callId`, so the `callId` guard can't
+catch it either, and the patient calmly finished the sentence you just
+interrupted. `playRealtimeSegment` and `playStreamedMp3` now both re-test the
+run after each await. The general rule: on this path `callId` covers "the
+call ended", `run.cancelled` covers "this reply was interrupted", and they
+are not interchangeable.
+
+**Object URLs must be revoked — this is what killed long sessions.** Every
+reply creates a blob or MediaSource URL, and segmenting made it two per
+reply. None were ever revoked, and a MediaSource is a scarce resource that
+iOS caps far lower than Chrome does. Symptom: the voice dies after roughly
+8-10 exchanges on Chrome/Android and 2-3 on an iPad — same leak, two caps —
+presenting either as silence or as a drop to the Web Speech voice (the
+failure lands in `speakRealtimeReply`'s catch). `setAudioSrc()` revokes the
+previous URL as it sets the next, so exactly one is ever live; a call
+teardown calls `releaseRealtimeAudio()`. **Anything new that calls
+`URL.createObjectURL` on this path must go through `setAudioSrc`.**
+
+**`socket.onclose` is not a no-op.** It used to be, on the assumption that
+`endRealtimeCall()` was the only thing that ever ended a stream. Deepgram
+hangs up on an idle stream (~10-12s — which a backgrounded phone tab
+produces, since MediaRecorder is throttled there), and mobile networks drop
+sockets unprompted. The page stayed visually perfect — mic badge lit, status
+reading "Listening…" — while being deaf for the rest of the scenario. Now:
+`KeepAlive` every 8s, up to `RT_MAX_RECONNECTS` reconnects, and a real
+message to the student if it gives up. `stopRealtimeCapture()` nulls
+`_rtSocket` *before* calling `close()` precisely so `onclose` can tell a
+deliberate teardown (`_rtSocket !== socket`) from a real drop.
+
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
 `mood` to carry it either.
 
