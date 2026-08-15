@@ -522,15 +522,57 @@ before, which is what makes it safe to A/B on one scenario.
   two voices were Aura-2 and the system voice. All three teardown paths
   (streaming `play()`, non-streaming `play()`, and the reader loop's catch)
   now resolve instead of rejecting when the stop was ours.
-- `HUME_TTS_VOICE_POOL` is **empty by default**, because Hume's library
-  exposes no gender metadata over the API and there is nothing to curate from
-  without listening first. While empty, `humeVoiceFor()` fetches the library
-  and picks deterministically from all of it — stable per patient (same
-  `avatarBuild.voiceSeed` as the face), just not gender-matched. A trap worth
+- `HUME_TTS_VOICE_POOL` is **empty by default**, and that is the expected
+  state: gender is a filterable *tag* on the voice library
+  (`filter_tag=GENDER:Female`), so `humeVoiceLibrary()` simply asks for the
+  right voices rather than needing them curated by ear — which is what the
+  pool was originally there to work around. Fill it in only to narrow to
+  favourites. While empty, `humeVoiceFor()` picks deterministically from the
+  fetched (gender-filtered, name-sorted — the seeded index is only stable if
+  the list it indexes into is) library, stable per patient via the same
+  `avatarBuild.voiceSeed` as the face. A trap worth
   knowing: the schema stores this as `map_str_str` (comma-separated strings,
   which is what the admin editor can edit) while the page declares arrays, and
   the schema copy wins — so `humeVoiceFor()` coerces. Indexing the raw string
   would pick single *characters* as voice names.
+
+**Reply latency is attacked at four points, all the same trick — start a
+stage before the previous one has finished.** In the order they fire:
+- **Prompt caching.** `cache_control: {type:'ephemeral'}` on the system
+  prompt. It is byte-identical across every turn of a session (persona, the
+  full hx block, trait/mood/behaviour notes), so from turn two on this cuts
+  both time-to-first-token and cost. Cheapest of the four and probably the
+  biggest. This is why the SAT note — the one part that *does* move
+  mid-scenario — sits at the END of the assembled block: anything that
+  changes invalidates the cache from that point on.
+- **Voice prefetch.** `prefetchHumeVoice()` at session connect, right after
+  `buildAvatarBase()` (it must follow it — the pick is seeded off
+  `avatarBuild.voiceSeed`). Lazily resolved, the voice-library round trip sat
+  in series with the first synthesis; this only moves *when* it happens.
+- **Streamed completion into segmented TTS.** `readAnthropicTextStream()`
+  hands the caller the first sentence as soon as it lands and everything
+  after it at the end — **at most two segments, never per-sentence.** Each is
+  a separate Hume synthesis, and with replies this short a third buys nothing
+  while adding a join the listener can hear. A head segment needs ≥30
+  characters before the boundary *and* text after it: `"Ow."` on its own
+  costs more in join than it saves. `createSpeechQueue()` fires each
+  segment's Hume request the moment its text exists — in parallel with the
+  model still writing and with the previous segment still playing — while
+  keeping *playback* strictly ordered.
+- **MediaSource playback.** `playStreamedMp3()`, unchanged: audio starts on
+  the first MP3 chunk.
+
+The non-obvious consequence of segmenting: **a reply is no longer one audio
+element's lifetime**, so anything that used to key off `_rtAudioEl`'s
+`ended`/`_rtSpeaking` is now wrong at the join between two segments. Hence a
+**speech "run"**: `cancelSpeechRun()` is explicit and called only from the
+confirmed-barge-in and call-teardown paths, because `stopRealtimeAudio()` is
+*also* called at the end of every normal reply and by the Web Speech fallback
+— piggybacking cancellation on it would kill segment two of every reply.
+`requestEndRealtimeCall()` waits on the run's callback list rather than on
+`_rtAudioEl`'s `ended`, since the first segment finishing is not the patient
+finishing their sentence. `playRealtimeSegment()` deliberately does NOT clear
+`_rtSpeaking` at its end — the queue does that once, after the last segment.
 
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
 `mood` to carry it either.

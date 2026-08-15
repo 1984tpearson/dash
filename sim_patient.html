@@ -1559,6 +1559,7 @@ async function connectSession(code) {
           applyResolvedMood();
           buildAvatarBase(row.scenario_id, meta.skin_colour, gender, age);
           renderPatientInfoPanel(scen, meta, gender, age);
+          prefetchHumeVoice(); // must follow buildAvatarBase() — the pick is seeded off avatarBuild.voiceSeed
         })
         .catch(() => {});
     }
@@ -2921,11 +2922,14 @@ async function speakPatientReply(text, resumeIfConversing, isConversation) {
 //   therefore queues an explicit 'talk_log' student_queue item carrying
 //   both halves of the exchange — see its comment, and the matching branch
 //   in sim_control.html's processStudentQueue().
-// - TTS playback fetches the full Deepgram Aura-2 response before playing
-//   (a single <audio> element) rather than true streaming playback via Media
-//   Source Extensions — for the short (max_tokens 300) replies this engine
-//   generates, the difference is small, but a longer reply would benefit
-//   from real chunked playback later.
+// - Latency is attacked at three points, all of them "start before the
+//   previous stage has finished": the Hume voice pick is prefetched at
+//   connect (prefetchHumeVoice), the Claude call is streamed and its first
+//   sentence sent to synthesis while the rest is still being written
+//   (readAnthropicTextStream + createSpeechQueue), and the MP3 itself plays
+//   from its first chunk via MediaSource (playStreamedMp3). The system
+//   prompt is also prompt-cached, which is the cheapest of the four and
+//   probably the largest single win from turn two onward.
 // - Mid-sentence barge-in is enabled but mitigated, not naively trusted:
 //   the browser's own echo cancellation wasn't enough on its own to stop
 //   Deepgram's VAD from reading the patient's own TTS audio (bleeding from
@@ -3107,6 +3111,18 @@ async function humeVoiceFor(gender, apiKey) {
     _humeLastPickedVoice = picked;
   }
   return picked;
+}
+
+// Warms the voice pick as soon as the scenario's gender/seed are known,
+// rather than leaving it to the first reply. humeVoiceFor() is memoised via
+// _humeVoiceLibrary, so this is purely about WHEN the round trip to Hume
+// happens: lazily it sits in series with the first synthesis, which is the
+// one turn where latency is most obvious. Fire-and-forget by design — a
+// failure here costs nothing, since the real call re-resolves it anyway.
+function prefetchHumeVoice() {
+  getHumeKey()
+    .then(key => (key ? humeVoiceFor(patientGender, key) : null))
+    .catch(() => {});
 }
 
 // The acting instruction. Hume caps these usefully short — its own guidance is
@@ -3370,9 +3386,11 @@ function requestEndRealtimeCall() {
   _rtMicClosed = true;
   syncFabArmedUI();
   const finish = () => { if (callId === _rtCallId) closeVoiceModal(); };
-  if (_rtSpeaking && _rtAudioEl) {
-    _rtAudioEl.addEventListener('ended', finish, { once: true });
-    _rtAudioEl.addEventListener('pause', finish, { once: true });
+  // Waits on the speech RUN, not on _rtAudioEl's 'ended' — a reply can span
+  // two segments (see createSpeechQueue), and the first segment ending is
+  // not the patient finishing their sentence.
+  if (_rtSpeechRun && !_rtSpeechRun.finished) {
+    _rtSpeechRun.cbs.push(finish);
     document.getElementById('voice-modal-status').textContent = 'Mic closed — finishing reply…';
   } else {
     finish();
@@ -3396,6 +3414,7 @@ function endRealtimeCall() {
   _rtCallId++; // invalidates any in-flight async work from this call
   stopRealtimeCapture();
   stopRealtimeAudio();
+  cancelSpeechRun();
   _rtPendingText = '';
 }
 
@@ -3540,6 +3559,7 @@ async function startRealtimeCapture() {
       } else if (text) {
         _rtBargeInArmedAt = null;
         stopRealtimeAudio(); // confirmed — real transcribed speech followed the VAD trigger, treat as a genuine interruption
+        cancelSpeechRun();   // and drop any segments of this reply still queued behind the one just cut off
       }
     }
     // is_final and speech_final are independent flags — a message can be
@@ -3609,12 +3629,24 @@ async function handleRealtimeUtterance(text, callId) {
   const replyEl = document.getElementById('patient-reply-display');
   statusEl.textContent = 'Thinking…';
   let reply;
+  // Set by the first streamed segment, which starts speaking before the
+  // model has finished writing the rest (see readAnthropicTextStream). Null
+  // until then, and stays null for the canned V2/V3 replies below, which
+  // never stream.
+  let queue = null;
   try {
-    reply = await generateRealtimePatientReply(text);
+    reply = await generateRealtimePatientReply(text, seg => {
+      if (callId !== _rtCallId) return;
+      if (!queue) {
+        queue = createSpeechQueue(callId);
+        statusEl.textContent = 'Patient replied:';
+      }
+      queue.push(seg);
+    });
   } catch (e) {
     reply = "...sorry, I didn't catch that.";
   }
-  if (callId !== _rtCallId) return; // call ended/superseded while the AI call was in flight
+  if (callId !== _rtCallId) { if (queue) cancelSpeechRun(); return; } // call ended/superseded while the AI call was in flight
   if (!reply) {
     // GCS V<=1 — no verbal response at all, same as the legacy path.
     statusEl.textContent = 'Listening… (you can interrupt anytime)';
@@ -3638,7 +3670,10 @@ async function handleRealtimeUtterance(text, callId) {
   // Fire-and-forget: a failed log write must never delay or break the reply.
   const atMin = (SimEngine.getSimNow(testConfig, Date.now()) - testConfig.startTimeMs) / 60000;
   queueStudentItem('talk_log', text, { reply, atMin }).catch(() => {});
-  await speakRealtimeReply(reply, callId);
+  // Already speaking if the reply streamed — just wait it out. The canned
+  // V2/V3 sounds and the error line above didn't stream, so they still need
+  // the single-shot path.
+  if (queue) await queue.finish(); else await speakRealtimeReply(reply, callId);
   if (callId !== _rtCallId) return;
   statusEl.textContent = 'Listening… (you can interrupt anytime)';
   replyEl.style.display = 'none';
@@ -3658,7 +3693,7 @@ function applyResolvedMood() {
   patientMood = SimEngine.parseScenarioMood(mannerOverride.mood || authoredMood);
 }
 
-async function generateRealtimePatientReply(question) {
+async function generateRealtimePatientReply(question, onSegment) {
   const v = SimEngine.getVitalsRaw(testConfig, SimEngine.getSimNow(testConfig, Date.now()));
   const gcsV = Math.round(v.gcsV || 0);
   if (gcsV <= 1) return null;
@@ -3688,38 +3723,109 @@ async function generateRealtimePatientReply(question) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    // max_tokens tightened from 300 -> 120 as a latency lever, not just a
-    // safety cap: this call isn't streamed (see the "Trade-offs" comment
-    // above), so nothing plays until the FULL completion lands — every
-    // token Haiku is allowed to generate is added wait time, not just a
-    // worst-case ceiling. 120 is still comfortable headroom over what the
-    // prompt actually asks for ("1-3 short sentences" is realistically
-    // 60-80 tokens), so this shouldn't visibly truncate real replies, only
-    // cut off the rare runaway completion faster.
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 120, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
+    // max_tokens 120 rather than sim_control.html's 300: still comfortable
+    // headroom over what the prompt asks for ("1-3 short sentences" is
+    // realistically 60-80 tokens), so it shouldn't visibly truncate a real
+    // reply, only cut off the rare runaway completion faster. It used to
+    // matter more than it does now — before this call was streamed, nothing
+    // played until the FULL completion landed, so every allowed token was
+    // added wait time rather than a worst-case ceiling.
+    //
+    // cache_control pins the system prompt in the prompt cache. It is
+    // byte-identical on every turn of a session (persona, history block,
+    // trait/mood/behaviour notes — none of them move mid-scenario except
+    // the SAT note, which is why that one sits at the END of the block),
+    // so from turn two on this cuts both time-to-first-token and cost.
+    // Likely the larger of the two latency wins here — see the streaming
+    // comment below.
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      stream: true,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages: PatientVoice.buildMessages({ history, userPrompt })
+    })
   });
   if (!response.ok) throw new Error(`Anthropic call failed (${response.status})`);
-  const data = await response.json();
-  const text = (data.content || []).map(b => b.text || '').join('').trim();
+  const text = await readAnthropicTextStream(response, onSegment);
   return text || "...sorry, I didn't catch that.";
 }
 
-// --- TTS: Deepgram Aura-2 ---------------------------------------------------
-// Fetches the FULL audio before playing (see the "Trade-offs" comment at
-// the top of this section) — a single POST to /v1/speak, played through
-// the element unlockRealtimeAudio() already primed inside a real tap.
-// Unlike the STT WebSocket above, this is a plain REST POST, so the API
-// key travels as a normal Authorization header (`Token <key>`, Deepgram's
-// own convention — NOT `Bearer`) rather than needing the
-// Sec-WebSocket-Protocol trick. model/encoding are query-string
-// parameters (Deepgram's documented pattern, e.g.
-// "?model=aura-2-thalia-en&encoding=mp3"), NOT JSON body fields — only
-// `text` goes in the body. mp3 is the REST endpoint's own default encoding,
-// requested explicitly here anyway for clarity/future-proofing. Falls back
-// to speakPatientReply()'s standard Web Speech voice on any
-// failure (missing key, network error, bad voice name) rather than leaving
-// the reply silent — same "never leave the training exercise stuck"
-// principle the legacy path already follows.
+// Reads an SSE completion, handing the caller a first speakable chunk as
+// soon as one sentence has landed rather than at the end of the completion.
+// `onSegment(text)` is called at most twice: once at the first sentence
+// boundary past MIN_SEGMENT_CHARS, then once with everything after it. Two
+// segments, not per-sentence — each one is a separate Hume synthesis, and
+// with replies this short a third would buy nothing while adding a join the
+// listener can hear.
+//
+// If the caller passes no onSegment (or the reply is one short sentence, so
+// no early boundary is found), this behaves exactly like the old
+// non-streamed call: one string, returned when the completion finishes.
+const MIN_SEGMENT_CHARS = 30;
+async function readAnthropicTextStream(response, onSegment) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';   // raw SSE bytes not yet split into lines
+  let full = '';       // everything the model has produced so far
+  let emitted = 0;     // characters already handed to onSegment
+  let sawBoundary = false;
+
+  function tryEmitHead() {
+    if (sawBoundary || !onSegment) return;
+    const pending = full.slice(emitted);
+    if (pending.length < MIN_SEGMENT_CHARS) return;
+    // The first sentence end with at least MIN_SEGMENT_CHARS before it and
+    // some text after it. Both halves of that matter: a boundary at the very
+    // end of what has arrived is just where the stream happens to be up to,
+    // and a very short opener ("Ow.") isn't worth its own synthesis call —
+    // the join would cost more than the head start saves.
+    const re = /[.!?…]\s+(?=\S)/g;
+    let m, cut = -1;
+    while ((m = re.exec(pending))) {
+      if (m.index + 1 >= MIN_SEGMENT_CHARS) { cut = m.index + 1; break; }
+    }
+    if (cut < 0) return;
+    sawBoundary = true;
+    emitted += cut;
+    onSegment(pending.slice(0, cut).trim());
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffered += decoder.decode(value, { stream: true });
+      const lines = buffered.split('\n');
+      buffered = lines.pop(); // keep the (possibly partial) last line
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        let evt;
+        try { evt = JSON.parse(payload); } catch (e) { continue; }
+        if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+          full += evt.delta.text;
+          tryEmitHead();
+        } else if (evt.type === 'error') {
+          throw new Error(`Anthropic stream error: ${(evt.error && evt.error.message) || 'unknown'}`);
+        }
+      }
+    }
+  } catch (e) {
+    // A stream that breaks after the first segment already reached the
+    // speaker is not a failed reply — return what we have rather than
+    // throwing the caller onto its canned "sorry, I didn't catch that",
+    // which would be spoken on top of a sentence the patient just said.
+    if (!emitted) throw e;
+  }
+  // Sliced BEFORE trimming — `emitted` indexes into the untrimmed string.
+  const tail = full.slice(emitted).trim();
+  if (onSegment && tail) onSegment(tail);
+  return full.trim();
+}
+
+// --- TTS: Hume Octave --------------------------------------------------------
 // Builds the Hume request, or returns null if Hume isn't configured/usable so
 // the caller falls straight through to Deepgram. Kept as its own function so
 // the shared playback below (MediaSource streaming, barge-in, the _rtAudioEl
@@ -3767,13 +3873,83 @@ async function fetchHumeSpeech(text) {
   return res;
 }
 
+// Plays a reply that arrives in pieces (see readAnthropicTextStream), while
+// keeping single-shot callers working unchanged.
+//
+// The two things it buys: each segment's Hume request is fired the moment
+// its text exists — in parallel with the model still generating the rest AND
+// with the previous segment still playing — while playback itself stays
+// strictly ordered, so the listener hears one continuous reply.
+//
+// A "run" is one reply's worth of segments. It exists because the barge-in
+// path can't just stop the current audio any more: it has to stop the
+// segments queued behind it too. stopRealtimeAudio() deliberately does NOT
+// cancel the run (it is also called at the end of every reply, and by the
+// Web Speech fallback) — cancelSpeechRun() is explicit, called from the
+// confirmed-barge-in and call-teardown paths only.
+let _rtSpeechRun = null;
+
+function cancelSpeechRun() {
+  if (!_rtSpeechRun || _rtSpeechRun.finished) return;
+  _rtSpeechRun.cancelled = true;
+  finishSpeechRun(_rtSpeechRun);
+}
+
+function finishSpeechRun(run) {
+  if (run.finished) return;
+  run.finished = true;
+  const cbs = run.cbs.splice(0);
+  cbs.forEach(cb => { try { cb(); } catch (e) {} });
+}
+
+function createSpeechQueue(callId) {
+  const run = { cancelled: false, finished: false, cbs: [] };
+  _rtSpeechRun = run;
+  let chain = Promise.resolve();
+  let any = false;
+  return {
+    run,
+    push(text) {
+      if (!text) return;
+      any = true;
+      // Started here, awaited later: this is the parallelism.
+      const resP = fetchHumeSpeech(text).then(r => ({ res: r }), err => ({ err }));
+      chain = chain.then(async () => {
+        if (run.cancelled || callId !== _rtCallId) return;
+        await playRealtimeSegment(resP, text, callId);
+      });
+    },
+    finish() {
+      chain = chain.then(() => {
+        if (any && callId === _rtCallId && !run.cancelled) stopRealtimeAudio();
+        finishSpeechRun(run);
+      });
+      return chain;
+    }
+  };
+}
+
+// Single-shot path, unchanged for callers: one segment, spoken and finished.
 async function speakRealtimeReply(text, callId) {
+  const q = createSpeechQueue(callId);
+  q.push(text);
+  await q.finish();
+}
+
+// One segment: awaits an already-in-flight Hume fetch, then plays it. This is
+// the body speakRealtimeReply() used to be — the only change is that the
+// fetch is passed in rather than started here, and that clearing _rtSpeaking
+// at the end is the queue's job (a reply spanning two segments must not look
+// finished between them).
+async function playRealtimeSegment(resP, text, callId) {
   try {
+    const settled = await resP;
+    if (settled.err) throw settled.err;
+    const res = settled.res;
     // Hume is the only TTS provider on this path now. If it can't synthesise
     // (no key, outage, bad request) the catch at the bottom speaks the reply
     // through the browser's own Web Speech voice rather than losing it —
     // noticeably worse, but never silence.
-    const res = await fetchHumeSpeech(text);
     if (callId !== _rtCallId) return;
     if (!res) throw new Error('Hume TTS unavailable (no key, or no voice could be resolved)');
 
@@ -3826,7 +4002,10 @@ async function speakRealtimeReply(text, callId) {
         });
       });
     }
-    if (callId === _rtCallId) stopRealtimeAudio(); // clears _rtSpeaking, stops talk animation — harmless no-op if a barge-in already called this
+    // NOT stopRealtimeAudio() here — the queue does that once the whole
+    // reply has been spoken. Clearing _rtSpeaking between two segments of
+    // one reply would drop the talk animation for the join and, worse, tell
+    // isDeliberateStop()/requestEndRealtimeCall() the patient had finished.
   } catch (e) {
     stopRealtimeAudio();
     if (callId !== _rtCallId) return;
@@ -3837,7 +4016,7 @@ async function speakRealtimeReply(text, callId) {
   }
 }
 
-// Pipes a streamed Deepgram Aura-2 MP3 response into <audio> via MediaSource
+// Pipes a streamed Hume Octave MP3 response into <audio> via MediaSource
 // Extensions, so playback can start on the FIRST chunk instead of waiting
 // for res.blob() to collect the entire file — the actual fix for "responses
 // feel slow", since the old approach silently waited out the full TTS
