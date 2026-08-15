@@ -535,114 +535,41 @@ before, which is what makes it safe to A/B on one scenario.
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
 `mood` to carry it either.
 
-### EVI — Hume's speech-to-speech pipeline (opt-in, parallel path)
+### EVI — evaluated and rejected (don't rebuild it without new information)
 
-One WebSocket (`wss://api.hume.ai/v0/evi/chat`) replaces mic capture, STT,
-turn detection, interruption, the Claude call and TTS. The point is service
-count: the alternative is Deepgram STT + Hume TTS + our own barge-in
-heuristics, three things to keep working instead of one. Enabled per device
-via `localStorage.av_evi_enabled` and the "EVI (beta)" topbar checkbox, which
-stays hidden without a Hume key. Left **parallel** to the Deepgram+Hume path
-rather than replacing it, so the two are A/B-able and there is a working
-fallback while this is unproven.
+Hume's speech-to-speech product (`wss://api.hume.ai/v0/evi/chat`) replaces the
+whole voice stack in one socket: mic capture, STT, turn detection,
+interruption, the Claude call and TTS. It was built as a parallel opt-in path,
+tested on two scenarios, and **removed**. Recording why, because the appeal
+(one vendor instead of Deepgram + Hume) is real and will come up again:
 
-**`patient_voice.js` is untouched by this**, which is the whole reason this
-shape was chosen. EVI accepts `system_prompt` in a `session_settings` socket
-message, so the prompt stays in this repo under version control instead of
-moving into a Hume-hosted config. Live state that moves during a scenario
-(vitals, treatments, SAT, the fictional clock) goes in `context`
-(`persistent`), rebuilt by `eviLiveContext()` and resent only when it
-actually differs.
+- **Per-minute billing is the blocker.** Roughly $0.04–0.07/min against the
+  current stack's ~$0.25 for a 30-minute scenario — call it 5–8x. Scenarios
+  are long and mostly silent (crews spend minutes taking a BP or drawing up a
+  drug), so a per-minute model is a bad fit for this specific product even
+  though it suits ordinary voice agents. **One thing was never settled**:
+  whether billing counts wall-clock connection time or only active
+  conversation. If it is the latter, the gap narrows a lot and this is worth
+  revisiting — the Hume usage dashboard against a known session length would
+  answer it.
+- **Interruption, the main reason to want EVI, was already fixable here** —
+  see `isDeliberateStop` above. That bug was ours, not Deepgram's.
+- Two faults were found and never fixed, both mine rather than EVI's, and
+  both would need redoing: the scenario briefing never reached the model
+  (`buildSystemPrompt` carries the persona and rules, but the case details —
+  provisional diagnosis, hx, PMHx — live in `buildUserPrompt`, which that
+  path did not use, so the patient invented a complaint), and the voice modal
+  was never opened, so no transcript or reply text appeared on screen.
+- **Hume has no standalone STT.** Their SDK exposes only `tts` and
+  `empathicVoice`; transcription exists only inside EVI. So "one vendor" via
+  Hume means EVI or nothing. Their own docs assistant could not confirm
+  otherwise. Note the SDK omits Expression Measurement entirely, so that
+  conclusion rests on possibly incomplete evidence.
+- Setup needed a second `app_config` row (`hume_evi_config_id`) because the
+  model choice is not settable per session — it lives in a stored config.
 
-Things that genuinely differ from the Deepgram+Hume path:
-- **Two setup rows in `app_config`**, not one: `hume_api_key` plus
-  `hume_evi_config_id`. The model choice (Anthropic / `claude-haiku-4-5`) is
-  **not** settable per session — it lives in a stored EVI config created in
-  Hume's dashboard. Without the config id, EVI would answer on its own
-  default model and the patient would silently stop being Claude-authored,
-  so `startEviCall()` refuses to connect rather than allow that.
-- **EVI owns conversation history**, so `PatientVoice.buildMessages` is not
-  used here. `recordEviExchange()` still mirrors replies into
-  `voice_transcript` because the assessor's panel reads it.
-- **Audio output is base64 WAV chunks at 48kHz, not an MP3 byte stream**, so
-  `playStreamedMp3`/MediaSource does not apply — playback is a Web Audio
-  queue of decoded buffers. That queue is also what makes interruption
-  clean: a `user_interruption` event just clears it, with no `AbortError` to
-  disambiguate (see `isDeliberateStop`, which the MediaSource path needs).
-- Audio **input** is base64 webm/opus at 100ms chunks; the `audio` session
-  setting is only needed for linear16, so `MediaRecorder` output goes
-  straight in.
-- **The EVI config's voice is only a default.** `session_settings.voice_id`
-  overrides it per session, and without that override every patient in every
-  scenario shares one voice. Resolved once at connect from the same seeded
-  pick the TTS path uses (`humeVoiceFor`), so a patient sounds like the same
-  person on either engine. `humeVoiceLibrary()` therefore keeps `{name, id}`
-  rather than names alone — the TTS endpoint takes a voice by **name**, EVI
-  takes only an **id**. A hand-curated `HUME_TTS_VOICE_POOL` entry has no id,
-  so EVI falls back to its config voice for those; that is the one case where
-  curating costs you per-patient variety. On the avatar it outranks mood at +2/+3 (its own
-`satAgitated`/`satSevere` mouth states, not the mood ones — mood `angry` is a
-closed mouth, wrong for someone shouting).
-
-Design decisions already agreed with Tim for when that lands, so they don't
-get re-litigated:
-- **Absent by default, on the `rhythm` precedent.** SAT is `null` (not 0)
-  unless a scenario authored it or something scripted it — no trace, no tile,
-  no prompt text, no token cost on the ~99% of scenarios where agitation is
-  irrelevant. 0 would mean "measured, and calm"; null means "not a thing
-  here". Only +1..+3 is modelled: the negative half is sedation depth, which
-  GCS already represents, and only matters post-sedation.
-- **Agitation is not distress.** A STEMI patient wound up by pain is
-  `distressLevel` (already derived from vitals by `getAppearanceState()`),
-  NOT agitation. Both prompts must exclude pain/fear/breathlessness
-  explicitly or the whole aggression apparatus fires on every painful
-  presentation.
-- **A behavioural state does NOT imply agitation, and this needs to be an
-  explicit anti-default** — the model's stereotype is strong enough that
-  "delirium" alone will otherwise produce a shouting patient every time.
-  Hypoactive delirium, the pleasantly confused dementia patient and the
-  happy drunk are more common in reality and better training. Agitation is
-  an authored exception to these presentations, never a consequence of them.
-- **Never inferred from how the crew speaks.** An app that decides the crew
-  was rude and escalates the patient is the wrong product; it is also not
-  what SAT measures. Killed, not deferred. Escalation comes from the
-  assessor (Script an Event, graph tools) or from a genuine clinical change.
-- The clinical changes that MAY introduce it: withdrawal progressing,
-  stimulant intoxication, naloxone reversal, worsening hypoxia, head injury,
-  and delirium/dementia only where the scenario already established
-  agitation. Hypoglycaemia and post-ictal states are deliberately excluded
-  as their own separate thing.
-- **Scenarios generated under "Acute Behavioural Disturbance" ALWAYS get
-  agitation** — that subcategory is exactly what the feature is for, whatever
-  its poorly-worded CPG title suggests.
-
-**"Acute Behavioural Disturbance" lives under Medical, not Mental Health**
-(moved in both `category_pack_av.js` and `category_pack_none.js` — the
-`CATEGORIES` subcat list AND the `CATEGORY_TO_CPG` grouping; the flat
-`COND_TO_CPG_KEY`/`CPG_SUBTYPE_LABELS` lookups are unaffected by grouping).
-It is a medical presentation with a behavioural manifestation — hypoxia,
-sepsis, hypoglycaemia, head injury, intoxication, delirium — and filing it
-under Mental Health invites exactly the wrong assessment approach from a
-student. The CPG's own title is what misleads.
-
-The **orientation profile** (`scenario_sim_timelines.orientation_profile`,
-copied onto the session row at creation) fixes what a V4 patient is
-confused about — which of time/date/place/person/event they have wrong,
-and what they believe instead — generated once per scenario by a cheap
-Haiku call and cached under the same `source_updated_at` key as the
-trajectory, so every student meets the same confused patient and their
-orientation assessments are comparable. `sim_control.html`'s Med Hx tab
-shows it to the assessor while the patient is actually at V4. It exists
-because the per-turn calls are stateless: asked the same question twice,
-the patient invented a different wrong answer each time. History covers
-the open-ended rest; the profile pins the closed set absolutely.
-
-`sim_config_schema.js`'s two prompt defaults *reference*
-`window.PatientVoice` rather than carrying literals — a third copy would
-mean "reset to default" in the admin editor writing stale text into the DB
-for every user. That's why `patient_voice.js` must load before
-`sim_config_schema.js` (all three host pages order it that way).
-
+**Deepgram therefore stays as the STT** (`/v1/listen`), with Hume for TTS.
+Two vendors, deliberately.
 ### Patient avatar (`sim_patient.html` only)
 
 The `#head-wrap` placeholder is a hand-built inline SVG face, not a photo —
