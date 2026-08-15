@@ -507,6 +507,16 @@ before, which is what makes it safe to A/B on one scenario.
   directions degrade delivery rather than improve it. Agitation wins over
   behavioural state when both apply. This is also where hypoactive delirium
   and depression finally get their own delivery.
+- **Switching engines is a per-device checkbox**, "Expressive Voice" in the
+  topbar next to Realtime Voice, backed by `localStorage.av_tts_hume`
+  (default on, so a configured key behaves as it did before the toggle
+  existed). It only ever gates `fetchHumeSpeech()`, so unticking simply takes
+  the Deepgram branch on the next reply — nothing to tear down, and audio
+  already playing keeps its voice. Per-device rather than in `sim_config`
+  because A/B-ing an engine is exactly a per-device thing: two devices on one
+  session can run different engines side by side. The label stays **hidden
+  until the key check confirms a Hume key exists**, since a dead checkbox
+  invites "I ticked it and nothing happened".
 - `HUME_TTS_VOICE_POOL` is **empty by default**, because Hume's library
   exposes no gender metadata over the API and there is nothing to curate from
   without listening first. While empty, `humeVoiceFor()` fetches the library
