@@ -62,6 +62,7 @@ body.embed #topbar { display: none; }
    resuming from a stale localStorage flag). */
 body.mode-monitor #info-col,
 body.mode-monitor #rt-voice-label,
+body.mode-monitor #tts-hume-label,
 body.mode-monitor #rt-voice-status { display: none !important; }
 body.mode-avatar #monitor-col { display: none !important; }
 #display-mode-select { font-size: 10px; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 3px 6px; cursor: pointer; }
@@ -361,6 +362,9 @@ body.mode-avatar #monitor-col { display: none !important; }
     </select>
     <label id="rt-voice-label" title="Continuous, low-latency &quot;Talk to Patient&quot; conversation — streams speech straight to Claude and speaks back via Deepgram Aura-2 TTS, entirely from this device (no dependency on the assessor's tab being open/polling). On by default. Untick for the standard tap-to-talk flow, which is also what this falls back to automatically if realtime can't run (no Deepgram key, no mic permission, non-Chrome browser, blocked network).">
       <input type="checkbox" id="rt-voice-checkbox" onchange="setRtVoiceEnabled(this.checked)">&#9889; Realtime Voice
+    </label>
+    <label id="tts-hume-label" style="display:none" title="Which text-to-speech engine speaks the patient's replies. Ticked = Hume Octave, which interprets the line and acts it, so an agitated patient actually sounds agitated. Unticked = Deepgram Aura-2, which reads it in a flat voice at any agitation level. Per-device, so two devices on one session can run different engines side by side. Hidden entirely when no Hume key is configured.">
+      <input type="checkbox" id="tts-hume-checkbox" onchange="setHumeTtsEnabled(this.checked)">&#127917; Expressive Voice
     </label>
     <span id="rt-voice-status"></span>
     <div id="scenario-timer">00:00</div>
@@ -2504,6 +2508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await requireAuth();
   setDisplayMode(localStorage.getItem(DISPLAY_MODE_LS_KEY) || defaultDisplayModeForDevice());
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
+  initHumeTtsToggle(); // fire-and-forget — reveals the engine toggle only if a Hume key exists
   updateRtVoiceStatusLabel();
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
@@ -3135,6 +3140,36 @@ function humeActingDirection() {
   return HUME_STATE_DIRECTION[key] || '';
 }
 
+// Per-device switch between the two engines, so the same scenario can be
+// compared back to back without touching the database. Defaults ON, which
+// preserves the behaviour from when the key alone decided it: a configured
+// Hume key means Hume unless someone deliberately unticks. Stored per browser
+// (same pattern as the Realtime Voice toggle below) rather than in config,
+// because A/B-ing an engine is exactly a per-device, per-session thing.
+const TTS_HUME_LS_KEY = 'av_tts_hume';
+let _humeTtsEnabled = localStorage.getItem(TTS_HUME_LS_KEY) !== '0';
+function setHumeTtsEnabled(enabled) {
+  _humeTtsEnabled = !!enabled;
+  localStorage.setItem(TTS_HUME_LS_KEY, _humeTtsEnabled ? '1' : '0');
+  const box = document.getElementById('tts-hume-checkbox');
+  if (box) box.checked = _humeTtsEnabled;
+  // Nothing else to tear down: the next reply simply takes the other branch
+  // in speakRealtimeReply. Anything mid-playback keeps its original voice.
+}
+// The control is meaningless without a key, and a dead checkbox invites
+// "I ticked it and nothing happened" — so it stays hidden until the key
+// check confirms there is something to switch TO.
+async function initHumeTtsToggle() {
+  try {
+    if (!(await getHumeKey())) return;
+    const label = document.getElementById('tts-hume-label');
+    const box = document.getElementById('tts-hume-checkbox');
+    if (!label || !box) return;
+    box.checked = _humeTtsEnabled;
+    label.style.display = '';
+  } catch (e) { /* no key / offline — leave it hidden */ }
+}
+
 // --- Toggle ------------------------------------------------------------
 const RT_VOICE_LS_KEY = 'av_rt_voice_enabled';
 // Whether this browser can actually run the capture half of realtime mode —
@@ -3714,6 +3749,7 @@ async function generateRealtimePatientReply(question) {
 // reason MP3 does: the chunks have to concatenate into one valid stream for
 // MediaSource to play them progressively.
 async function fetchHumeSpeech(text) {
+  if (!_humeTtsEnabled) return null;
   const apiKey = await getHumeKey();
   if (!apiKey) return null;
   const voice = await humeVoiceFor(patientGender, apiKey);
