@@ -624,6 +624,31 @@
             label: 'Speaking-rate multiplier per SAT level',
             help: 'Applied as utterance.rate on the Web Speech path and audio.playbackRate on Realtime Voice, keyed by agitation level 1-3. Neither TTS engine has emotional prosody, so speaking faster is the only delivery cue available; above about 1.2 it stops sounding urgent and starts sounding comic. Ignored entirely on scenarios with no agitation.',
             default: { 1: 1.05, 2: 1.12, 3: 1.18 }
+          },
+          HUME_TTS_VOICE_POOL: {
+            type: 'map_str_str',
+            label: 'Hume voice names per gender',
+            help: 'Comma-separated Voice Library names per gender key (male/female). Left empty by default: Hume’s library exposes no gender metadata over the API, so there is nothing to curate from until you have listened. While empty, a voice is picked deterministically from the whole library instead — stable per patient, but not gender-matched. Only used when a hume_api_key exists in app_config.',
+            default: { male: '', female: '' }
+          },
+          HUME_SAT_DIRECTION: {
+            type: 'map_str_str',
+            label: 'Hume acting direction per SAT level',
+            help: 'Plain-English delivery instruction passed to Octave per agitation level 1-3. Keep each under 100 characters — Hume’s own guidance is that longer directions degrade delivery rather than improve it. This shapes only how the line is performed; what the patient says is decided by the Claude call.',
+            default: { 1: 'restless and impatient, clipped', 2: 'angry, loud, hostile and swearing', 3: 'enraged, shouting, out of control' }
+          },
+          HUME_STATE_DIRECTION: {
+            type: 'map_str_str',
+            label: 'Hume acting direction per behavioural state',
+            help: 'Delivery instruction per patient_meta.behavioural_state kind (delirium_hypo, delirium_hyper, delirium, intoxicated, withdrawal, depression). Used only when the patient is not agitated — SAT takes precedence. Same 100-character guidance as above.',
+            default: {
+              delirium_hypo: 'drowsy, vague, slow, drifting off',
+              delirium_hyper: 'unsettled, distractible, scattered',
+              delirium: 'confused and wandering, attention drifting',
+              intoxicated: 'slurred, sloppy, disinhibited',
+              withdrawal: 'shaky, queasy, wretched, uncomfortable',
+              depression: 'flat, quiet, slow, no energy'
+            }
           }
         }
       },

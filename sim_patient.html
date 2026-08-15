@@ -635,6 +635,9 @@ async function loadSimConfig() {
     VOICE_MODE_REPLY_LABELS = pick(field('voice', 'VOICE_MODE_REPLY_LABELS'), VOICE_MODE_REPLY_LABELS);
     YOUTH_VOICE_RATE_AT_ZERO = pick(field('voice', 'YOUTH_VOICE_RATE_AT_ZERO'), YOUTH_VOICE_RATE_AT_ZERO);
     SAT_SPEECH_RATE = pick(field('voice', 'SAT_SPEECH_RATE'), SAT_SPEECH_RATE);
+    HUME_TTS_VOICE_POOL = pick(field('voice', 'HUME_TTS_VOICE_POOL'), HUME_TTS_VOICE_POOL);
+    HUME_SAT_DIRECTION = pick(field('voice', 'HUME_SAT_DIRECTION'), HUME_SAT_DIRECTION);
+    HUME_STATE_DIRECTION = pick(field('voice', 'HUME_STATE_DIRECTION'), HUME_STATE_DIRECTION);
 
     // Realtime Voice reads the SAME admin-editable 'prompts' section
     // sim_control.html's callPatientAI() does — the default text below is a
@@ -3028,6 +3031,110 @@ function deepgramVoiceIdFor(gender) {
   return pool[hashStr(seed + ':deepgram-tts-voice') % pool.length];
 }
 
+// --- Hume Octave TTS (optional, preferred when a key exists) ---------------
+// Deepgram Aura-2 has no emotional prosody at all, so an agitated patient is
+// spoken in exactly the same calm voice as a settled one (see SAT_SPEECH_RATE
+// above, which is the workaround). Octave is an LLM-based TTS: it interprets
+// the text semantically and acts it, and it takes a plain-English "acting
+// instruction" per utterance on top. It streams MP3 at comparable latency, so
+// it drops into the existing playStreamedMp3 path unchanged, and it is
+// roughly a quarter of Aura-2's per-character cost.
+//
+// Additive, not a replacement: whichever key is present in app_config wins,
+// Hume first. With no Hume key nothing about this path runs and Realtime
+// Voice behaves exactly as before, which is also what makes it safe to A/B on
+// the same scenario.
+let _cachedHumeKey = null;
+let _humeKeyChecked = false;
+// Resolves to null rather than throwing when absent — unlike getDeepgramKey,
+// this key being missing is the normal case, not an error.
+async function getHumeKey() {
+  if (_humeKeyChecked) return _cachedHumeKey;
+  _humeKeyChecked = true;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_config?key=eq.hume_api_key&select=value`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data[0] && data[0].value) _cachedHumeKey = data[0].value;
+    }
+  } catch (e) { /* treated as "no Hume configured" */ }
+  return _cachedHumeKey;
+}
+
+// Curated per-gender voice names from Hume's Voice Library, same shape as
+// DEEPGRAM_TTS_VOICE_POOL. Left EMPTY deliberately: the library is large and
+// its entries carry no gender metadata over the API, so there is nothing to
+// curate from without listening first. While empty, humeVoiceFor() falls back
+// to fetching the library and picking deterministically from all of it — the
+// patient still gets a stable voice, it just may not match their gender.
+// Fill these in (via the admin config, no deploy needed) once you have picked
+// favourites, and gender matching starts working.
+let HUME_TTS_VOICE_POOL = { male: [], female: [] };
+let _humeVoiceLibrary = null;
+async function humeVoiceLibrary(apiKey) {
+  if (_humeVoiceLibrary) return _humeVoiceLibrary;
+  try {
+    const res = await fetch('https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100', {
+      headers: { 'X-Hume-Api-Key': apiKey }
+    });
+    if (!res.ok) return (_humeVoiceLibrary = []);
+    const data = await res.json();
+    _humeVoiceLibrary = ((data && (data.voices_page || data.voices)) || []).map(v => v.name).filter(Boolean);
+  } catch (e) { _humeVoiceLibrary = []; }
+  return _humeVoiceLibrary;
+}
+
+// Same seed as the avatar build, so a patient's voice is stable across
+// reconnects exactly like their face is.
+async function humeVoiceFor(gender, apiKey) {
+  // Coerced because the two copies of this default disagree by design: the
+  // config schema stores it as map_str_str (a comma-separated string per
+  // gender, which is what the admin editor can actually edit) and the schema
+  // copy is the one that wins. Indexing a raw string here would pick single
+  // CHARACTERS as voice names.
+  const raw = HUME_TTS_VOICE_POOL[gender];
+  const curated = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(x => String(x).trim()).filter(Boolean);
+  const pool = curated.length ? curated : await humeVoiceLibrary(apiKey);
+  if (!pool.length) return null;
+  const seed = avatarBuild.voiceSeed || sessionCode || 'default';
+  return pool[hashStr(seed + ':hume-tts-voice') % pool.length];
+}
+
+// The acting instruction. Hume caps these usefully short — its own guidance is
+// 100 characters or fewer when a voice is specified, past which delivery gets
+// worse rather than better — so this is a terse phrase, not a description of
+// the whole patient. The patient's personality and history already reach the
+// model that WRITES the line; this only shapes how that line is performed.
+//
+// Agitation wins over behavioural state when both apply: at SAT +2/+3 it is
+// the dominant thing about the encounter. Returns '' for an ordinary patient,
+// in which case Octave still acts the text semantically on its own.
+let HUME_SAT_DIRECTION = {
+  1: 'restless and impatient, clipped',
+  2: 'angry, loud, hostile and swearing',
+  3: 'enraged, shouting, out of control'
+};
+let HUME_STATE_DIRECTION = {
+  delirium_hypo: 'drowsy, vague, slow, drifting off',
+  delirium_hyper: 'unsettled, distractible, scattered',
+  delirium: 'confused and wandering, attention drifting',
+  intoxicated: 'slurred, sloppy, disinhibited',
+  withdrawal: 'shaky, queasy, wretched, uncomfortable',
+  depression: 'flat, quiet, slow, no energy'
+};
+function humeActingDirection() {
+  const sat = testConfig ? SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now())) : null;
+  if (sat != null && Math.round(sat) >= 1) return HUME_SAT_DIRECTION[Math.min(3, Math.round(sat))] || '';
+  const meta = (scenarioMeta && scenarioMeta.patient_meta) || {};
+  const state = PatientVoice.parseBehaviouralState(meta.behavioural_state);
+  if (!state) return '';
+  const key = state.kind === 'delirium' && state.subkind ? 'delirium_' + state.subkind : state.kind;
+  return HUME_STATE_DIRECTION[key] || '';
+}
+
 // --- Toggle ------------------------------------------------------------
 const RT_VOICE_LS_KEY = 'av_rt_voice_enabled';
 // Whether this browser can actually run the capture half of realtime mode —
@@ -3595,20 +3702,75 @@ async function generateRealtimePatientReply(question) {
 // failure (missing key, network error, bad voice name) rather than leaving
 // the reply silent — same "never leave the training exercise stuck"
 // principle the legacy path already follows.
+// Builds the Hume request, or returns null if Hume isn't configured/usable so
+// the caller falls straight through to Deepgram. Kept as its own function so
+// the shared playback below (MediaSource streaming, barge-in, the _rtAudioEl
+// bookkeeping) is identical for both providers rather than duplicated.
+//
+// instant_mode is the low-latency path and REQUIRES a named voice with
+// num_generations 1 — hence the null return when no voice can be resolved,
+// rather than silently falling back to a slower dynamically-generated voice
+// that would also differ between turns. strip_headers matters for the same
+// reason MP3 does: the chunks have to concatenate into one valid stream for
+// MediaSource to play them progressively.
+async function fetchHumeSpeech(text) {
+  const apiKey = await getHumeKey();
+  if (!apiKey) return null;
+  const voice = await humeVoiceFor(patientGender, apiKey);
+  if (!voice) return null;
+  const direction = humeActingDirection();
+  const utterance = { text, voice: { name: voice, provider: 'HUME_AI' } };
+  if (direction) utterance.description = direction;
+  // Speed is applied natively here rather than via audio.playbackRate — the
+  // engine resynthesises at the new rate instead of resampling finished audio,
+  // so it stays in tune. Hume warns below 0.75/above 1.5 gets unstable; the
+  // SAT rates top out at 1.18 so they are well inside that.
+  const rate = satSpeechRate();
+  if (rate !== 1) utterance.speed = rate;
+  const res = await fetch('https://api.hume.ai/v0/tts/stream/file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Hume-Api-Key': apiKey },
+    body: JSON.stringify({
+      utterances: [utterance],
+      format: { type: 'mp3' },
+      instant_mode: true,
+      num_generations: 1,
+      strip_headers: true
+    })
+  });
+  if (!res.ok) throw new Error(`Hume TTS call failed (${res.status})`);
+  return res;
+}
+
 async function speakRealtimeReply(text, callId) {
   try {
-    const apiKey = await getDeepgramKey();
+    // Hume when configured, Deepgram otherwise. A Hume failure is NOT fatal:
+    // it drops through to Deepgram rather than losing the reply, so a bad key
+    // or an outage degrades the voice instead of breaking the conversation.
+    let res = null;
+    let usingHume = false;
+    try {
+      res = await fetchHumeSpeech(text);
+      usingHume = !!res;
+    } catch (e) {
+      console.warn('Hume TTS failed, falling back to Deepgram:', e);
+      res = null;
+    }
     if (callId !== _rtCallId) return;
-    const voiceModel = deepgramVoiceIdFor(patientGender);
-    const res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voiceModel)}&encoding=mp3`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Token ${apiKey}`
-      },
-      body: JSON.stringify({ text })
-    });
-    if (!res.ok) throw new Error(`Deepgram TTS call failed (${res.status})`);
+    if (!res) {
+      const apiKey = await getDeepgramKey();
+      if (callId !== _rtCallId) return;
+      const voiceModel = deepgramVoiceIdFor(patientGender);
+      res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voiceModel)}&encoding=mp3`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Token ${apiKey}`
+        },
+        body: JSON.stringify({ text })
+      });
+      if (!res.ok) throw new Error(`Deepgram TTS call failed (${res.status})`);
+    }
     if (callId !== _rtCallId) return;
 
     // Adopted as _rtAudioEl rather than kept local when the unlock never ran:
@@ -3627,7 +3789,11 @@ async function speakRealtimeReply(text, callId) {
     // you change speed); switching it off lets pitch rise with the rate,
     // which is the tightening you actually hear in an angry voice rather than
     // just a faster calm one.
-    const rtRate = satSpeechRate();
+    // Hume applies the rate natively in synthesis, so resampling here as well
+    // would compound the two. Reset to 1 explicitly rather than left alone —
+    // _rtAudioEl is shared, so a rate from an earlier Deepgram-path reply
+    // would otherwise persist into a Hume one.
+    const rtRate = usingHume ? 1 : satSpeechRate();
     audio.playbackRate = rtRate;
     audio.preservesPitch = rtRate === 1;
     // Stream via MediaSource where possible — see playStreamedMp3() for why

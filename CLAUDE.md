@@ -476,9 +476,46 @@ matters more than the second:
   that is the tightening you hear in an angry voice rather than just a faster
   calm one. Past ~1.2 it stops sounding urgent and starts sounding comic.
 
-The same trick is available in reverse and is NOT used yet: a slower rate plus
-ellipsis-heavy phrasing would suit hypoactive delirium and depression, which
-currently sound exactly like everyone else.
+The same trick is available in reverse and is NOT used yet on the Deepgram
+path: a slower rate plus ellipsis-heavy phrasing would suit hypoactive
+delirium and depression, which otherwise sound exactly like everyone else.
+
+**Hume Octave is the optional third TTS provider, and the real fix for this.**
+Where Aura-2 reads text flatly, Octave is an LLM-based TTS that interprets the
+text semantically and *acts* it, and takes a plain-English acting instruction
+per utterance on top. It streams MP3 at comparable latency, so it reuses
+`playStreamedMp3` unchanged, and costs roughly a quarter of Aura-2 per
+character. Selected purely by whether `app_config` has a `hume_api_key` row —
+absent it, nothing in this path runs and Realtime Voice behaves exactly as
+before, which is what makes it safe to A/B on one scenario.
+- `fetchHumeSpeech()` posts to `/v0/tts/stream/file` with **`instant_mode`**,
+  which is the low-latency path and **requires a named voice** and
+  `num_generations: 1`. It returns null (rather than falling back to a
+  dynamically generated voice) when no voice resolves, because such a voice
+  would also differ between turns. `strip_headers: true` matters for the same
+  reason MP3 does — the chunks must concatenate into one valid stream for
+  MediaSource to play progressively.
+- A Hume failure **degrades to Deepgram** rather than losing the reply, so a
+  bad key or an outage costs you the expressive voice, not the conversation.
+- **Speed is applied natively** (`utterance.speed`) instead of via
+  `audio.playbackRate`, because the engine resynthesises at the new rate
+  rather than resampling finished audio. `playbackRate` is therefore reset to
+  1 on the Hume path — `_rtAudioEl` is shared, so a rate left over from a
+  Deepgram-path reply would otherwise compound with it.
+- `HUME_SAT_DIRECTION` / `HUME_STATE_DIRECTION` are the acting instructions.
+  Keep them **under 100 characters** — Hume's own guidance is that longer
+  directions degrade delivery rather than improve it. Agitation wins over
+  behavioural state when both apply. This is also where hypoactive delirium
+  and depression finally get their own delivery.
+- `HUME_TTS_VOICE_POOL` is **empty by default**, because Hume's library
+  exposes no gender metadata over the API and there is nothing to curate from
+  without listening first. While empty, `humeVoiceFor()` fetches the library
+  and picks deterministically from all of it — stable per patient (same
+  `avatarBuild.voiceSeed` as the face), just not gender-matched. A trap worth
+  knowing: the schema stores this as `map_str_str` (comma-separated strings,
+  which is what the admin editor can edit) while the page declares arrays, and
+  the schema copy wins — so `humeVoiceFor()` coerces. Indexing the raw string
+  would pick single *characters* as voice names.
 
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
 `mood` to carry it either. On the avatar it outranks mood at +2/+3 (its own
