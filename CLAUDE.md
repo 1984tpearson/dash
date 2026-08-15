@@ -571,7 +571,16 @@ Things that genuinely differ from the Deepgram+Hume path:
   disambiguate (see `isDeliberateStop`, which the MediaSource path needs).
 - Audio **input** is base64 webm/opus at 100ms chunks; the `audio` session
   setting is only needed for linear16, so `MediaRecorder` output goes
-  straight in. On the avatar it outranks mood at +2/+3 (its own
+  straight in.
+- **The EVI config's voice is only a default.** `session_settings.voice_id`
+  overrides it per session, and without that override every patient in every
+  scenario shares one voice. Resolved once at connect from the same seeded
+  pick the TTS path uses (`humeVoiceFor`), so a patient sounds like the same
+  person on either engine. `humeVoiceLibrary()` therefore keeps `{name, id}`
+  rather than names alone — the TTS endpoint takes a voice by **name**, EVI
+  takes only an **id**. A hand-curated `HUME_TTS_VOICE_POOL` entry has no id,
+  so EVI falls back to its config voice for those; that is the one case where
+  curating costs you per-patient variety. On the avatar it outranks mood at +2/+3 (its own
 `satAgitated`/`satSevere` mouth states, not the mood ones — mood `angry` is a
 closed mouth, wrong for someone shouting).
 

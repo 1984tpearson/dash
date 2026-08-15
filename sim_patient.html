@@ -3072,11 +3072,15 @@ async function humeVoiceLibrary(apiKey, gender) {
       return (_humeVoiceLibrary[cacheKey] = []);
     }
     const data = await res.json();
-    const names = ((data && (data.voices_page || data.voices)) || []).map(v => v.name).filter(Boolean);
+    // Both id and name are kept: the TTS endpoint takes a voice by name,
+    // while EVI's session_settings has only voice_id. Same pool, same seeded
+    // pick, so a patient gets the same voice whichever path is running.
+    const names = ((data && (data.voices_page || data.voices)) || [])
+      .filter(v => v && v.name).map(v => ({ name: v.name, id: v.id || null }));
     // Sorted so the pick is stable even if the API returns them in a
     // different order between calls — the seeded index is only deterministic
     // if the list it indexes into is.
-    names.sort();
+    names.sort((a, b) => a.name.localeCompare(b.name));
     console.info(`[hume] voice library (${cacheKey}): ${names.length} voices`);
     // An empty gender-filtered result falls back to the unfiltered library
     // rather than dropping to Deepgram — a voice of the wrong gender still
@@ -3100,15 +3104,16 @@ async function humeVoiceFor(gender, apiKey) {
   // CHARACTERS as voice names.
   const raw = HUME_TTS_VOICE_POOL[gender];
   const curated = (Array.isArray(raw) ? raw : String(raw || '').split(','))
-    .map(x => String(x).trim()).filter(Boolean);
+    .map(x => String(x).trim()).filter(Boolean)
+    .map(name => ({ name, id: null })); // curated entries are names only; EVI falls back to its config voice for them
   const pool = curated.length ? curated : await humeVoiceLibrary(apiKey, gender);
   if (!pool.length) return null;
   const seed = avatarBuild.voiceSeed || sessionCode || 'default';
   const picked = pool[hashStr(seed + ':hume-tts-voice') % pool.length];
   // Logged once per session rather than per reply: the thing worth seeing is
   // whether it is the SAME voice each turn, and a line per turn would bury it.
-  if (picked !== _humeLastPickedVoice) {
-    console.info(`[hume] voice for this patient: ${picked} (gender=${gender || 'unknown'}, pool=${pool.length}, seed=${seed})`);
+  if (!_humeLastPickedVoice || _humeLastPickedVoice.name !== picked.name) {
+    console.info(`[hume] voice for this patient: ${picked.name} (id=${picked.id || 'n/a'}, gender=${gender || 'unknown'}, pool=${pool.length}, seed=${seed})`);
     _humeLastPickedVoice = picked;
   }
   return picked;
@@ -3182,6 +3187,7 @@ let _eviSources = [];        // live AudioBufferSourceNodes, so an interruption 
 let _eviCallId = 0;
 let _eviConfigId = null;
 let _eviLastContext = '';
+let _eviVoiceId = null;   // per-patient voice, overriding the EVI config's default
 
 // The model choice (Anthropic + claude-haiku-4-5) is NOT settable per session
 // — it lives in a stored EVI config. So this is a second piece of setup
@@ -3229,6 +3235,9 @@ function eviLiveContext() {
 // Sent at connect and again whenever the live state changes. system_prompt is
 // only included on the first send — it is long, and it does not change within
 // a session.
+// _eviVoiceId is resolved once per call (see startEviCall) rather than here,
+// because looking it up needs the API key and an await, and this is called
+// from the socket's message handler on every turn.
 function eviSendSettings(includePrompt) {
   if (!_eviSocket || _eviSocket.readyState !== WebSocket.OPEN) return;
   const context = eviLiveContext();
@@ -3236,6 +3245,10 @@ function eviSendSettings(includePrompt) {
   _eviLastContext = context;
   const meta = (scenarioMeta && scenarioMeta.patient_meta) || {};
   const msg = { type: 'session_settings', context: { text: context, type: 'persistent' } };
+  // Overrides the voice chosen in the EVI config, which is otherwise a single
+  // voice for every patient in every scenario. Sent with the prompt (i.e. at
+  // connect) rather than every turn — it does not change within a session.
+  if (includePrompt && _eviVoiceId) msg.voice_id = _eviVoiceId;
   if (includePrompt) {
     const gcsV = Math.round(SimEngine.getVitalsRaw(testConfig, SimEngine.getSimNow(testConfig, Date.now())).gcsV || 0);
     msg.system_prompt = PatientVoice.buildSystemPrompt({
@@ -3312,6 +3325,13 @@ async function startEviCall() {
   } catch (e) { fallBackToStandardVoice('Microphone permission is required — using the standard voice.'); return; }
   if (callId !== _eviCallId) { stream.getTracks().forEach(t => t.stop()); return; }
   _eviStream = stream;
+
+  // Same seeded pick as the TTS path, so a patient sounds like the same
+  // person whichever engine is running. Null (curated pool, or lookup failure)
+  // just means EVI keeps its config default rather than failing the call.
+  const picked = await humeVoiceFor(patientGender, apiKey).catch(() => null);
+  _eviVoiceId = (picked && picked.id) || null;
+  if (!_eviVoiceId) console.info('[evi] no voice id resolved — using the EVI config default voice');
 
   const url = `wss://api.hume.ai/v0/evi/chat?api_key=${encodeURIComponent(apiKey)}&config_id=${encodeURIComponent(configId)}`;
   const socket = new WebSocket(url);
@@ -4030,9 +4050,9 @@ async function fetchHumeSpeech(text) {
   const apiKey = await getHumeKey();
   if (!apiKey) return null;
   const voice = await humeVoiceFor(patientGender, apiKey);
-  if (!voice) return null;
+  if (!voice || !voice.name) return null;
   const direction = humeActingDirection();
-  const utterance = { text, voice: { name: voice, provider: 'HUME_AI' } };
+  const utterance = { text, voice: { name: voice.name, provider: 'HUME_AI' } };
   if (direction) utterance.description = direction;
   // Speed is applied natively here rather than via audio.playbackRate — the
   // engine resynthesises at the new rate instead of resampling finished audio,
@@ -4058,7 +4078,7 @@ async function fetchHumeSpeech(text) {
     const detail = await res.text().catch(() => '');
     throw new Error(`Hume TTS call failed (${res.status}) ${detail.slice(0, 300)}`);
   }
-  console.info(`[hume] speaking via Hume — voice=${voice}, direction=${direction || 'none'}, speed=${utterance.speed || 1}`);
+  console.info(`[hume] speaking via Hume — voice=${voice.name}, direction=${direction || 'none'}, speed=${utterance.speed || 1}`);
   return res;
 }
 
