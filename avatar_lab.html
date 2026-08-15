@@ -264,7 +264,7 @@ function buildAvatarBase(seed, skinHex, gender, age) {
   );
   const browKeys = Object.keys(AvatarAssets.eyebrows);
   const g = (gender || '').toLowerCase();
-  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.5 } : g === 'female' ? { f: 3, n: 1.5, m: 0.5 } : { m: 1, n: 1, f: 1 };
+  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.25 } : g === 'female' ? { f: 3, n: 1.5, m: 0.25 } : { m: 1, n: 1, f: 1 };
   avatarBuild.hairStyle = avatarBuild.ageBand === 'infant' ? null : weightedPick(hairKeys, k => {
     const base = leanWeights[HAIR_STYLE_LEAN[k] || 'n'];
     return CASUAL_HEADWEAR.has(k) ? base * 0.3 : base;

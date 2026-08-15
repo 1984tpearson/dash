@@ -1037,7 +1037,17 @@ function buildAvatarBase(seed, skinHex, gender, age) {
   );
   const browKeys = Object.keys(AvatarAssets.eyebrows);
   const g = (gender || '').toLowerCase();
-  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.5 } : g === 'female' ? { f: 3, n: 1.5, m: 0.5 } : { m: 1, n: 1, f: 1 };
+  // Still a soft lean, not a filter — a hard restriction by gender was tried
+  // early on and read as rigid (see CLAUDE.md). The opposite-gender weight
+  // came down from 0.5 to 0.25 because 0.5 across the 12 femme-tagged styles
+  // worked out at ~12% of male patients getting an outright feminine cut,
+  // which is often enough to notice; 0.25 halves that to ~6% while leaving
+  // the neutral quarter of the pool untouched. Note this is only reached
+  // when the gender is KNOWN — an unresolved gender falls to the flat
+  // weights below, where a male patient draws a femme style ~39% of the
+  // time. That is the far bigger source of wrong-looking hair, and it is a
+  // missing-data problem rather than a weighting one.
+  const leanWeights = g === 'male' ? { m: 3, n: 1.5, f: 0.25 } : g === 'female' ? { f: 3, n: 1.5, m: 0.25 } : { m: 1, n: 1, f: 1 };
   // Infants never get a hairstyle — real babies are frequently bald or
   // near-bald, and there's no asset in this pool that reads as "infant
   // hair" (the shortest options are still styled adult/child cuts).

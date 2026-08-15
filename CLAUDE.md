@@ -676,9 +676,25 @@ dynamic. Two layers on top of that shared data:
   in lockstep) so they're stable across reconnects rather than re-rolling
   each page load. Hair style is softly weighted by `patient_meta.gender` via
   `HAIR_STYLE_LEAN` (each of the 34 styles tagged masc/femme/neutral-leaning)
-  and `weightedPick()` — a *soft* bias (male ≈61% masc/13% femme/26% neutral
+  and `weightedPick()` — a *soft* bias (male ≈70% masc/6% femme/24% neutral
   in practice, mirrored for female), not a hard filter: gender-unset scenarios
-  and eyebrow/colour selection stay fully unweighted. Went through two prior
+  and eyebrow/colour selection stay fully unweighted. The opposite-gender
+  weight was 0.5 until Aug 2026, which worked out at ~12% of male patients
+  drawing an outright feminine cut — noticeable in use; 0.25 halves that
+  without hardening the filter.
+
+  **The dominant cause of wrong-looking hair is missing data, not the
+  weights.** `patient_meta.gender` only started being written on 2026-08-01
+  (verified: 22 of 103 scenarios have it, and the split by `created_at` is
+  clean — every scenario from that date on, none before). `connectSession()`
+  falls back to a `\bmale\b`/`\bfemale\b` scan of the title, which covers 56
+  of 103; the remaining **47 resolve no gender at all** and hit the flat
+  `{m:1,n:1,f:1}` weights, where a male patient draws a femme style ~39% of
+  the time. Nothing is broken in the pick — those scenarios simply predate
+  the field, and per the "existing scenarios are NOT precious" rule below,
+  the fix is regenerating them rather than adding a pronoun-scanning
+  fallback. Both labs (`avatar_lab.html`, `avatar_tuning_lab.html`) keep
+  their own copy of `leanWeights` — update all three together. Went through two prior
   versions of this: first hard-restricted to 2-3 hand-drawn hair shapes by
   gender (too rigid), then dropped gender entirely once real variety existed
   (came across as arbitrary — see conversation history) — this weighted
