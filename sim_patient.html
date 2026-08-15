@@ -62,6 +62,7 @@ body.embed #topbar { display: none; }
    resuming from a stale localStorage flag). */
 body.mode-monitor #info-col,
 body.mode-monitor #rt-voice-label,
+body.mode-monitor #evi-label,
 body.mode-monitor #rt-voice-status { display: none !important; }
 body.mode-avatar #monitor-col { display: none !important; }
 #display-mode-select { font-size: 10px; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 3px 6px; cursor: pointer; }
@@ -361,6 +362,9 @@ body.mode-avatar #monitor-col { display: none !important; }
     </select>
     <label id="rt-voice-label" title="Continuous, low-latency &quot;Talk to Patient&quot; conversation — streams speech straight to Claude and speaks back via Deepgram Aura-2 TTS, entirely from this device (no dependency on the assessor's tab being open/polling). On by default. Untick for the standard tap-to-talk flow, which is also what this falls back to automatically if realtime can't run (no Deepgram key, no mic permission, non-Chrome browser, blocked network).">
       <input type="checkbox" id="rt-voice-checkbox" onchange="setRtVoiceEnabled(this.checked)">&#9889; Realtime Voice
+    </label>
+    <label id="evi-label" style="display:none" title="Speech-to-speech mode. One Hume connection handles listening, interruption, the Claude call and the patient's voice, instead of Deepgram for transcription plus a separate call for speech. Interruption is handled natively. Per-device, and hidden unless a Hume key is configured.">
+      <input type="checkbox" id="evi-checkbox" onchange="setEviEnabled(this.checked)">&#129504; EVI (beta)
     </label>
     <span id="rt-voice-status"></span>
     <div id="scenario-timer">00:00</div>
@@ -2504,6 +2508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await requireAuth();
   setDisplayMode(localStorage.getItem(DISPLAY_MODE_LS_KEY) || defaultDisplayModeForDevice());
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
+  initEviToggle(); // fire-and-forget — reveals the EVI toggle only if a Hume key exists
   updateRtVoiceStatusLabel();
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
@@ -3141,6 +3146,292 @@ function humeActingDirection() {
   return HUME_STATE_DIRECTION[key] || '';
 }
 
+// ============================================================================
+// --- EVI: Hume's speech-to-speech pipeline (opt-in, parallel to the above) --
+// ============================================================================
+// One WebSocket replaces the whole voice stack: mic capture, STT, turn
+// detection, interruption, the Claude call and expressive TTS. That is the
+// point of it — the alternative is Deepgram for STT plus Hume for TTS plus
+// our own barge-in heuristics, which is three things to keep working instead
+// of one.
+//
+// What deliberately does NOT change: patient_voice.js. EVI accepts a
+// system_prompt over the socket, so the entire prompt — trait, mood,
+// cognitive baseline, behavioural state, the SAT ladder, the answer-scope
+// rule — stays in this repo under version control rather than moving into a
+// Hume-hosted config. Per-turn state that moves during a scenario (vitals,
+// SAT, treatments, the fictional clock) goes in `context`, which is appended
+// to user messages and can be resent whenever it changes.
+//
+// Two things EVI owns that we used to: conversation history (so
+// PatientVoice.buildMessages is not used on this path) and barge-in (a
+// user_interruption event replaces the VAD arm/confirm dance above).
+//
+// Left parallel to the Deepgram+Hume path rather than replacing it, so the
+// two can be A/B'd on the same scenario and there is a working fallback while
+// this is unproven.
+const EVI_LS_KEY = 'av_evi_enabled';
+let _eviEnabled = localStorage.getItem(EVI_LS_KEY) === '1';
+let _eviSocket = null;
+let _eviRecorder = null;
+let _eviStream = null;
+let _eviAudioCtx = null;
+let _eviQueue = [];          // decoded AudioBuffers waiting to play
+let _eviPlaying = false;
+let _eviSources = [];        // live AudioBufferSourceNodes, so an interruption can stop them
+let _eviCallId = 0;
+let _eviConfigId = null;
+let _eviLastContext = '';
+
+// The model choice (Anthropic + claude-haiku-4-5) is NOT settable per session
+// — it lives in a stored EVI config. So this is a second piece of setup
+// alongside the API key: create a config in the Hume dashboard with the
+// language model set to Claude, and put its id here. Without it EVI would run
+// on its own default model and the patient would stop being Claude-authored.
+async function getEviConfigId() {
+  if (_eviConfigId !== null) return _eviConfigId;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/app_config?key=eq.hume_evi_config_id&select=value`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const data = res.ok ? await res.json() : [];
+    _eviConfigId = (data && data[0] && data[0].value) || '';
+  } catch (e) { _eviConfigId = ''; }
+  return _eviConfigId;
+}
+
+function eviAvailable() {
+  return _eviEnabled && !!_cachedHumeKey;
+}
+
+// The live half of the prompt: everything that changes during a scenario and
+// therefore cannot live in the system prompt. Rebuilt each turn and only
+// resent when it actually differs, since every resend costs a socket message
+// and EVI appends it to user messages verbatim.
+function eviLiveContext() {
+  if (!testConfig) return '';
+  const nowMs = SimEngine.getSimNow(testConfig, Date.now());
+  const v = SimEngine.getVitalsRaw(testConfig, nowMs);
+  const gcsTotal = Math.round((v.gcsE || 0) + (v.gcsV || 0) + (v.gcsM || 0));
+  const sat = SimEngine.getSatAt(testConfig, nowMs, gcsTotal);
+  const actions = (testConfig.treatments || []).map(t => t && t.action).filter(Boolean);
+  const parts = [
+    `The patient's own current date/time (use this for any orientation question): ${scenarioFictionalDateTime()}`,
+    `Current condition: HR ${Math.round(v.HR)}, RR ${Math.round(v.RR)}, SpO2 ${Math.round(v.SpO2)}%, GCS ${gcsTotal}/15 (Verbal ${Math.round(v.gcsV)}/5), pain ${Math.round(v.pain)}/10`,
+    `Treatments given so far: ${actions.length ? actions.join('; ') : 'none yet'}`
+  ];
+  // Same rule as everywhere else: absent unless the scenario actually has
+  // agitation, so ordinary scenarios send nothing about it.
+  if (sat != null) parts.push(`Current agitation (SAT): ${Math.round(sat)}/3`);
+  return parts.join('\n');
+}
+
+// Sent at connect and again whenever the live state changes. system_prompt is
+// only included on the first send — it is long, and it does not change within
+// a session.
+function eviSendSettings(includePrompt) {
+  if (!_eviSocket || _eviSocket.readyState !== WebSocket.OPEN) return;
+  const context = eviLiveContext();
+  if (!includePrompt && context === _eviLastContext) return;
+  _eviLastContext = context;
+  const meta = (scenarioMeta && scenarioMeta.patient_meta) || {};
+  const msg = { type: 'session_settings', context: { text: context, type: 'persistent' } };
+  if (includePrompt) {
+    const gcsV = Math.round(SimEngine.getVitalsRaw(testConfig, SimEngine.getSimNow(testConfig, Date.now())).gcsV || 0);
+    msg.system_prompt = PatientVoice.buildSystemPrompt({
+      promptText: PATIENT_VOICE_PROMPT, confusedNoteText: PATIENT_VOICE_CONFUSED_NOTE,
+      patientName: meta.name || 'the patient', gcsV, scenario: scenarioMeta,
+      trait: mannerOverride.trait, mood: patientMood,
+      sat: SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now()))
+    });
+    if (_cachedAnthropicKey) msg.language_model_api_key = _cachedAnthropicKey;
+  }
+  try { _eviSocket.send(JSON.stringify(msg)); } catch (e) { console.warn('[evi] settings send failed', e); }
+}
+
+// --- Playback -------------------------------------------------------------
+// audio_output arrives as base64 WAV chunks (48kHz), not a byte stream, so
+// MediaSource/playStreamedMp3 does not apply here. Each chunk is decoded and
+// queued, and the queue is what an interruption clears — which is exactly the
+// shape Hume's own interruption guidance describes.
+function eviAudioContext() {
+  if (!_eviAudioCtx) _eviAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_eviAudioCtx.state === 'suspended') _eviAudioCtx.resume().catch(() => {});
+  return _eviAudioCtx;
+}
+
+function eviStopAudio() {
+  _eviQueue = [];
+  _eviSources.forEach(src => { try { src.stop(); } catch (e) {} });
+  _eviSources = [];
+  _eviPlaying = false;
+  stopTalkAnimation();
+}
+
+function eviPlayNext() {
+  if (_eviPlaying || !_eviQueue.length) return;
+  const buf = _eviQueue.shift();
+  const ctx = eviAudioContext();
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  _eviSources.push(src);
+  _eviPlaying = true;
+  startTalkAnimation();
+  src.onended = () => {
+    _eviSources = _eviSources.filter(x => x !== src);
+    _eviPlaying = false;
+    if (_eviQueue.length) eviPlayNext(); else stopTalkAnimation();
+  };
+  try { src.start(); } catch (e) { _eviPlaying = false; }
+}
+
+async function eviEnqueueAudio(b64) {
+  try {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const buf = await eviAudioContext().decodeAudioData(bytes.buffer);
+    _eviQueue.push(buf);
+    eviPlayNext();
+  } catch (e) { console.warn('[evi] audio decode failed', e); }
+}
+
+// --- Connect --------------------------------------------------------------
+async function startEviCall() {
+  const callId = ++_eviCallId;
+  const apiKey = await getHumeKey();
+  const configId = await getEviConfigId();
+  if (!apiKey) { fallBackToStandardVoice('Realtime Voice needs a Hume API key.'); return; }
+  if (!configId) { fallBackToStandardVoice('EVI needs a config id (app_config "hume_evi_config_id").'); return; }
+  await getAnthropicKey().catch(() => {}); // cached for language_model_api_key below
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) { fallBackToStandardVoice('Microphone permission is required — using the standard voice.'); return; }
+  if (callId !== _eviCallId) { stream.getTracks().forEach(t => t.stop()); return; }
+  _eviStream = stream;
+
+  const url = `wss://api.hume.ai/v0/evi/chat?api_key=${encodeURIComponent(apiKey)}&config_id=${encodeURIComponent(configId)}`;
+  const socket = new WebSocket(url);
+  _eviSocket = socket;
+
+  socket.onopen = () => {
+    if (callId !== _eviCallId) { try { socket.close(); } catch (e) {} return; }
+    eviSendSettings(true);
+    // 100ms chunks is Hume's own recommendation for web clients. webm/opus
+    // needs no `audio` session setting — that field is only for linear16.
+    try {
+      const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      _eviRecorder = rec;
+      rec.ondataavailable = async (ev) => {
+        if (callId !== _eviCallId || !ev.data || !ev.data.size) return;
+        if (socket.readyState !== WebSocket.OPEN) return;
+        const b64 = await blobToBase64(ev.data);
+        try { socket.send(JSON.stringify({ type: 'audio_input', data: b64 })); } catch (e) {}
+      };
+      rec.start(100);
+    } catch (e) {
+      fallBackToStandardVoice('This browser can\'t capture audio for realtime voice.');
+      return;
+    }
+    hideRealtimeConnectingIndicator();
+    document.getElementById('voice-mic-indicator').classList.add('listening');
+  };
+
+  socket.onmessage = async (ev) => {
+    if (callId !== _eviCallId) return;
+    let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    switch (msg.type) {
+      case 'audio_output':
+        await eviEnqueueAudio(msg.data);
+        break;
+      case 'user_interruption':
+        // EVI detected the crew talking over the patient. Clearing the queue
+        // is the whole job — no AbortError to disambiguate, unlike the
+        // MediaSource path this replaces.
+        eviStopAudio();
+        break;
+      case 'user_message':
+        if (msg.message && msg.message.content && !msg.interim) {
+          // Logged for the assessor exactly as the legacy path does, so the
+          // control panel's transcript works unchanged.
+          queueStudentItem('talk_log', msg.message.content, {});
+          eviSendSettings(false); // refresh live state for the turn about to be answered
+        }
+        break;
+      case 'assistant_message':
+        if (msg.message && msg.message.content) {
+          const replyEl = document.getElementById('patient-reply-display');
+          if (replyEl) {
+            replyEl.textContent = `\u201C${msg.message.content}\u201D`;
+            replyEl.style.display = 'block';
+          }
+          const statusEl = document.getElementById('voice-modal-status');
+          if (statusEl) statusEl.textContent = 'Patient replied:';
+          recordEviExchange(msg.message.content);
+        }
+        break;
+      case 'error':
+        console.warn('[evi] error', msg);
+        break;
+    }
+  };
+
+  socket.onerror = () => { if (callId === _eviCallId) console.warn('[evi] socket error'); };
+  socket.onclose = () => { if (callId === _eviCallId) eviStopAudio(); };
+}
+
+function endEviCall() {
+  _eviCallId++;
+  eviStopAudio();
+  if (_eviRecorder) { try { _eviRecorder.stop(); } catch (e) {} _eviRecorder = null; }
+  if (_eviSocket) { try { _eviSocket.close(); } catch (e) {} _eviSocket = null; }
+  if (_eviStream) { _eviStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} }); _eviStream = null; }
+  _eviLastContext = '';
+  document.getElementById('voice-mic-indicator').classList.remove('listening');
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(',')[1] || '');
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
+// The patient device keeps its own transcript mirror for the assessor, same
+// as the legacy path's recordVoiceExchange — EVI owns the conversation
+// history it feeds the model, but sim_control.html still needs to display it.
+function recordEviExchange(replyText) {
+  if (!testConfig || !replyText) return;
+  const entry = { id: PatientVoice.nextTranscriptId(testConfig.voiceTranscript), atMin: (SimEngine.getSimNow(testConfig, Date.now()) - testConfig.startTimeMs) / 60000, q: '(spoken)', a: replyText };
+  testConfig.voiceTranscript = PatientVoice.mergeTranscript(testConfig.voiceTranscript || [], [entry]);
+  sbPatch(`sim_sessions?session_code=eq.${encodeURIComponent(sessionCode)}`,
+    { voice_transcript: testConfig.voiceTranscript, updated_at: new Date().toISOString() }).catch(() => {});
+}
+
+function setEviEnabled(enabled) {
+  _eviEnabled = !!enabled;
+  localStorage.setItem(EVI_LS_KEY, _eviEnabled ? '1' : '0');
+  const box = document.getElementById('evi-checkbox');
+  if (box) box.checked = _eviEnabled;
+  endRealtimeCall();  // tears down whichever engine was live — it calls endEviCall() itself
+}
+
+async function initEviToggle() {
+  try {
+    if (!(await getHumeKey())) return;
+    const label = document.getElementById('evi-label');
+    const box = document.getElementById('evi-checkbox');
+    if (!label || !box) return;
+    box.checked = _eviEnabled;
+    label.style.display = '';
+  } catch (e) { /* leave hidden */ }
+}
+
 // --- Toggle ------------------------------------------------------------
 const RT_VOICE_LS_KEY = 'av_rt_voice_enabled';
 // Whether this browser can actually run the capture half of realtime mode —
@@ -3325,7 +3616,10 @@ function startRealtimeCall() {
   _rtActive = true;
   _rtMicClosed = false;
   showRealtimeConnectingIndicator();
-  startRealtimeCapture();
+  // EVI replaces the whole capture+STT+reply+TTS chain below when enabled;
+  // everything else on this path (the modal, the armed-FAB UI, the call
+  // lifecycle) is shared, which is what keeps the two comparable.
+  if (eviAvailable()) startEviCall(); else startRealtimeCapture();
   syncFabArmedUI();
 }
 
@@ -3394,6 +3688,7 @@ function endRealtimeCall() {
   _rtActive = false;
   _rtMicClosed = false;
   _rtCallId++; // invalidates any in-flight async work from this call
+  if (_eviSocket || _eviRecorder || _eviStream) endEviCall();
   stopRealtimeCapture();
   stopRealtimeAudio();
   _rtPendingText = '';

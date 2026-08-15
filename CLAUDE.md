@@ -533,7 +533,45 @@ before, which is what makes it safe to A/B on one scenario.
   would pick single *characters* as voice names.
 
 Don't grow `TRAIT_MAP` or `BEHAVIOURAL_NOTES` into this, and don't extend
-`mood` to carry it either. On the avatar it outranks mood at +2/+3 (its own
+`mood` to carry it either.
+
+### EVI — Hume's speech-to-speech pipeline (opt-in, parallel path)
+
+One WebSocket (`wss://api.hume.ai/v0/evi/chat`) replaces mic capture, STT,
+turn detection, interruption, the Claude call and TTS. The point is service
+count: the alternative is Deepgram STT + Hume TTS + our own barge-in
+heuristics, three things to keep working instead of one. Enabled per device
+via `localStorage.av_evi_enabled` and the "EVI (beta)" topbar checkbox, which
+stays hidden without a Hume key. Left **parallel** to the Deepgram+Hume path
+rather than replacing it, so the two are A/B-able and there is a working
+fallback while this is unproven.
+
+**`patient_voice.js` is untouched by this**, which is the whole reason this
+shape was chosen. EVI accepts `system_prompt` in a `session_settings` socket
+message, so the prompt stays in this repo under version control instead of
+moving into a Hume-hosted config. Live state that moves during a scenario
+(vitals, treatments, SAT, the fictional clock) goes in `context`
+(`persistent`), rebuilt by `eviLiveContext()` and resent only when it
+actually differs.
+
+Things that genuinely differ from the Deepgram+Hume path:
+- **Two setup rows in `app_config`**, not one: `hume_api_key` plus
+  `hume_evi_config_id`. The model choice (Anthropic / `claude-haiku-4-5`) is
+  **not** settable per session — it lives in a stored EVI config created in
+  Hume's dashboard. Without the config id, EVI would answer on its own
+  default model and the patient would silently stop being Claude-authored,
+  so `startEviCall()` refuses to connect rather than allow that.
+- **EVI owns conversation history**, so `PatientVoice.buildMessages` is not
+  used here. `recordEviExchange()` still mirrors replies into
+  `voice_transcript` because the assessor's panel reads it.
+- **Audio output is base64 WAV chunks at 48kHz, not an MP3 byte stream**, so
+  `playStreamedMp3`/MediaSource does not apply — playback is a Web Audio
+  queue of decoded buffers. That queue is also what makes interruption
+  clean: a `user_interruption` event just clears it, with no `AbortError` to
+  disambiguate (see `isDeliberateStop`, which the MediaSource path needs).
+- Audio **input** is base64 webm/opus at 100ms chunks; the `audio` session
+  setting is only needed for linear16, so `MediaRecorder` output goes
+  straight in. On the avatar it outranks mood at +2/+3 (its own
 `satAgitated`/`satSevere` mouth states, not the mood ones — mood `angry` is a
 closed mouth, wrong for someone shouting).
 
