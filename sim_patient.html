@@ -3415,6 +3415,9 @@ function playRealtimeReadyChime() {
 let _rtActive = false;
 let _rtCallId = 0; // bumped on every start/end — every async callback checks this before touching shared state, so a stale call (ended or superseded) can't act after the fact
 let _rtSocket = null;
+let _rtKeepAlive = null;      // interval id — see socket.onopen
+let _rtReconnects = 0;        // consecutive unexpected socket closes, reset on a clean open
+const RT_MAX_RECONNECTS = 3;  // capped so a hard failure surfaces to the student instead of looping forever
 let _rtRecorder = null;
 let _rtStream = null;
 let _rtSpeaking = false; // true while the Deepgram Aura-2 reply audio is actually playing — gates whether a SpeechStarted VAD event counts as a barge-in
@@ -3541,7 +3544,10 @@ function requestEndRealtimeCall() {
 // requestEndRealtimeCall() above can stop capturing immediately without
 // also cutting a reply that's still playing (see its own comment).
 function stopRealtimeCapture() {
-  if (_rtSocket) { try { _rtSocket.close(); } catch (e) {} _rtSocket = null; }
+  clearInterval(_rtKeepAlive);
+  // Nulled BEFORE close() so socket.onclose sees _rtSocket !== socket and
+  // treats this as the deliberate teardown it is, rather than reconnecting.
+  if (_rtSocket) { const s = _rtSocket; _rtSocket = null; try { s.close(); } catch (e) {} }
   if (_rtRecorder) { try { _rtRecorder.stop(); } catch (e) {} _rtRecorder = null; }
   if (_rtStream) { _rtStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} }); _rtStream = null; }
   document.getElementById('voice-mic-indicator').classList.remove('listening');
@@ -3555,6 +3561,7 @@ function endRealtimeCall() {
   stopRealtimeCapture();
   stopRealtimeAudio();
   cancelSpeechRun();
+  releaseRealtimeAudio();
   _rtPendingText = '';
 }
 
@@ -3595,6 +3602,15 @@ function stopRealtimeAudio() {
   _rtBargeInArmedAt = null; // any pending barge-in arm/confirm cycle ends with the audio it was about
   if (_rtAudioEl) { try { _rtAudioEl.pause(); } catch (e) {} }
   stopTalkAnimation();
+}
+
+// Called when a call ends rather than after every reply: the URL for the
+// segment just played stays live until the next one replaces it (revoking it
+// the instant playback ends races with the element still reading from it),
+// but it must not outlive the call.
+function releaseRealtimeAudio() {
+  releaseAudioObjectUrl();
+  if (_rtAudioEl) { try { _rtAudioEl.removeAttribute('src'); _rtAudioEl.load(); } catch (e) {} }
 }
 
 // --- STT: Deepgram streaming ---------------------------------------------
@@ -3671,6 +3687,18 @@ async function startRealtimeCapture() {
       if (ev.data && ev.data.size > 0 && socket.readyState === WebSocket.OPEN) socket.send(ev.data);
     };
     recorder.start(250); // ~250ms chunks — small enough for low latency, large enough not to spam the socket
+    _rtReconnects = 0; // a clean open resets the budget, so a long call isn't capped by blips it already recovered from
+    // Deepgram closes a stream that goes quiet for ~10-12s. Continuous mic
+    // audio normally prevents that, but it stops being continuous the moment
+    // the phone screen sleeps or the student switches app — MediaRecorder is
+    // throttled or paused in a backgrounded tab, the socket goes idle, and
+    // Deepgram hangs up. KeepAlive is Deepgram's own documented answer.
+    clearInterval(_rtKeepAlive);
+    _rtKeepAlive = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) {
+        try { socket.send(JSON.stringify({ type: 'KeepAlive' })); } catch (e) {}
+      }
+    }, 8000);
   };
 
   socket.onmessage = (ev) => {
@@ -3735,9 +3763,38 @@ async function startRealtimeCapture() {
       statusEl.textContent = 'Connection error — check the network and try again.';
     }
   };
-  socket.onclose = () => {
+  // A server-initiated close used to be a silent no-op, on the assumption
+  // that endRealtimeCall() was the only thing that ever ended a stream. It
+  // isn't: Deepgram hangs up on an idle stream, and mobile networks drop
+  // sockets on their own. The result was a page that looked completely fine
+  // — mic badge lit, status still reading "Listening…" — while being stone
+  // deaf for the rest of the scenario. That is the "it stops listening"
+  // failure. Now it reconnects, and says so if it can't.
+  //
+  // `_rtSocket === socket` is the guard against reconnecting after OUR OWN
+  // teardown: stopRealtimeCapture() nulls _rtSocket before closing, and
+  // endRealtimeCall() also bumps _rtCallId, so a deliberate close fails both
+  // tests and falls through silently exactly as before.
+  socket.onclose = (ev) => {
     clearTimeout(connectTimer);
-    /* otherwise no-op — endRealtimeCall() is the only place that tears state down; a server-initiated close just leaves the modal showing whatever status was last set */
+    clearInterval(_rtKeepAlive);
+    if (callId !== _rtCallId || _rtSocket !== socket || !_rtActive || _rtMicClosed) return;
+    console.warn(`[stt] Deepgram socket closed unexpectedly (code=${ev && ev.code}, reason=${(ev && ev.reason) || 'none'})`);
+    if (_rtReconnects >= RT_MAX_RECONNECTS) {
+      statusEl.textContent = 'Microphone connection lost — tap Talk again to restart.';
+      document.getElementById('voice-mic-indicator').classList.remove('listening');
+      return;
+    }
+    _rtReconnects++;
+    statusEl.textContent = 'Reconnecting…';
+    // Drop the old recorder/stream before re-running the setup, which
+    // acquires its own. Deliberately NOT stopRealtimeCapture() — that also
+    // nulls _rtSocket and clears the mic badge, i.e. tears down the very
+    // call being recovered.
+    if (_rtRecorder) { try { _rtRecorder.stop(); } catch (e) {} _rtRecorder = null; }
+    if (_rtStream) { _rtStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} }); _rtStream = null; }
+    _rtSocket = null;
+    startRealtimeCapture();
   };
 }
 
@@ -4056,7 +4113,7 @@ function createSpeechQueue(callId) {
       const resP = fetchHumeSpeech(text).then(r => ({ res: r }), err => ({ err }));
       chain = chain.then(async () => {
         if (run.cancelled || callId !== _rtCallId) return;
-        await playRealtimeSegment(resP, text, callId);
+        await playRealtimeSegment(resP, text, callId, run);
       });
     },
     finish() {
@@ -4076,12 +4133,44 @@ async function speakRealtimeReply(text, callId) {
   await q.finish();
 }
 
+// Every reply used to be one object URL; segmenting made it two, and none of
+// them were ever revoked. A blob/MediaSource URL pins its object in memory
+// until revoked, and MediaSource in particular is a scarce, expensive
+// resource — Safari/iOS caps the number of live instances far lower than
+// Chrome does. That is the shape of "it dies after 8-10 exchanges on the
+// phone but 2-3 on the iPad": the same leak against two different caps, at
+// double the old rate. Revoking the PREVIOUS url when setting a new one (and
+// on teardown) keeps exactly one alive at a time.
+let _rtAudioObjectUrl = null;
+function setAudioSrc(audio, url) {
+  releaseAudioObjectUrl();
+  _rtAudioObjectUrl = url;
+  audio.src = url;
+}
+function releaseAudioObjectUrl() {
+  if (!_rtAudioObjectUrl) return;
+  try { URL.revokeObjectURL(_rtAudioObjectUrl); } catch (e) {}
+  _rtAudioObjectUrl = null;
+}
+
+// The barge-in grace period exists so the echo of the patient's own voice
+// leaking back into the mic can't trigger a false interruption in the moment
+// playback starts. It is per REPLY, not per segment: restarting the clock at
+// the join meant a student speaking over the second half of a sentence had
+// to get past a fresh 600ms of deafness first.
+function markPlaybackStarted(run) {
+  if (run && run.playbackStartedAt) { _rtPlaybackStartedAt = run.playbackStartedAt; return; }
+  _rtPlaybackStartedAt = Date.now();
+  if (run) run.playbackStartedAt = _rtPlaybackStartedAt;
+  _rtBargeInArmedAt = null;
+}
+
 // One segment: awaits an already-in-flight Hume fetch, then plays it. This is
 // the body speakRealtimeReply() used to be — the only change is that the
 // fetch is passed in rather than started here, and that clearing _rtSpeaking
 // at the end is the queue's job (a reply spanning two segments must not look
 // finished between them).
-async function playRealtimeSegment(resP, text, callId) {
+async function playRealtimeSegment(resP, text, callId, run) {
   try {
     const settled = await resP;
     if (settled.err) throw settled.err;
@@ -4091,6 +4180,13 @@ async function playRealtimeSegment(resP, text, callId) {
     // through the browser's own Web Speech voice rather than losing it —
     // noticeably worse, but never silence.
     if (callId !== _rtCallId) return;
+    // Re-checked AFTER the await, not only at the queue gate before it. Both
+    // segments' Hume requests are fired up front, so the moment segment one
+    // finishes, segment two is already sitting in exactly this await — which
+    // meant a barge-in landing mid-reply cut segment one and then played
+    // segment two anyway ("it finishes what it's saying"). A barge-in does
+    // not change callId, so the callId check above cannot catch it.
+    if (run && run.cancelled) return;
     if (!res) throw new Error('Hume TTS unavailable (no key, or no voice could be resolved)');
 
     // Adopted as _rtAudioEl rather than kept local when the unlock never ran:
@@ -4118,14 +4214,13 @@ async function playRealtimeSegment(resP, text, callId) {
     // this should always be true in practice — checked explicitly anyway
     // rather than assumed, with a safety-net fallback to the old behaviour.
     if (window.MediaSource && MediaSource.isTypeSupported('audio/mpeg') && res.body) {
-      await playStreamedMp3(audio, res.body, callId);
+      await playStreamedMp3(audio, res.body, callId, run);
     } else {
       const blob = await res.blob();
-      if (callId !== _rtCallId) return;
-      audio.src = URL.createObjectURL(blob);
+      if (callId !== _rtCallId || (run && run.cancelled)) return;
+      setAudioSrc(audio, URL.createObjectURL(blob));
       _rtSpeaking = true;
-      _rtPlaybackStartedAt = Date.now();
-      _rtBargeInArmedAt = null;
+      markPlaybackStarted(run);
       await new Promise((resolve, reject) => {
         // onpause (not just onended) matters here: stopRealtimeAudio() calls
         // audio.pause() directly on a confirmed barge-in, which does NOT
@@ -4164,7 +4259,7 @@ async function playRealtimeSegment(resP, text, callId) {
 // ends (natural completion OR a pause — see the onpause comment in
 // speakRealtimeReply()) so the caller doesn't need to know which path this
 // function's caller took.
-function playStreamedMp3(audio, body, callId) {
+function playStreamedMp3(audio, body, callId, run) {
   let sourceBuffer;
   let startedPlayback = false;
 
@@ -4178,13 +4273,13 @@ function playStreamedMp3(audio, body, callId) {
 
   return new Promise((resolve, reject) => {
     const mediaSource = new MediaSource();
-    audio.src = URL.createObjectURL(mediaSource);
+    setAudioSrc(audio, URL.createObjectURL(mediaSource));
     audio.onended = resolve;
     audio.onpause = resolve; // see speakRealtimeReply()'s comment on why this matters as much as onended
     audio.onerror = () => reject(new Error('TTS audio playback error'));
 
     mediaSource.addEventListener('sourceopen', async () => {
-      if (callId !== _rtCallId) { resolve(); return; }
+      if (callId !== _rtCallId || (run && run.cancelled)) { resolve(); return; }
       try {
         sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
         const reader = body.getReader();
@@ -4195,7 +4290,7 @@ function playStreamedMp3(audio, body, callId) {
           // completion, checked here only once playback has actually
           // started (it's legitimately still false during the brief window
           // before the first chunk arrives, which isn't a stop signal).
-          if (callId !== _rtCallId || (startedPlayback && !_rtSpeaking)) {
+          if (callId !== _rtCallId || (run && run.cancelled) || (startedPlayback && !_rtSpeaking)) {
             reader.cancel().catch(() => {});
             resolve();
             return;
@@ -4211,8 +4306,7 @@ function playStreamedMp3(audio, body, callId) {
             // start now, which is the entire point of streaming this.
             startedPlayback = true;
             _rtSpeaking = true;
-            _rtPlaybackStartedAt = Date.now();
-            _rtBargeInArmedAt = null;
+            markPlaybackStarted(run); // per reply, not per segment — see its comment
             // A barge-in calls audio.pause() while this play() promise is
             // still pending, and the browser rejects it with AbortError.
             // Treating that as a failure is what made an interruption swap
