@@ -3077,18 +3077,41 @@ async function getHumeKey() {
 // Fill these in (via the admin config, no deploy needed) once you have picked
 // favourites, and gender matching starts working.
 let HUME_TTS_VOICE_POOL = { male: [], female: [] };
-let _humeVoiceLibrary = null;
-async function humeVoiceLibrary(apiKey) {
-  if (_humeVoiceLibrary) return _humeVoiceLibrary;
+// Cached per gender. The library exposes gender as a filterable TAG
+// (filter_tag=GENDER:Male), so the right voices can simply be asked for
+// rather than curated by ear — which is what HUME_TTS_VOICE_POOL was
+// originally there to work around.
+let _humeVoiceLibrary = {};
+let _humeLastPickedVoice = null;
+async function humeVoiceLibrary(apiKey, gender) {
+  const tag = gender === 'female' ? 'GENDER:Female' : (gender === 'male' ? 'GENDER:Male' : null);
+  const cacheKey = tag || 'any';
+  if (_humeVoiceLibrary[cacheKey]) return _humeVoiceLibrary[cacheKey];
+  const url = 'https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100'
+    + (tag ? '&filter_tag=' + encodeURIComponent(tag) : '');
   try {
-    const res = await fetch('https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100', {
-      headers: { 'X-Hume-Api-Key': apiKey }
-    });
-    if (!res.ok) return (_humeVoiceLibrary = []);
+    const res = await fetch(url, { headers: { 'X-Hume-Api-Key': apiKey } });
+    if (!res.ok) {
+      console.warn('[hume] voice list failed', res.status, await res.text().catch(() => ''));
+      return (_humeVoiceLibrary[cacheKey] = []);
+    }
     const data = await res.json();
-    _humeVoiceLibrary = ((data && (data.voices_page || data.voices)) || []).map(v => v.name).filter(Boolean);
-  } catch (e) { _humeVoiceLibrary = []; }
-  return _humeVoiceLibrary;
+    const names = ((data && (data.voices_page || data.voices)) || []).map(v => v.name).filter(Boolean);
+    // Sorted so the pick is stable even if the API returns them in a
+    // different order between calls — the seeded index is only deterministic
+    // if the list it indexes into is.
+    names.sort();
+    console.info(`[hume] voice library (${cacheKey}): ${names.length} voices`);
+    // An empty gender-filtered result falls back to the unfiltered library
+    // rather than dropping to Deepgram — a voice of the wrong gender still
+    // beats losing the expressive engine entirely.
+    if (!names.length && tag) return humeVoiceLibrary(apiKey, null);
+    _humeVoiceLibrary[cacheKey] = names;
+  } catch (e) {
+    console.warn('[hume] voice list threw', e);
+    _humeVoiceLibrary[cacheKey] = [];
+  }
+  return _humeVoiceLibrary[cacheKey];
 }
 
 // Same seed as the avatar build, so a patient's voice is stable across
@@ -3102,10 +3125,17 @@ async function humeVoiceFor(gender, apiKey) {
   const raw = HUME_TTS_VOICE_POOL[gender];
   const curated = (Array.isArray(raw) ? raw : String(raw || '').split(','))
     .map(x => String(x).trim()).filter(Boolean);
-  const pool = curated.length ? curated : await humeVoiceLibrary(apiKey);
+  const pool = curated.length ? curated : await humeVoiceLibrary(apiKey, gender);
   if (!pool.length) return null;
   const seed = avatarBuild.voiceSeed || sessionCode || 'default';
-  return pool[hashStr(seed + ':hume-tts-voice') % pool.length];
+  const picked = pool[hashStr(seed + ':hume-tts-voice') % pool.length];
+  // Logged once per session rather than per reply: the thing worth seeing is
+  // whether it is the SAME voice each turn, and a line per turn would bury it.
+  if (picked !== _humeLastPickedVoice) {
+    console.info(`[hume] voice for this patient: ${picked} (gender=${gender || 'unknown'}, pool=${pool.length}, seed=${seed})`);
+    _humeLastPickedVoice = picked;
+  }
+  return picked;
 }
 
 // The acting instruction. Hume caps these usefully short — its own guidance is
@@ -3774,7 +3804,14 @@ async function fetchHumeSpeech(text) {
       strip_headers: true
     })
   });
-  if (!res.ok) throw new Error(`Hume TTS call failed (${res.status})`);
+  if (!res.ok) {
+    // Include the body: Hume's 4xx responses say exactly what was wrong with
+    // the request (bad voice name, instant_mode without a voice, etc), and
+    // swallowing it was what made this hard to diagnose the first time.
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Hume TTS call failed (${res.status}) ${detail.slice(0, 300)}`);
+  }
+  console.info(`[hume] speaking via Hume — voice=${voice}, direction=${direction || 'none'}, speed=${utterance.speed || 1}`);
   return res;
 }
 
@@ -3789,7 +3826,7 @@ async function speakRealtimeReply(text, callId) {
       res = await fetchHumeSpeech(text);
       usingHume = !!res;
     } catch (e) {
-      console.warn('Hume TTS failed, falling back to Deepgram:', e);
+      console.warn('[hume] failed, falling back to Deepgram for this reply:', e);
       res = null;
     }
     if (callId !== _rtCallId) return;
@@ -3797,6 +3834,7 @@ async function speakRealtimeReply(text, callId) {
       const apiKey = await getDeepgramKey();
       if (callId !== _rtCallId) return;
       const voiceModel = deepgramVoiceIdFor(patientGender);
+      console.info(`[hume] NOT used for this reply — speaking via Deepgram, voice=${voiceModel}`);
       res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voiceModel)}&encoding=mp3`, {
         method: 'POST',
         headers: {
