@@ -627,9 +627,18 @@
           },
           HUME_TTS_VOICE_POOL: {
             type: 'map_str_str',
-            label: 'Hume voice names per gender',
-            help: 'Comma-separated Voice Library names per gender key (male/female). Left empty by default: Hume’s library exposes no gender metadata over the API, so there is nothing to curate from until you have listened. While empty, a voice is picked deterministically from the whole library instead — stable per patient, but not gender-matched. Only used when a hume_api_key exists in app_config.',
-            default: { male: '', female: '' }
+            label: 'Hume voice names per age band + gender',
+            help: 'Comma-separated Voice Library names per "<band>_<gender>" key (bands: child ≤12, teen ≤19, adult, senior 65+); a bare male/female key covers the adult band. Adult/senior are normally left empty — gender is a filterable tag on Hume’s library, so those pick themselves. CHILD is the one to fill in: Hume’s stock library is adult voices, and no acting direction turns an adult voice into a seven-year-old. Design 2-3 child voices in Hume’s Voice Design UI, save them, and paste the names here. Only used when a hume_api_key exists in app_config.',
+            default: {
+              child_male: '', child_female: '', teen_male: '', teen_female: '',
+              male: '', female: '', senior_male: '', senior_female: ''
+            }
+          },
+          HUME_AGE_DIRECTION: {
+            type: 'map_str_str',
+            label: 'Hume acting direction per age band',
+            help: 'Acting instruction prefixed to every utterance for a non-adult patient — it composes with the SAT/behavioural direction rather than replacing it (a frightened seven-year-old is still seven). Keep the composed total under 100 characters; Hume’s own guidance is that longer directions degrade delivery. Where an exact age is known the band text is replaced by "a 7 year old child", which is a stronger instruction.',
+            default: { child: 'a young child', teen: 'a teenager', senior: 'a frail elderly person' }
           },
           HUME_SAT_DIRECTION: {
             type: 'map_str_str',

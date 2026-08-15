@@ -536,6 +536,41 @@ before, which is what makes it safe to A/B on one scenario.
   the schema copy wins — so `humeVoiceFor()` coerces. Indexing the raw string
   would pick single *characters* as voice names.
 
+**Age is a second axis on the voice pick, and the half that curation can't
+be avoided on.** `voiceAgeBand(years)` reads `avatarBuild.ageYears` into four
+bands — child ≤12, teen ≤19, adult, senior 65+. Four hard bands, *not* the
+continuous `ageRamp()` the face uses: a face changes gradually with age, a
+voice changes at two physical events (puberty, and an older voice thinning).
+- **Gender is filtered server-side, age client-side**, because Hume's age tag
+  vocabulary isn't known to this code — guessing `AGE:Child` and getting it
+  wrong returns nothing, silently. Instead each library voice is kept as
+  `{name, text}` where `text` is the whole voice object lowercased, and
+  `VOICE_AGE_BANDS[].match` is run over that. No vocabulary knowledge needed,
+  and it self-corrects if Hume renames anything. The library fetch is also
+  paged (3 × 100, deduped by name) — a band as narrow as "child" can have its
+  only entries past page one, which is the whole point.
+- Those regexes are **deliberately narrow, and under-matching is the intended
+  failure**. "girl next door" and "middle-aged" are ordinary *adult* voice
+  descriptions; matching `boy`/`girl`/`aged` would hand a seven-year-old an
+  adult voice while the log claimed a child voice was found. No match falls
+  through to the adult pool and logs a warning naming the pool key to fill in.
+- **Hume's stock library is adult voices.** No acting direction turns an adult
+  voice into a seven-year-old — timbre is the voice, not the performance. The
+  real fix is to design 2-3 child voices once in Hume's Voice Design UI, save
+  them to the account, and paste the names into
+  `HUME_TTS_VOICE_POOL.child_male`/`child_female` via the admin config. Hence
+  the pool being re-keyed `<band>_<gender>`, with a bare `male`/`female` key
+  still covering the adult band.
+- `HUME_AGE_DIRECTION` is the stopgap and stays useful afterwards: it
+  **prefixes** the SAT/behavioural direction rather than competing with it (a
+  frightened seven-year-old is still seven), and where an exact age is known
+  it renders as "a 7 year old child", a far stronger instruction to an
+  LLM-based TTS than "a young child". The composed string is truncated at a
+  word boundary to Hume's 100-character guidance.
+- The Web Speech fallback path has had its own crude version of this for a
+  while — `youthVoiceRate()` on `utterance.pitch`. Unrelated code, same
+  problem.
+
 **Reply latency is attacked at four points, all the same trick — start a
 stage before the previous one has finished.** In the order they fire:
 - **Prompt caching.** `cache_control: {type:'ephemeral'}` on the system

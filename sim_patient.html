@@ -638,6 +638,7 @@ async function loadSimConfig() {
     HUME_TTS_VOICE_POOL = pick(field('voice', 'HUME_TTS_VOICE_POOL'), HUME_TTS_VOICE_POOL);
     HUME_SAT_DIRECTION = pick(field('voice', 'HUME_SAT_DIRECTION'), HUME_SAT_DIRECTION);
     HUME_STATE_DIRECTION = pick(field('voice', 'HUME_STATE_DIRECTION'), HUME_STATE_DIRECTION);
+    HUME_AGE_DIRECTION = pick(field('voice', 'HUME_AGE_DIRECTION'), HUME_AGE_DIRECTION);
 
     // Realtime Voice reads the SAME admin-editable 'prompts' section
     // sim_control.html's callPatientAI() does — the default text below is a
@@ -3046,42 +3047,111 @@ async function getHumeKey() {
   return _cachedHumeKey;
 }
 
-// Optional hand-picked voice names per gender. Left EMPTY by default, and
-// that is now the expected state: humeVoiceLibrary() asks Hume for voices
-// already filtered to the patient's gender (filter_tag=GENDER:Female), so
-// gender matching works without curation. Fill these in only to narrow the
-// selection to favourites — via the admin config, no deploy needed.
-let HUME_TTS_VOICE_POOL = { male: [], female: [] };
+// Optional hand-picked voice names, keyed "<ageBand>_<gender>" with a plain
+// "<gender>" fallback (so 'female' still covers every age band that has no
+// entry of its own). Left EMPTY by default for the adult bands, which is the
+// expected state: humeVoiceLibrary() asks Hume for voices already filtered to
+// the patient's gender (filter_tag=GENDER:Female), so gender matching works
+// without curation.
+//
+// The CHILD bands are the exception and are the one case likely to need
+// filling in by hand. Hume's stock Voice Library is adult voices; picking
+// "the youngest sounding adult" is not a seven-year-old, and no acting
+// direction fixes that — timbre is the voice, not the performance. The fix,
+// if the automatic band filter below comes up empty, is to design 2-3 child
+// voices once in Hume's own Voice Design UI, save them to the account, and
+// paste their names in here via the admin config (no deploy needed).
+let HUME_TTS_VOICE_POOL = {
+  child_male: [], child_female: [], teen_male: [], teen_female: [],
+  male: [], female: [], senior_male: [], senior_female: []
+};
+
+// The patient's age band as it applies to VOICE, which is not the same
+// banding the avatar uses — a face changes continuously with age (see
+// ageRamp()), a voice changes at two hard physical events: puberty, and the
+// gradual thinning of an older voice. So: four bands, not a ramp.
+//
+// `match` is run over each library voice's own tag/description text rather
+// than sent to the API as a filter, because Hume's age tag VOCABULARY is
+// undocumented as far as this code is concerned — guessing "AGE:Child" and
+// getting it wrong would silently return nothing. Matching whatever text the
+// library actually returns needs no vocabulary knowledge and self-corrects if
+// Hume renames anything. Adult is deliberately match-less: it is the
+// fall-through, not something to select for.
+const VOICE_AGE_BANDS = [
+  // Deliberately narrow. Over-matching is the worse failure: "girl next
+  // door" and "middle-aged" are ordinary ADULT voice descriptions, and
+  // matching them would quietly hand a seven-year-old an adult voice while
+  // the log claimed a child voice had been found. Under-matching just falls
+  // through to the adult pool and logs a warning saying so.
+  { band: 'child',  max: 12, match: /\b(child|children|kid|juvenile)\b/ },
+  { band: 'teen',   max: 19, match: /\b(teen|teenage|teenager|adolescent)\b/ },
+  { band: 'senior', min: 65, match: /\b(senior|elderly|elder|old man|old woman)\b/ },
+  { band: 'adult',  match: null }
+];
+function voiceAgeBand(years) {
+  if (years == null) return 'adult'; // unknown age -> adult, same fallback as ageBandFromMeta()
+  for (const b of VOICE_AGE_BANDS) {
+    if (b.max != null && years <= b.max) return b.band;
+    if (b.min != null && years >= b.min) return b.band;
+  }
+  return 'adult';
+}
+
 // Cached per gender. The library exposes gender as a filterable TAG
 // (filter_tag=GENDER:Male), so the right voices can simply be asked for
 // rather than curated by ear — which is what HUME_TTS_VOICE_POOL was
-// originally there to work around.
+// originally there to work around. Age is filtered client-side instead, for
+// the reason in VOICE_AGE_BANDS above, so the cache holds whole voice objects
+// rather than bare names.
 let _humeVoiceLibrary = {};
 let _humeLastPickedVoice = null;
 async function humeVoiceLibrary(apiKey, gender) {
   const tag = gender === 'female' ? 'GENDER:Female' : (gender === 'male' ? 'GENDER:Male' : null);
   const cacheKey = tag || 'any';
   if (_humeVoiceLibrary[cacheKey]) return _humeVoiceLibrary[cacheKey];
-  const url = 'https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100'
+  const base = 'https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100'
     + (tag ? '&filter_tag=' + encodeURIComponent(tag) : '');
   try {
-    const res = await fetch(url, { headers: { 'X-Hume-Api-Key': apiKey } });
-    if (!res.ok) {
-      console.warn('[hume] voice list failed', res.status, await res.text().catch(() => ''));
-      return (_humeVoiceLibrary[cacheKey] = []);
+    // Paged: a band as narrow as "child" can have its only few entries sitting
+    // past the first page, which is exactly the case this is for. Deduped by
+    // name, so a server that ignores page_number costs one wasted request
+    // rather than duplicate entries skewing the seeded pick.
+    const seen = new Set();
+    const voices = [];
+    for (let page = 0; page < 3; page++) {
+      const res = await fetch(base + '&page_number=' + page, { headers: { 'X-Hume-Api-Key': apiKey } });
+      if (!res.ok) {
+        console.warn('[hume] voice list failed', res.status, await res.text().catch(() => ''));
+        break;
+      }
+      const data = await res.json();
+      const batch = (data && (data.voices_page || data.voices)) || [];
+      for (const v of batch) {
+        if (!v || !v.name || seen.has(v.name)) continue;
+        seen.add(v.name);
+        // Everything the API said about this voice, flattened to one
+        // lowercased haystack — the band matcher reads this rather than a
+        // named field, so it doesn't matter whether Hume calls it `tags`,
+        // `description`, or something else again.
+        voices.push({ name: v.name, text: JSON.stringify(v).toLowerCase() });
+      }
+      if (batch.length < 100) break;
     }
-    const data = await res.json();
-    const names = ((data && (data.voices_page || data.voices)) || []).map(v => v.name).filter(Boolean);
     // Sorted so the pick is stable even if the API returns them in a
     // different order between calls — the seeded index is only deterministic
     // if the list it indexes into is.
-    names.sort();
-    console.info(`[hume] voice library (${cacheKey}): ${names.length} voices`);
+    voices.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    console.info(`[hume] voice library (${cacheKey}): ${voices.length} voices`, {
+      // Logged because the band matching above depends on what this text
+      // actually contains, and it can't be inspected from anywhere else.
+      sample: voices.slice(0, 3).map(v => v.text.slice(0, 200))
+    });
     // An empty gender-filtered result falls back to the unfiltered library
-    // rather than dropping to Deepgram — a voice of the wrong gender still
-    // beats losing the expressive engine entirely.
-    if (!names.length && tag) return humeVoiceLibrary(apiKey, null);
-    _humeVoiceLibrary[cacheKey] = names;
+    // rather than dropping the expressive engine entirely — a voice of the
+    // wrong gender still beats losing it.
+    if (!voices.length && tag) return humeVoiceLibrary(apiKey, null);
+    _humeVoiceLibrary[cacheKey] = voices;
   } catch (e) {
     console.warn('[hume] voice list threw', e);
     _humeVoiceLibrary[cacheKey] = [];
@@ -3091,23 +3161,42 @@ async function humeVoiceLibrary(apiKey, gender) {
 
 // Same seed as the avatar build, so a patient's voice is stable across
 // reconnects exactly like their face is.
-async function humeVoiceFor(gender, apiKey) {
+async function humeVoiceFor(gender, apiKey, ageYears) {
+  const band = voiceAgeBand(ageYears === undefined ? avatarBuild.ageYears : ageYears);
   // Coerced because the two copies of this default disagree by design: the
   // config schema stores it as map_str_str (a comma-separated string per
-  // gender, which is what the admin editor can actually edit) and the schema
+  // key, which is what the admin editor can actually edit) and the schema
   // copy is the one that wins. Indexing a raw string here would pick single
   // CHARACTERS as voice names.
-  const raw = HUME_TTS_VOICE_POOL[gender];
-  const curated = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+  const curatedFor = key => (k => (Array.isArray(k) ? k : String(k || '').split(',')))(HUME_TTS_VOICE_POOL[key])
     .map(x => String(x).trim()).filter(Boolean);
-  const pool = curated.length ? curated : await humeVoiceLibrary(apiKey, gender);
-  if (!pool.length) return null;
+  // Band-specific curation wins; a plain gender entry covers every band that
+  // has none of its own.
+  let names = curatedFor(band + '_' + gender);
+  if (!names.length && band === 'adult') names = curatedFor(gender);
+
+  if (!names.length) {
+    const lib = await humeVoiceLibrary(apiKey, gender);
+    const def = VOICE_AGE_BANDS.find(b => b.band === band);
+    // Only NARROW to the band when the library actually has voices matching
+    // it. Coming up empty means Hume's stock library has nothing for this age
+    // — fall through to the whole list rather than to no voice at all, which
+    // would drop the reply to the Web Speech fallback for the whole session.
+    const matched = def && def.match ? lib.filter(v => def.match.test(v.text)) : [];
+    if (def && def.match && !matched.length) {
+      console.warn(`[hume] no ${band} voices in the library — using an adult voice. `
+        + 'Design one in Hume and add it to HUME_TTS_VOICE_POOL.' + band + '_' + gender);
+    }
+    names = (matched.length ? matched : lib).map(v => v.name);
+  }
+  if (!names.length) return null;
   const seed = avatarBuild.voiceSeed || sessionCode || 'default';
-  const picked = pool[hashStr(seed + ':hume-tts-voice') % pool.length];
+  const picked = names[hashStr(seed + ':hume-tts-voice') % names.length];
+  const pool = names;
   // Logged once per session rather than per reply: the thing worth seeing is
   // whether it is the SAME voice each turn, and a line per turn would bury it.
   if (picked !== _humeLastPickedVoice) {
-    console.info(`[hume] voice for this patient: ${picked} (gender=${gender || 'unknown'}, pool=${pool.length}, seed=${seed})`);
+    console.info(`[hume] voice for this patient: ${picked} (gender=${gender || 'unknown'}, band=${band}, pool=${pool.length}, seed=${seed})`);
     _humeLastPickedVoice = picked;
   }
   return picked;
@@ -3147,14 +3236,55 @@ let HUME_STATE_DIRECTION = {
   withdrawal: 'shaky, queasy, wretched, uncomfortable',
   depression: 'flat, quiet, slow, no energy'
 };
+// Age is the one direction that is NOT either/or with the others — a
+// frightened seven-year-old is still seven — so it prefixes whatever else
+// applies rather than competing with it. It is also the weaker half of the
+// fix: Octave will pitch and phrase an adult voice younger when told to, but
+// it cannot give an adult voice a child's timbre. A real child voice in
+// HUME_TTS_VOICE_POOL.child_* is what actually solves that; this is what
+// carries the scenario until one is there, and it still adds the manner
+// (a child's phrasing and hesitancy) on top of a real child voice afterwards.
+let HUME_AGE_DIRECTION = {
+  child: 'a young child',
+  teen: 'a teenager',
+  senior: 'a frail elderly person'
+};
+function humeAgeDirection() {
+  const years = avatarBuild.ageYears;
+  const band = voiceAgeBand(years);
+  const base = HUME_AGE_DIRECTION[band];
+  if (!base) return '';
+  // The exact age when we have one — "a 7 year old child" is a much stronger
+  // instruction to an LLM-based TTS than "a young child".
+  if ((band === 'child' || band === 'teen') && years != null && years >= 1) {
+    return `a ${Math.round(years)} year old ${band === 'teen' ? 'teenager' : 'child'}`;
+  }
+  return base;
+}
+
+// Hume's own guidance is 100 characters or fewer — past that, delivery gets
+// worse rather than better — so the composed direction is truncated at a
+// word boundary rather than allowed to run long.
+const HUME_DIRECTION_MAX = 100;
 function humeActingDirection() {
+  const parts = [];
+  const age = humeAgeDirection();
+  if (age) parts.push(age);
   const sat = testConfig ? SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now())) : null;
-  if (sat != null && Math.round(sat) >= 1) return HUME_SAT_DIRECTION[Math.min(3, Math.round(sat))] || '';
   const meta = (scenarioMeta && scenarioMeta.patient_meta) || {};
-  const state = PatientVoice.parseBehaviouralState(meta.behavioural_state);
-  if (!state) return '';
-  const key = state.kind === 'delirium' && state.subkind ? 'delirium_' + state.subkind : state.kind;
-  return HUME_STATE_DIRECTION[key] || '';
+  const state = sat == null || Math.round(sat) < 1 ? PatientVoice.parseBehaviouralState(meta.behavioural_state) : null;
+  if (sat != null && Math.round(sat) >= 1) {
+    // Agitation still wins over behavioural state when both apply — at SAT
+    // +2/+3 it is the dominant thing about the encounter.
+    parts.push(HUME_SAT_DIRECTION[Math.min(3, Math.round(sat))] || '');
+  } else if (state) {
+    const key = state.kind === 'delirium' && state.subkind ? 'delirium_' + state.subkind : state.kind;
+    parts.push(HUME_STATE_DIRECTION[key] || '');
+  }
+  const joined = parts.filter(Boolean).join(', ');
+  if (joined.length <= HUME_DIRECTION_MAX) return joined;
+  const cut = joined.lastIndexOf(' ', HUME_DIRECTION_MAX);
+  return joined.slice(0, cut > 0 ? cut : HUME_DIRECTION_MAX);
 }
 
 // --- Toggle ------------------------------------------------------------
