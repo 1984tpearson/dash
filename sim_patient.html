@@ -62,7 +62,6 @@ body.embed #topbar { display: none; }
    resuming from a stale localStorage flag). */
 body.mode-monitor #info-col,
 body.mode-monitor #rt-voice-label,
-body.mode-monitor #tts-hume-label,
 body.mode-monitor #rt-voice-status { display: none !important; }
 body.mode-avatar #monitor-col { display: none !important; }
 #display-mode-select { font-size: 10px; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; padding: 3px 6px; cursor: pointer; }
@@ -362,9 +361,6 @@ body.mode-avatar #monitor-col { display: none !important; }
     </select>
     <label id="rt-voice-label" title="Continuous, low-latency &quot;Talk to Patient&quot; conversation — streams speech straight to Claude and speaks back via Deepgram Aura-2 TTS, entirely from this device (no dependency on the assessor's tab being open/polling). On by default. Untick for the standard tap-to-talk flow, which is also what this falls back to automatically if realtime can't run (no Deepgram key, no mic permission, non-Chrome browser, blocked network).">
       <input type="checkbox" id="rt-voice-checkbox" onchange="setRtVoiceEnabled(this.checked)">&#9889; Realtime Voice
-    </label>
-    <label id="tts-hume-label" style="display:none" title="Which text-to-speech engine speaks the patient's replies. Ticked = Hume Octave, which interprets the line and acts it, so an agitated patient actually sounds agitated. Unticked = Deepgram Aura-2, which reads it in a flat voice at any agitation level. Per-device, so two devices on one session can run different engines side by side. Hidden entirely when no Hume key is configured.">
-      <input type="checkbox" id="tts-hume-checkbox" onchange="setHumeTtsEnabled(this.checked)">&#127917; Expressive Voice
     </label>
     <span id="rt-voice-status"></span>
     <div id="scenario-timer">00:00</div>
@@ -1033,7 +1029,7 @@ function buildAvatarBase(seed, skinHex, gender, age) {
   avatarBuild.ageBand = ageBandFromMeta(age);
   avatarBuild.ageYears = parseAgeYears(age); // exact years (or null) — drives the continuous ageRamp() scaling in applyAgeScale(), separate from the discrete band above
   const s = String(seed || sessionCode || 'default');
-  avatarBuild.voiceSeed = s; // same per-scenario seed as the hair/eyebrow picks below, reused by deepgramVoiceIdFor() so a patient's voice is stable across reconnects too
+  avatarBuild.voiceSeed = s; // same per-scenario seed as the hair/eyebrow picks below, reused by humeVoiceFor() so a patient's voice is stable across reconnects too
   const allowAdultHair = avatarBuild.ageBand === 'teen' || avatarBuild.ageBand === 'adult';
   const hairKeys = Object.keys(AvatarAssets.top).filter(k =>
     (allowAdultHair || !ADULT_ONLY_HAIR.has(k)) && (allowAdultHair || !FACE_FRAMING_HEADWEAR.has(k))
@@ -2508,7 +2504,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await requireAuth();
   setDisplayMode(localStorage.getItem(DISPLAY_MODE_LS_KEY) || defaultDisplayModeForDevice());
   document.getElementById('rt-voice-checkbox').checked = _rtVoiceEnabled;
-  initHumeTtsToggle(); // fire-and-forget — reveals the engine toggle only if a Hume key exists
   updateRtVoiceStatusLabel();
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
@@ -2949,8 +2944,9 @@ async function speakPatientReply(text, resumeIfConversing, isConversation) {
 //   getDeepgramKey() below. Until an admin adds a 'deepgram_api_key' row
 //   there, the toggle can be switched on but every call attempt fails
 //   closed with a clear status message.
-// - DEEPGRAM_TTS_VOICE_POOL below is Deepgram's own complete English Aura-2
-//   voice table (all 41, transcribed from their docs), not a curated subset.
+// - TTS is Hume Octave (see fetchHumeSpeech); Deepgram is used here for
+//   speech-to-text only. Aura-2 was the original TTS and was removed once
+//   Octave landed — it has no emotional prosody, which agitation needs.
 
 // --- Config/keys -----------------------------------------------------------
 // Mirrors sim_control.html's getAnthropicKey() exactly (same table, same
@@ -3013,28 +3009,6 @@ let PATIENT_VOICE_CONFUSED_NOTE = PatientVoice.DEFAULT_CONFUSED_NOTE;
 // appearance) is a natural follow-up, via avatarBuild.ageYears the same
 // way youthVoiceRate() reads it; Deepgram's own "Age" column (Young
 // Adult/Adult/Mature) would map onto that nicely whenever this gets built.
-let DEEPGRAM_TTS_VOICE_POOL = {
-  male: [
-    'aura-2-apollo-en', 'aura-2-arcas-en', 'aura-2-aries-en', 'aura-2-atlas-en',
-    'aura-2-draco-en', 'aura-2-hermes-en', 'aura-2-hyperion-en', 'aura-2-jupiter-en',
-    'aura-2-mars-en', 'aura-2-neptune-en', 'aura-2-odysseus-en', 'aura-2-orion-en',
-    'aura-2-orpheus-en', 'aura-2-pluto-en', 'aura-2-saturn-en', 'aura-2-zeus-en'
-  ],
-  female: [
-    'aura-2-amalthea-en', 'aura-2-andromeda-en', 'aura-2-asteria-en', 'aura-2-athena-en',
-    'aura-2-aurora-en', 'aura-2-callista-en', 'aura-2-cora-en', 'aura-2-cordelia-en',
-    'aura-2-delia-en', 'aura-2-electra-en', 'aura-2-harmonia-en', 'aura-2-helena-en',
-    'aura-2-hera-en', 'aura-2-iris-en', 'aura-2-janus-en', 'aura-2-juno-en',
-    'aura-2-luna-en', 'aura-2-minerva-en', 'aura-2-ophelia-en', 'aura-2-pandora-en',
-    'aura-2-phoebe-en', 'aura-2-selene-en', 'aura-2-thalia-en', 'aura-2-theia-en',
-    'aura-2-vesta-en'
-  ],
-};
-function deepgramVoiceIdFor(gender) {
-  const pool = DEEPGRAM_TTS_VOICE_POOL[gender] || DEEPGRAM_TTS_VOICE_POOL.male;
-  const seed = avatarBuild.voiceSeed || sessionCode || 'default';
-  return pool[hashStr(seed + ':deepgram-tts-voice') % pool.length];
-}
 
 // --- Hume Octave TTS (optional, preferred when a key exists) ---------------
 // Deepgram Aura-2 has no emotional prosody at all, so an agitated patient is
@@ -3068,14 +3042,11 @@ async function getHumeKey() {
   return _cachedHumeKey;
 }
 
-// Curated per-gender voice names from Hume's Voice Library, same shape as
-// DEEPGRAM_TTS_VOICE_POOL. Left EMPTY deliberately: the library is large and
-// its entries carry no gender metadata over the API, so there is nothing to
-// curate from without listening first. While empty, humeVoiceFor() falls back
-// to fetching the library and picking deterministically from all of it — the
-// patient still gets a stable voice, it just may not match their gender.
-// Fill these in (via the admin config, no deploy needed) once you have picked
-// favourites, and gender matching starts working.
+// Optional hand-picked voice names per gender. Left EMPTY by default, and
+// that is now the expected state: humeVoiceLibrary() asks Hume for voices
+// already filtered to the patient's gender (filter_tag=GENDER:Female), so
+// gender matching works without curation. Fill these in only to narrow the
+// selection to favourites — via the admin config, no deploy needed.
 let HUME_TTS_VOICE_POOL = { male: [], female: [] };
 // Cached per gender. The library exposes gender as a filterable TAG
 // (filter_tag=GENDER:Male), so the right voices can simply be asked for
@@ -3168,36 +3139,6 @@ function humeActingDirection() {
   if (!state) return '';
   const key = state.kind === 'delirium' && state.subkind ? 'delirium_' + state.subkind : state.kind;
   return HUME_STATE_DIRECTION[key] || '';
-}
-
-// Per-device switch between the two engines, so the same scenario can be
-// compared back to back without touching the database. Defaults ON, which
-// preserves the behaviour from when the key alone decided it: a configured
-// Hume key means Hume unless someone deliberately unticks. Stored per browser
-// (same pattern as the Realtime Voice toggle below) rather than in config,
-// because A/B-ing an engine is exactly a per-device, per-session thing.
-const TTS_HUME_LS_KEY = 'av_tts_hume';
-let _humeTtsEnabled = localStorage.getItem(TTS_HUME_LS_KEY) !== '0';
-function setHumeTtsEnabled(enabled) {
-  _humeTtsEnabled = !!enabled;
-  localStorage.setItem(TTS_HUME_LS_KEY, _humeTtsEnabled ? '1' : '0');
-  const box = document.getElementById('tts-hume-checkbox');
-  if (box) box.checked = _humeTtsEnabled;
-  // Nothing else to tear down: the next reply simply takes the other branch
-  // in speakRealtimeReply. Anything mid-playback keeps its original voice.
-}
-// The control is meaningless without a key, and a dead checkbox invites
-// "I ticked it and nothing happened" — so it stays hidden until the key
-// check confirms there is something to switch TO.
-async function initHumeTtsToggle() {
-  try {
-    if (!(await getHumeKey())) return;
-    const label = document.getElementById('tts-hume-label');
-    const box = document.getElementById('tts-hume-checkbox');
-    if (!label || !box) return;
-    box.checked = _humeTtsEnabled;
-    label.style.display = '';
-  } catch (e) { /* no key / offline — leave it hidden */ }
 }
 
 // --- Toggle ------------------------------------------------------------
@@ -3476,6 +3417,18 @@ function fallBackToStandardVoice(reason) {
   // After openVoiceModal (beginCapture sets its own status), so the reason
   // for the switch is what the student actually reads.
   document.getElementById('voice-modal-status').textContent = reason;
+}
+
+// Distinguishes "we stopped this on purpose" from "synthesis actually broke".
+// A confirmed barge-in pauses _rtAudioEl mid-play, and the browser reports
+// that as an AbortError on the pending play() promise; a stale callId means a
+// newer reply has already superseded this one. Neither is a failure, and
+// treating them as one is what dropped the patient onto the Web Speech voice
+// for the remainder of a session the moment a student interrupted.
+function isDeliberateStop(err, callId) {
+  if (callId !== _rtCallId) return true;
+  if (!_rtSpeaking) return true; // stopRealtimeAudio() already ran for this reply
+  return !!err && (err.name === 'AbortError' || /interrupted|aborted|pause/i.test(err.message || ''));
 }
 
 function stopRealtimeAudio() {
@@ -3779,7 +3732,6 @@ async function generateRealtimePatientReply(question) {
 // reason MP3 does: the chunks have to concatenate into one valid stream for
 // MediaSource to play them progressively.
 async function fetchHumeSpeech(text) {
-  if (!_humeTtsEnabled) return null;
   const apiKey = await getHumeKey();
   if (!apiKey) return null;
   const voice = await humeVoiceFor(patientGender, apiKey);
@@ -3817,35 +3769,13 @@ async function fetchHumeSpeech(text) {
 
 async function speakRealtimeReply(text, callId) {
   try {
-    // Hume when configured, Deepgram otherwise. A Hume failure is NOT fatal:
-    // it drops through to Deepgram rather than losing the reply, so a bad key
-    // or an outage degrades the voice instead of breaking the conversation.
-    let res = null;
-    let usingHume = false;
-    try {
-      res = await fetchHumeSpeech(text);
-      usingHume = !!res;
-    } catch (e) {
-      console.warn('[hume] failed, falling back to Deepgram for this reply:', e);
-      res = null;
-    }
+    // Hume is the only TTS provider on this path now. If it can't synthesise
+    // (no key, outage, bad request) the catch at the bottom speaks the reply
+    // through the browser's own Web Speech voice rather than losing it —
+    // noticeably worse, but never silence.
+    const res = await fetchHumeSpeech(text);
     if (callId !== _rtCallId) return;
-    if (!res) {
-      const apiKey = await getDeepgramKey();
-      if (callId !== _rtCallId) return;
-      const voiceModel = deepgramVoiceIdFor(patientGender);
-      console.info(`[hume] NOT used for this reply — speaking via Deepgram, voice=${voiceModel}`);
-      res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voiceModel)}&encoding=mp3`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Token ${apiKey}`
-        },
-        body: JSON.stringify({ text })
-      });
-      if (!res.ok) throw new Error(`Deepgram TTS call failed (${res.status})`);
-    }
-    if (callId !== _rtCallId) return;
+    if (!res) throw new Error('Hume TTS unavailable (no key, or no voice could be resolved)');
 
     // Adopted as _rtAudioEl rather than kept local when the unlock never ran:
     // stopRealtimeAudio(), requestEndRealtimeCall() and the barge-in path all
@@ -3856,20 +3786,14 @@ async function speakRealtimeReply(text, callId) {
     // different voices.
     if (!_rtAudioEl) _rtAudioEl = new Audio();
     const audio = _rtAudioEl;
-    // Set every time rather than only when agitated: _rtAudioEl is reused for
-    // the whole session, so a rate left over from a +3 reply would keep the
-    // patient talking fast after they have been sedated.
-    // preservesPitch defaults to true (Chrome keeps the original pitch when
-    // you change speed); switching it off lets pitch rise with the rate,
-    // which is the tightening you actually hear in an angry voice rather than
-    // just a faster calm one.
-    // Hume applies the rate natively in synthesis, so resampling here as well
-    // would compound the two. Reset to 1 explicitly rather than left alone —
-    // _rtAudioEl is shared, so a rate from an earlier Deepgram-path reply
-    // would otherwise persist into a Hume one.
-    const rtRate = usingHume ? 1 : satSpeechRate();
-    audio.playbackRate = rtRate;
-    audio.preservesPitch = rtRate === 1;
+    // Hume applies the agitation speed-up natively in synthesis (see
+    // fetchHumeSpeech), which resynthesises rather than resampling finished
+    // audio, so nothing is needed here. Pinned to 1 explicitly rather than
+    // left alone because _rtAudioEl is reused for the whole session and any
+    // stale rate would compound with the native one. satSpeechRate() still
+    // applies on the Web Speech fallback path, via utterance.rate.
+    audio.playbackRate = 1;
+    audio.preservesPitch = true;
     // Stream via MediaSource where possible — see playStreamedMp3() for why
     // this is the actual latency win over the old res.blob()-then-play
     // approach (audio starts on the FIRST chunk instead of the whole file).
@@ -3896,8 +3820,10 @@ async function speakRealtimeReply(text, callId) {
         // hypothetical — see git history for the fuller story.
         audio.onended = resolve;
         audio.onpause = resolve;
-        audio.onerror = () => reject(new Error('Deepgram TTS audio playback error'));
-        audio.play().then(startTalkAnimation).catch(reject);
+        audio.onerror = () => reject(new Error('TTS audio playback error'));
+        audio.play().then(startTalkAnimation).catch(err => {
+          if (isDeliberateStop(err, callId)) resolve(); else reject(err);
+        });
       });
     }
     if (callId === _rtCallId) stopRealtimeAudio(); // clears _rtSpeaking, stops talk animation — harmless no-op if a barge-in already called this
@@ -3936,7 +3862,7 @@ function playStreamedMp3(audio, body, callId) {
     audio.src = URL.createObjectURL(mediaSource);
     audio.onended = resolve;
     audio.onpause = resolve; // see speakRealtimeReply()'s comment on why this matters as much as onended
-    audio.onerror = () => reject(new Error('Deepgram TTS audio playback error'));
+    audio.onerror = () => reject(new Error('TTS audio playback error'));
 
     mediaSource.addEventListener('sourceopen', async () => {
       if (callId !== _rtCallId) { resolve(); return; }
@@ -3968,11 +3894,21 @@ function playStreamedMp3(audio, body, callId) {
             _rtSpeaking = true;
             _rtPlaybackStartedAt = Date.now();
             _rtBargeInArmedAt = null;
-            audio.play().then(startTalkAnimation).catch(reject);
+            // A barge-in calls audio.pause() while this play() promise is
+            // still pending, and the browser rejects it with AbortError.
+            // Treating that as a failure is what made an interruption swap
+            // the patient to the Web Speech voice for the rest of the
+            // session (see the catch in speakRealtimeReply) — the synthesis
+            // had actually succeeded and we stopped it on purpose.
+            audio.play().then(startTalkAnimation).catch(err => {
+              if (isDeliberateStop(err, callId)) resolve(); else reject(err);
+            });
           }
         }
       } catch (e) {
-        reject(e);
+        // Same distinction as the play() rejection above: tearing the stream
+        // down because we stopped on purpose is not a synthesis failure.
+        if (isDeliberateStop(e, callId)) resolve(); else reject(e);
       }
     });
   });
