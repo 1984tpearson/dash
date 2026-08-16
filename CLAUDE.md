@@ -581,6 +581,30 @@ voice changes at two physical events (puberty, and an older voice thinning).
   while — `youthVoiceRate()` on `utterance.pitch`. Unrelated code, same
   problem.
 
+**Accent is a third axis, matched the same self-correcting way.** `VOICE_ACCENT`
+(default `australian`) plus `VOICE_ACCENT_PATTERNS`, both admin-editable,
+regex-matched over the voice's own tag text — no knowledge of Hume's
+vocabulary needed. Before this the accent was simply whatever the seeded index
+landed on, which in a stock library that is mostly American means American
+patients in Australian scenarios.
+- **One setting for the whole tool, deliberately NOT derived from
+  `patient_meta.ethnicity`.** Most people of any background born here sound
+  Australian, so mapping ethnicity to accent would be wrong most of the time
+  and would be exactly the caricature the skin-tone weighting was careful to
+  avoid. A first-generation accent is worth portraying but has to be authored
+  per scenario — a `patient_meta.accent` field is the right home and this pick
+  would then prefer it. Not built.
+- The two filters degrade **one at a time**, most specific first: accent+age →
+  age only → accent only → whole library. Age is surrendered LAST because an
+  age mismatch is the one a listener cannot forgive; a wrong accent is merely
+  not Australian.
+- When the pool cannot supply the accent, `humeActingDirection()` asks for it
+  instead — but ONLY then, since restating what the voice already does would
+  eat into the ~100-character budget the age/SAT text needs more.
+- `adult` is defined by what it is NOT: it excludes anything a narrow band
+  claims. It used to be a pure fall-through matching the entire library, so an
+  adult patient could draw a voice tagged "child".
+
 **Reply latency is attacked at four points, all the same trick — start a
 stage before the previous one has finished.** In the order they fire:
 - **Prompt caching.** `cache_control: {type:'ephemeral'}` on the system

@@ -639,6 +639,8 @@ async function loadSimConfig() {
     HUME_SAT_DIRECTION = pick(field('voice', 'HUME_SAT_DIRECTION'), HUME_SAT_DIRECTION);
     HUME_STATE_DIRECTION = pick(field('voice', 'HUME_STATE_DIRECTION'), HUME_STATE_DIRECTION);
     HUME_AGE_DIRECTION = pick(field('voice', 'HUME_AGE_DIRECTION'), HUME_AGE_DIRECTION);
+    VOICE_ACCENT = pick(field('voice', 'VOICE_ACCENT'), VOICE_ACCENT);
+    VOICE_ACCENT_PATTERNS = pick(field('voice', 'VOICE_ACCENT_PATTERNS'), VOICE_ACCENT_PATTERNS);
 
     // Realtime Voice reads the SAME admin-editable 'prompts' section
     // sim_control.html's callPatientAI() does — the default text below is a
@@ -3108,6 +3110,44 @@ function voiceAgeBand(years) {
   return 'adult';
 }
 
+// Accent. These scenarios are Australian — Australian dispatch, Australian
+// street names, Australian drug names — and until now the accent was simply
+// whatever the seeded index happened to land on, which in Hume's stock
+// library means mostly American. One setting for the whole tool rather than
+// per patient: an Australian ambulance service attends Australians, and a
+// per-patient accent is a scenario-authored fact (see the note below), not
+// something to infer.
+//
+// Deliberately NOT derived from patient_meta.ethnicity. Most people of any
+// background born here sound Australian, so mapping ethnicity to accent would
+// be both wrong most of the time and exactly the caricature the skin-tone
+// weighting was careful to avoid. A first-generation accent is a real and
+// worthwhile thing to portray, but it has to be authored per scenario — a
+// patient_meta.accent field is the right home for it, and this pick would
+// then prefer that over the default. Not built yet.
+//
+// Matched the same way the age bands are: a regex over the voice's own tag
+// text, so no knowledge of Hume's tag vocabulary is needed and it self-
+// corrects if they rename anything. Patterns are admin-editable because
+// which words a library uses is exactly the kind of thing that changes
+// without notice.
+let VOICE_ACCENT = 'australian';
+let VOICE_ACCENT_PATTERNS = {
+  australian: 'australian|aussie',
+  british: 'british|english|uk english|received pronunciation|rp',
+  american: 'american|us english|general american',
+  irish: 'irish',
+  scottish: 'scottish|scots',
+  indian: 'indian',
+  any: ''
+};
+function voiceAccentPattern() {
+  const raw = VOICE_ACCENT_PATTERNS[VOICE_ACCENT];
+  if (!raw || !String(raw).trim()) return null; // 'any', or an unknown key — no accent preference at all
+  try { return new RegExp(String(raw), 'i'); } catch (e) { return null; }
+}
+let _humeAccentSatisfied = true;
+
 // Cached per gender. The library exposes gender as a filterable TAG
 // (filter_tag=GENDER:Male), so the right voices can simply be asked for
 // rather than curated by ear — which is what HUME_TTS_VOICE_POOL was
@@ -3185,24 +3225,59 @@ async function humeVoiceFor(gender, apiKey, ageYears) {
   let names = curatedFor(band + '_' + gender);
   if (!names.length && band === 'adult') names = curatedFor(gender);
 
+  // A curated pool is an explicit choice by ear, so accent is assumed already
+  // handled and the acting direction says nothing about it.
+  let accentSatisfied = true;
   if (!names.length) {
     const lib = await humeVoiceLibrary(apiKey, gender);
     const def = VOICE_AGE_BANDS.find(b => b.band === band);
-    // Only NARROW to the band when the library actually has voices matching
-    // it. Coming up empty means Hume's stock library has nothing for this age
-    // — fall through to the whole list rather than to no voice at all, which
-    // would drop the reply to the Web Speech fallback for the whole session.
-    const matched = def && def.match ? lib.filter(v => def.match.test(v.text)) : [];
-    if (def && def.match && !matched.length) {
+    const accentRe = voiceAccentPattern();
+
+    // Two independent filters over the same list, applied most-specific
+    // first and degraded one at a time rather than all-or-nothing:
+    //   accent + age  ->  age only  ->  accent only  ->  whole library.
+    // Age is given up LAST because an age mismatch is the one a listener
+    // cannot forgive — a child in an adult voice is instantly wrong, whereas
+    // an adult with the wrong accent is merely not Australian.
+    // 'adult' has no pattern of its own — it is defined by what it is NOT, so
+    // it excludes anything another band claims. Without this an adult patient
+    // could draw a voice tagged "child": the adult band was a pure
+    // fall-through and matched the entire library including the narrow bands.
+    const otherBands = VOICE_AGE_BANDS.filter(b => b.match && b.band !== band);
+    const byBand = def && def.match
+      ? (v => def.match.test(v.text))
+      : (v => !otherBands.some(b => b.match.test(v.text)));
+    const byAccent = v => !accentRe || accentRe.test(v.text);
+    const both = lib.filter(v => byBand(v) && byAccent(v));
+    const bandOnly = lib.filter(byBand);
+    const accentOnly = lib.filter(byAccent);
+
+    let chosen, why;
+    if (both.length) { chosen = both; why = 'accent+age'; }
+    else if (bandOnly.length && bandOnly.length < lib.length) { chosen = bandOnly; why = 'age only'; }
+    else if (accentOnly.length) { chosen = accentOnly; why = 'accent only'; }
+    else { chosen = lib; why = 'unfiltered'; }
+    accentSatisfied = !accentRe || chosen.every(byAccent);
+
+    if (def && def.match && !bandOnly.length) {
       console.warn(`[hume] no ${band} voices in the library — using an adult voice. `
         + 'Design one in Hume and add it to HUME_TTS_VOICE_POOL.' + band + '_' + gender);
     }
-    names = (matched.length ? matched : lib).map(v => v.name);
+    if (accentRe && !accentOnly.length) {
+      console.warn(`[hume] no ${VOICE_ACCENT} voices in the library — the accent will be `
+        + 'asked for in the acting direction instead, which is weaker than a voice that already has it.');
+    }
+    console.info(`[hume] voice filter: ${why} (accent=${VOICE_ACCENT}, band=${band}, ${chosen.length}/${lib.length})`);
+    names = chosen.map(v => v.name);
   }
   if (!names.length) return null;
   const seed = avatarBuild.voiceSeed || sessionCode || 'default';
   const picked = names[hashStr(seed + ':hume-tts-voice') % names.length];
   const pool = names;
+  // Read by humeActingDirection(): when the pool could not satisfy the accent,
+  // the direction asks for it instead. Set here rather than recomputed there
+  // so the two can't disagree about whether it was already handled.
+  _humeAccentSatisfied = accentSatisfied;
   // Logged once per session rather than per reply: the thing worth seeing is
   // whether it is the SAME voice each turn, and a line per turn would bury it.
   if (picked !== _humeLastPickedVoice) {
@@ -3278,6 +3353,11 @@ function humeAgeDirection() {
 const HUME_DIRECTION_MAX = 100;
 function humeActingDirection() {
   const parts = [];
+  // Only when the voice pool could not supply the accent itself. A voice that
+  // already has it needs no instruction, and these directions are capped at
+  // ~100 characters — spending some of that restating something the voice
+  // already does would push out the age/SAT text, which is doing more work.
+  if (!_humeAccentSatisfied && VOICE_ACCENT && VOICE_ACCENT !== 'any') parts.push(VOICE_ACCENT + ' accent');
   const age = humeAgeDirection();
   if (age) parts.push(age);
   const sat = testConfig ? SimEngine.getSatAt(testConfig, SimEngine.getSimNow(testConfig, Date.now())) : null;

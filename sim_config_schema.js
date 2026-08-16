@@ -634,6 +634,26 @@
               male: '', female: '', senior_male: '', senior_female: ''
             }
           },
+          VOICE_ACCENT: {
+            type: 'str',
+            label: 'Preferred patient accent',
+            help: 'Which accent to prefer when picking a Hume voice — a key from the patterns below, or "any" for no preference. These scenarios are Australian, so australian is the default. Applies to the whole tool, not per patient: a per-scenario accent would need to be authored on the scenario itself. Ignored when a curated HUME_TTS_VOICE_POOL entry supplies the voice, since that is already a choice made by ear.',
+            default: 'australian'
+          },
+          VOICE_ACCENT_PATTERNS: {
+            type: 'map_str_str',
+            label: 'Accent match patterns',
+            help: 'Regex (case-insensitive) matched against each Hume voice’s own tag/description text, per accent key. Editable because which words the library uses is exactly the sort of thing that changes without notice. An empty pattern means no preference. If no voice matches, the accent is asked for in the acting direction instead — weaker than a voice that already has it, and logged as a warning.',
+            default: {
+              australian: 'australian|aussie',
+              british: 'british|english|uk english|received pronunciation|rp',
+              american: 'american|us english|general american',
+              irish: 'irish',
+              scottish: 'scottish|scots',
+              indian: 'indian',
+              any: ''
+            }
+          },
           HUME_AGE_DIRECTION: {
             type: 'map_str_str',
             label: 'Hume acting direction per age band',
