@@ -1482,12 +1482,24 @@
   // Fluctuating confusion with disorganised thinking is delirium, which is
   // acute behavioural state — see CLAUDE.md; that belongs on the SAT-style
   // time-varying axis with agitation, not here.
+  // Leading keyword first, then a full-string scan as fallback — the same
+  // anchoring PatientVoice.parseTrait() and parseBehaviouralState() use, for
+  // the same reason. MOOD_MAP is first-match-wins over an order that encodes
+  // priority (most specific first), and the authored format is "one keyword —
+  // then a clause", so a clause mentioning another mood used to beat the
+  // keyword the author actually chose: 'anxious — tearful and frightened'
+  // resolved to TEARFUL. Anchoring fixes that without reordering MOOD_MAP,
+  // which must stay as it is (see CLAUDE.md). It also does the right thing
+  // with the older free-text values that predate the format — 'Anxious and
+  // tearful' now reads as anxious, which is how it reads to a human.
   function parseScenarioMood(text) {
     const s = String(text || '').toLowerCase().trim();
     if (!s) return 'calm';
     for (let i = 0; i < _cfg.MOOD_MAP.length; i++) {
-      const entry = _cfg.MOOD_MAP[i];
-      if (entry.keywords.some(k => s.includes(k))) return entry.mood;
+      if (_cfg.MOOD_MAP[i].keywords.some(k => s.indexOf(k) === 0)) return _cfg.MOOD_MAP[i].mood;
+    }
+    for (let i = 0; i < _cfg.MOOD_MAP.length; i++) {
+      if (_cfg.MOOD_MAP[i].keywords.some(k => s.includes(k))) return _cfg.MOOD_MAP[i].mood;
     }
     return 'calm';
   }

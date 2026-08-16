@@ -100,10 +100,27 @@
     { trait: 'vague', keywords: ['vague', 'poor historian', 'unreliable historian', 'fuzzy', 'hazy', 'unsure of detail', 'imprecise', 'woolly'] },
     { trait: 'blunt', keywords: ['blunt', 'gruff', 'brusque', 'abrupt', 'curt', 'impatient', 'no-nonsense', 'gets to the point'] }
   ];
+  // Anchored on the LEADING keyword first, exactly like parseBehaviouralState
+  // above and for exactly the same reason. A free substring scan over the
+  // whole value loses to the authored clause: the format is "one keyword —
+  // then a clause about this patient", and that clause routinely contains
+  // another trait's keywords. Measured against the real library, 4 of 10
+  // authored traits resolved to the WRONG key — 'deferential — ... downplays
+  // how unwell he feels' became STOIC (on 'downplay'), and 'blunt — gives
+  // short answers ...' became GUARDED (on 'short answers'), because TRAIT_MAP
+  // is first-match-wins and stoic/guarded sit earlier in it than the keyword
+  // the author actually chose.
+  //
+  // The substring scan is kept as a fallback for values that ignored the
+  // format ('a chatty man who...'), which is all it was ever right for.
   function parseTrait(text) {
     var s = String(text || '').toLowerCase().trim();
     if (!s) return 'plain';
-    for (var i = 0; i < TRAIT_MAP.length; i++) {
+    var i;
+    for (i = 0; i < TRAIT_MAP.length; i++) {
+      if (TRAIT_MAP[i].keywords.some(function (k) { return s.indexOf(k) === 0; })) return TRAIT_MAP[i].trait;
+    }
+    for (i = 0; i < TRAIT_MAP.length; i++) {
       if (TRAIT_MAP[i].keywords.some(function (k) { return s.indexOf(k) !== -1; })) return TRAIT_MAP[i].trait;
     }
     return 'plain';

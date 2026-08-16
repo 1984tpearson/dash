@@ -275,12 +275,22 @@ value to *begin with exactly one* recognised keyword (the parsers' canonical
 set) followed by a clause written fresh for that patient, and both say
 explicitly that the bracketed descriptions are definitions, not text to reuse.
 "Exactly one" also removes a real ambiguity: both parsers are first-match-wins
-over a map whose order encodes priority (most specific/severe first), so
-"Anxious and tearful" resolves to `tearful`, not `anxious`. That ordering is
-deliberate — don't reorder `MOOD_MAP` to "fix" it; the format rule is what
-stops two keywords landing in one value in the first place ("anxious — close
-to tears" then resolves the way it reads). Verified across the full canonical
-keyword set of both parsers.
+over a map whose order encodes priority (most specific/severe first). That
+ordering is deliberate — don't reorder `MOOD_MAP` to "fix" it.
+
+**But the format rule alone was not enough, and both parsers now anchor on the
+leading keyword** (full-string scan kept only as a fallback for values that
+ignored the format), the same fix `parseBehaviouralState` already had. The
+format rule governs the keyword; it says nothing about the *clause*, and the
+clause routinely contains another key's keywords. Measured against the real
+library: **4 of 10 authored traits resolved to the wrong key** —
+`deferential — ... downplays how unwell he feels` became `stoic` (on
+"downplay"), `blunt — gives short answers ...` became `guarded` (on "short
+answers") — and 1 of 8 moods did (`anxious — tearful and frightened` →
+`tearful`). Anchoring takes both to zero, leaves every canonical picker key
+round-tripping, and incidentally reads the older free-text values the way a
+human does (`Anxious and tearful` → `anxious`). Worth re-running that check
+against the library after adding any keyword to either map.
 
 **Nothing backfills, deliberately** — see the Gotchas entry on existing
 scenarios not being precious, which is the general rule this is one instance
