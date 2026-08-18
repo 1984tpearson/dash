@@ -2061,7 +2061,7 @@ let GRAPH_SERIES = [
   // belt-and-braces for the unreachable case of it being toggled on with no
   // series. gcsTotal is passed through from the sample's own vitals rather
   // than recomputed — this runs once per sample per draw.
-  { key: 'sat',     label: 'Agitation', color: '#b91c1c', unit: ' SAT', min: 0, max: 3, plotMax: 4, get: (v, cfg, tMs) => SimEngine.getSatAt(cfg, tMs, v.gcsE + v.gcsV + v.gcsM) ?? 0 },
+  { key: 'sat',     label: 'SAT',     color: '#b91c1c', unit: '/3',    min: 0, max: 3, plotMax: 4, get: (v, cfg, tMs) => SimEngine.getSatAt(cfg, tMs, v.gcsE + v.gcsV + v.gcsM) ?? 0 },
   // Composite, not a real vital — see SimEngine.getDisplayHealthScore() (and getHealthScore() underneath it) for how it's derived.
   // plotMax (1.5x the real max) pins "normal" (100) at the upper third of
   // the chart rather than the top or dead centre, leaving "dead" (0) at the
@@ -3460,7 +3460,7 @@ let VITAL_DEFS = [
   { key: 'Ketones', label: 'Ketones', unit: 'mmol/L',  overrideKeys: ['ketones'] },
   { key: 'Pain',    label: 'Pain',    unit: '/10',     overrideKeys: ['pain'] },
   { key: 'Nausea',  label: 'Nausea',  unit: '/10',     overrideKeys: ['nausea'] },
-  { key: 'SAT',     label: 'Agitation', unit: '/3',    overrideKeys: ['sat'], isSat: true },
+  { key: 'SAT',     label: 'SAT',     unit: '/3',    overrideKeys: ['sat'], isSat: true },
   { key: 'GCS',     label: 'GCS',     unit: '/15',     overrideKeys: ['gcsE', 'gcsV', 'gcsM'], isGCS: true },
   { key: 'Health',  label: 'Health',  unit: '',        overrideKeys: [], isHealth: true }
 ];
@@ -5114,7 +5114,7 @@ Project how this patient's vitals change from here, given this command.`;
 let OVERRIDE_KEY_LABELS = {
   HR: 'HR', BPsys: 'BP Sys', BPdia: 'BP Dia', SpO2: 'SpO\u2082', RR: 'RR', EtCO2: 'EtCO\u2082',
   temp: 'Temp', bgl: 'BGL', ketones: 'Ketones', pain: 'Pain',
-  gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor', sat: 'Agitation'
+  gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor', sat: 'SAT'
 };
 
 let _ovDefKey = null;

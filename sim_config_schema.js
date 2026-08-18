@@ -342,7 +342,7 @@
               { key: 'nausea', label: 'Nausea', color: '#14b8a6', unit: '/10', min: 0, max: 10 },
               // Agitation. Only drawn on scenarios that scripted it (see
               // SimEngine.getSatAt) — every draw site gates on graphSeriesOn.
-              { key: 'sat', label: 'Agitation', color: '#b91c1c', unit: ' SAT', min: 0, max: 3, plotMax: 4 },
+              { key: 'sat', label: 'SAT', color: '#b91c1c', unit: '/3', min: 0, max: 3, plotMax: 4 },
               { key: 'health', label: 'Health', color: '#16a34a', unit: '', min: 0, max: 100, plotMax: 150 }
             ]
           },
@@ -382,7 +382,7 @@
               // Filtered out at render time unless the scenario scripted
               // agitation — see tickVitals(). As with GRAPH_DEFAULT_ON above,
               // this copy is the one that actually runs.
-              { key: 'SAT', label: 'Agitation', unit: '/3', overrideKeys: ['sat'], isSat: true },
+              { key: 'SAT', label: 'SAT', unit: '/3', overrideKeys: ['sat'], isSat: true },
               { key: 'GCS', label: 'GCS', unit: '/15', overrideKeys: ['gcsE', 'gcsV', 'gcsM'], isGCS: true },
               { key: 'Health', label: 'Health', unit: '', overrideKeys: [], isHealth: true }
             ]
@@ -403,7 +403,7 @@
             default: {
               HR: 'HR', BPsys: 'BP Sys', BPdia: 'BP Dia', SpO2: 'SpO₂', RR: 'RR', EtCO2: 'EtCO₂',
               temp: 'Temp', bgl: 'BGL', ketones: 'Ketones', pain: 'Pain',
-              gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor', sat: 'Agitation'
+              gcsE: 'GCS Eye', gcsV: 'GCS Verbal', gcsM: 'GCS Motor', sat: 'SAT'
             }
           },
           INFO_TAB_ORDER: {
