@@ -135,9 +135,18 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
 .vtile .vlabel { font-size: 9px; color: #6b8299; text-transform: uppercase; letter-spacing: 1px; }
 .vtile .vval { font-size: 17px; font-weight: 900; color: #0369a1; }
 .vtile .vval-parts { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #6b8299; margin-left: 6px; }
-/* Forces GCS + Health onto their own row below the monitor tiles — see
-   tickVitals(). Zero-height so it costs no vertical space of its own. */
-.vtile-rowbreak { flex-basis: 100%; height: 0; }
+/* GCS + Health wrap as one unit rather than as two independent tiles — see
+   tickVitals(). A hard row break was tried first and is wrong here: it puts
+   the pair on a line of THEIR own, so once the monitor tiles themselves
+   overflow you get three rows. Wrapping them as a single wide item instead
+   means overflow tiles share the pair's line, keeping it to two rows, and
+   the pair can never split with Health stranded alone on a full-width row.
+   The 300px basis is tuned, not arbitrary: wide enough that the pair drops
+   below a full monitor row at the widths this panel actually runs at (it
+   wraps from ~1400px down), tight enough that it packs onto the overflow
+   row rather than claiming one of its own. Measured across 700-1600px, it
+   never costs a row that the tiles didn't already need. */
+.vtile-pair { display: flex; gap: 8px; flex: 1 1 300px; min-width: 260px; }
 #edit-mode-btn.active { background: #0369a1; }
 .topbar-logo-img { height: 26px; width: auto; max-width: 150px; object-fit: contain; flex-shrink: 0; display: block; }
 #topbar #avnav-hamburger { width: 34px; height: 34px; font-size: 15px; }
@@ -3662,24 +3671,25 @@ function tickVitals() {
   const v = SimEngine.getVitalsRaw(liveConfig, simNow());
   updateDynamicAppearance(v);
   const grid = document.getElementById('vitals-grid');
-  // Two deliberate rows rather than one wrapping run. The monitor-style
-  // numbers (HR/BP/SpO2/…/Pulse) fill the first row and wrap among
-  // themselves; GCS and Health are pushed onto a second row of their own by
-  // an explicit break, so each gets ~half the panel width. That's what buys
-  // GCS the room to show its E/V/M breakdown next to the total (see
-  // vitalTileHtml) instead of a bare number, and it stops the pair from
-  // shuffling between rows every time a tile is added or dropped.
+  // GCS and Health render as one wide .vtile-pair item at the end of the
+  // grid rather than as two loose tiles. Everything still wraps naturally —
+  // no forced row break — so the row count stays at whatever the width
+  // actually needs, and monitor tiles that overflow share the pair's row
+  // instead of pushing it down onto a third one. What the pairing buys:
+  // Health can't end up stranded alone on a full-width row, and GCS gets
+  // roughly half the panel, which is the room its E/V/M breakdown needs
+  // (see vitalTileHtml).
   // Agitation's tile is dropped entirely unless the scenario scripted it.
   // The tile IS the graph toggle (see toggleVitalVisibility), so filtering
   // here is what keeps the whole feature invisible on the ~99% of scenarios
   // where it is irrelevant, rather than showing a permanently-flat trace.
-  const isSecondRow = def => def.isGCS || def.isHealth;
+  const isPaired = def => def.isGCS || def.isHealth;
   const tiles = VITAL_DEFS
-    .filter(def => !isSecondRow(def) && (!def.isSat || SimEngine.isAgitationScripted(liveConfig)))
+    .filter(def => !isPaired(def) && (!def.isSat || SimEngine.isAgitationScripted(liveConfig)))
     .map(def => vitalTileHtml(def, v));
   tiles.push(pulseTileHtml(simNow()));
-  const bottom = VITAL_DEFS.filter(isSecondRow).map(def => vitalTileHtml(def, v));
-  if (bottom.length) tiles.push('<div class="vtile-rowbreak"></div>', ...bottom);
+  const paired = VITAL_DEFS.filter(isPaired).map(def => vitalTileHtml(def, v));
+  if (paired.length) tiles.push(`<div class="vtile-pair">${paired.join('')}</div>`);
   grid.innerHTML = tiles.join('');
   if (Object.keys(patientActions).some(k => patientActions[k].status === 'pending')) renderPendingActionsStack(); // live countdown while anything's mid-timer
   renderGraph();
