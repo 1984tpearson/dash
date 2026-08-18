@@ -623,6 +623,27 @@
   // alone, so a missing sim_config row degrades to this file's own defaults
   // rather than to an empty table. Same posture as SimEngine's own
   // applyConfigOverrides.
+  // COGNITIVE_MAP/BEHAVIOURAL_* use `keywords`, SUBSTANCE_MAP uses `words` —
+  // both shapes are carried through as-authored rather than normalised, since
+  // the parsers read the two names directly.
+  function replaceList(target, src, idKey) {
+    if (!Array.isArray(src)) return;
+    target.length = 0;
+    src.forEach(function (r) {
+      if (!r || !r[idKey]) return;
+      var words = Array.isArray(r.keywords) ? r.keywords : r.words;
+      if (!Array.isArray(words)) return;
+      var row = {};
+      row[idKey] = r[idKey];
+      if (Array.isArray(r.keywords)) row.keywords = r.keywords; else row.words = words;
+      target.push(row);
+    });
+  }
+  function replaceStrings(target, src) {
+    if (!Array.isArray(src)) return;
+    target.length = 0;
+    src.forEach(function (v) { if (typeof v === 'string' && v) target.push(v); });
+  }
   function replaceObject(target, src) {
     if (!src || typeof src !== 'object' || Array.isArray(src)) return;
     Object.keys(target).forEach(function (k) { delete target[k]; });
@@ -638,6 +659,18 @@
         if (r && r.trait && Array.isArray(r.keywords)) TRAIT_MAP.push({ trait: r.trait, keywords: r.keywords });
       });
     }
+    // The parser tables, so a newly-authored keyword can actually REACH an
+    // edited note. Exposing the notes without these was half a feature: you
+    // could rewrite what 'dementia' says but not make 'vascular dementia'
+    // resolve to it. Each is an ordered list — first match wins, and for the
+    // anchored maps the order encodes priority (delirium tremens ahead of
+    // delirium, etc) — so the whole list is spliced in rather than merged.
+    replaceList(COGNITIVE_MAP, c.COGNITIVE_MAP, 'kind');
+    replaceList(BEHAVIOURAL_LEADS, c.BEHAVIOURAL_LEADS, 'kind');
+    replaceList(BEHAVIOURAL_MAP, c.BEHAVIOURAL_MAP, 'kind');
+    replaceList(SUBSTANCE_MAP, c.SUBSTANCE_MAP, 'key');
+    replaceStrings(COGNITIVE_NORMAL, c.COGNITIVE_NORMAL);
+    replaceStrings(BEHAVIOURAL_NONE, c.BEHAVIOURAL_NONE);
     replaceObject(TRAIT_NOTES, c.TRAIT_NOTES);
     replaceObject(MOOD_NOTES, c.MOOD_NOTES);
     replaceObject(COGNITIVE_NOTES, c.COGNITIVE_NOTES);
@@ -645,12 +678,24 @@
     replaceObject(SUBSTANCE_NOTES, c.SUBSTANCE_NOTES);
     replaceObject(SAT_NOTES, c.SAT_NOTES);
     replaceObject(SAT_DELIVERY, c.SAT_DELIVERY);
+    // Scalar, so it cannot be mutated in place — the export is refreshed
+    // alongside it, since callers read PatientVoice.VOICE_HISTORY_TURNS.
+    if (typeof c.VOICE_HISTORY_TURNS === 'number' && c.VOICE_HISTORY_TURNS > 0) {
+      VOICE_HISTORY_TURNS = Math.round(c.VOICE_HISTORY_TURNS);
+      window.PatientVoice.VOICE_HISTORY_TURNS = VOICE_HISTORY_TURNS;
+    }
   }
 
   window.PatientVoice = {
     DEFAULT_PROMPT: DEFAULT_PROMPT,
     applyConfigOverrides: applyConfigOverrides,
     SUBSTANCE_NOTES: SUBSTANCE_NOTES,
+    COGNITIVE_MAP: COGNITIVE_MAP,
+    COGNITIVE_NORMAL: COGNITIVE_NORMAL,
+    BEHAVIOURAL_LEADS: BEHAVIOURAL_LEADS,
+    BEHAVIOURAL_MAP: BEHAVIOURAL_MAP,
+    BEHAVIOURAL_NONE: BEHAVIOURAL_NONE,
+    SUBSTANCE_MAP: SUBSTANCE_MAP,
     SAT_DELIVERY: SAT_DELIVERY,
     DEFAULT_CONFUSED_NOTE: DEFAULT_CONFUSED_NOTE,
     tierFor: tierFor,

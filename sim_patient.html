@@ -641,6 +641,7 @@ async function loadSimConfig() {
     HUME_AGE_DIRECTION = pick(field('voice', 'HUME_AGE_DIRECTION'), HUME_AGE_DIRECTION);
     VOICE_ACCENT = pick(field('voice', 'VOICE_ACCENT'), VOICE_ACCENT);
     VOICE_ACCENT_PATTERNS = pick(field('voice', 'VOICE_ACCENT_PATTERNS'), VOICE_ACCENT_PATTERNS);
+    VOICE_AGE_BANDS = pick(field('voice', 'VOICE_AGE_BANDS'), VOICE_AGE_BANDS);
 
     // Patient manner/agitation voice tables (patient_voice.js owns them; the
     // schema copy above is the one that actually runs). Guarded because
@@ -656,7 +657,14 @@ async function loadSimConfig() {
         BEHAVIOURAL_NOTES: field('manner', 'BEHAVIOURAL_NOTES'),
         SUBSTANCE_NOTES: field('manner', 'SUBSTANCE_NOTES'),
         SAT_NOTES: field('manner', 'SAT_NOTES'),
-        SAT_DELIVERY: field('manner', 'SAT_DELIVERY')
+        SAT_DELIVERY: field('manner', 'SAT_DELIVERY'),
+        COGNITIVE_MAP: field('manner', 'COGNITIVE_MAP'),
+        COGNITIVE_NORMAL: field('manner', 'COGNITIVE_NORMAL'),
+        BEHAVIOURAL_LEADS: field('manner', 'BEHAVIOURAL_LEADS'),
+        BEHAVIOURAL_MAP: field('manner', 'BEHAVIOURAL_MAP'),
+        BEHAVIOURAL_NONE: field('manner', 'BEHAVIOURAL_NONE'),
+        SUBSTANCE_MAP: field('manner', 'SUBSTANCE_MAP'),
+        VOICE_HISTORY_TURNS: field('voice', 'VOICE_HISTORY_TURNS')
       });
     }
 
@@ -3108,17 +3116,32 @@ let HUME_TTS_VOICE_POOL = {
 // library actually returns needs no vocabulary knowledge and self-corrects if
 // Hume renames anything. Adult is deliberately match-less: it is the
 // fall-through, not something to select for.
-const VOICE_AGE_BANDS = [
+// `match` is a regex SOURCE STRING, not a literal — same as
+// VOICE_ACCENT_PATTERNS, and for the same reason: this is admin-editable via
+// sim_config_admin.html's Voice section, and which words Hume's library uses
+// is exactly the sort of thing that changes without notice. Compiled at use
+// by voiceAgeBandPattern(). An empty/absent pattern means "no pattern",
+// which is what makes 'adult' the fall-through.
+let VOICE_AGE_BANDS = [
   // Deliberately narrow. Over-matching is the worse failure: "girl next
   // door" and "middle-aged" are ordinary ADULT voice descriptions, and
   // matching them would quietly hand a seven-year-old an adult voice while
   // the log claimed a child voice had been found. Under-matching just falls
   // through to the adult pool and logs a warning saying so.
-  { band: 'child',  max: 12, match: /\b(child|children|kid|juvenile)\b/ },
-  { band: 'teen',   max: 19, match: /\b(teen|teenage|teenager|adolescent)\b/ },
-  { band: 'senior', min: 65, match: /\b(senior|elderly|elder|old man|old woman)\b/ },
+  { band: 'child',  max: 12, match: '\\b(child|children|kid|juvenile)\\b' },
+  { band: 'teen',   max: 19, match: '\\b(teen|teenage|teenager|adolescent)\\b' },
+  { band: 'senior', min: 65, match: '\\b(senior|elderly|elder|old man|old woman)\\b' },
   { band: 'adult',  match: null }
 ];
+// Bad regex from the admin editor must not take out voice selection entirely
+// — an unusable pattern degrades that band to "no pattern" (adult
+// fall-through), which is the same failure as an empty one.
+function voiceAgeBandPattern(b) {
+  if (!b || !b.match) return null;
+  if (b.match instanceof RegExp) return b.match;
+  try { return new RegExp(b.match, 'i'); }
+  catch (e) { console.warn('[hume] bad VOICE_AGE_BANDS pattern for ' + b.band, e); return null; }
+}
 function voiceAgeBand(years) {
   if (years == null) return 'adult'; // unknown age -> adult, same fallback as ageBandFromMeta()
   for (const b of VOICE_AGE_BANDS) {
@@ -3261,10 +3284,14 @@ async function humeVoiceFor(gender, apiKey, ageYears) {
     // it excludes anything another band claims. Without this an adult patient
     // could draw a voice tagged "child": the adult band was a pure
     // fall-through and matched the entire library including the narrow bands.
-    const otherBands = VOICE_AGE_BANDS.filter(b => b.match && b.band !== band);
-    const byBand = def && def.match
-      ? (v => def.match.test(v.text))
-      : (v => !otherBands.some(b => b.match.test(v.text)));
+    const defRe = voiceAgeBandPattern(def);
+    const otherBands = VOICE_AGE_BANDS
+      .filter(b => b.band !== band)
+      .map(voiceAgeBandPattern)
+      .filter(Boolean);
+    const byBand = defRe
+      ? (v => defRe.test(v.text))
+      : (v => !otherBands.some(re => re.test(v.text)));
     const byAccent = v => !accentRe || accentRe.test(v.text);
     const both = lib.filter(v => byBand(v) && byAccent(v));
     const bandOnly = lib.filter(byBand);
@@ -3277,7 +3304,7 @@ async function humeVoiceFor(gender, apiKey, ageYears) {
     else { chosen = lib; why = 'unfiltered'; }
     accentSatisfied = !accentRe || chosen.every(byAccent);
 
-    if (def && def.match && !bandOnly.length) {
+    if (defRe && !bandOnly.length) {
       console.warn(`[hume] no ${band} voices in the library — using an adult voice. `
         + 'Design one in Hume and add it to HUME_TTS_VOICE_POOL.' + band + '_' + gender);
     }

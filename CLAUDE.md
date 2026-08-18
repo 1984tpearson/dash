@@ -196,9 +196,16 @@ prompt string or the user-prompt shape.**
 
 **Every one of the tables below is admin-editable**, via
 `sim_config_admin.html`'s **Patient Manner & Agitation** section
-(`sim_config_schema.js`'s `manner`) — `TRAIT_MAP`, `TRAIT_NOTES`,
+(`sim_config_schema.js`'s `manner`) — both the *notes* (`TRAIT_NOTES`,
 `MOOD_NOTES`, `COGNITIVE_NOTES`, `BEHAVIOURAL_NOTES`, `SUBSTANCE_NOTES`,
-`SAT_NOTES` and `SAT_DELIVERY`. This is all prose the model is shown verbatim,
+`SAT_NOTES`, `SAT_DELIVERY`) and the *parsers* that reach them (`TRAIT_MAP`,
+`COGNITIVE_MAP`, `COGNITIVE_NORMAL`, `BEHAVIOURAL_LEADS`, `BEHAVIOURAL_MAP`,
+`BEHAVIOURAL_NONE`, `SUBSTANCE_MAP`), plus the assessor-facing
+`TRAIT_PICKER_LABELS`/`MOOD_PICKER_LABELS`. Notes without parsers would be
+half a feature: you could rewrite what `dementia` says but not make
+`vascular dementia` resolve to it. Note the picker *lists* still come from
+the maps, so a trait added to `TRAIT_MAP` appears automatically but shows as
+a bare key until it has a label — add both together. This is all prose the model is shown verbatim,
 so it belongs with the AI prompts rather than in code, and it was the one
 recently-added area with no editor at all. Four things worth knowing:
 - `PatientVoice.applyConfigOverrides()` **mutates the tables in place** rather
@@ -223,6 +230,31 @@ through `parseTrait`.
 The editor gained one field type for this, **`map_str_text`** — a
 `map_str_str` whose values render as textareas. These notes run to a paragraph
 each and were uneditable in a one-line input.
+
+Three more things were missing an editor and now have one. `prompts` gained
+**`ORIENTATION_PROFILE_PROMPT`** (a full Sonnet system prompt that was simply
+never listed), **`DIVERGENCE_NOTE`** and **`CPR_PROMPT_NOTE`** — the two
+fragments appended to the trajectory *user* messages. The CPR one took a
+`{{ratioLabel}}` token to become data rather than a template literal. `voice`
+gained **`VOICE_AGE_BANDS`** (its `match` is now a regex SOURCE STRING
+compiled at use, same as `VOICE_ACCENT_PATTERNS` — a pattern that won't
+compile degrades that band to no pattern rather than throwing) and
+**`VOICE_HISTORY_TURNS`**. And `voice.VOICE_ACCENT` was typed `'str'`, not
+`'string'`, so it had been rendering as "(no editor for type str)" — the one
+voice setting that could never actually be changed. A type audit over the
+whole schema is a two-line script and worth re-running after adding fields;
+nothing else was wrong.
+
+Deliberately NOT exposed, so this doesn't get "finished" later by mistake:
+Supabase URL/key and `ADMIN_UUID` (credentials/identity), `MODEL_PRICING`,
+graph-render internals (`SAMPLES`, `HIT_RADIUS`, `UNDO_STACK_MAX`,
+`HEALTH_COLOR_STOPS`, `MINI_GRAPH_*`), the Realtime timing constants
+(`BARGE_IN_*`, `RT_CONNECT_TIMEOUT_MS`, `RT_MAX_RECONNECTS`,
+`MIN_SEGMENT_CHARS`, `HUME_DIRECTION_MAX`, `SPEAKING_STUCK_MS`), the trend
+arrows (`TREND_*`), `PULSE_SITES`, and the spontaneous-lines constants (the
+feature is switched off at `SPONTANEOUS_LINES_ENABLED`). These are mechanism,
+not wording — each is documented against a specific reason in code, and an
+admin turning them by hand is more likely to break the thing than tune it.
 
 What deliberately stays per-page: where the scenario/vitals/treatments are
 read from (`currentScenario`/`liveConfig` vs `scenarioMeta`/`testConfig`),

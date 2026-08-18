@@ -638,7 +638,10 @@
             }
           },
           VOICE_ACCENT: {
-            type: 'str',
+            // 'string', not 'str' — the typo meant this field rendered as
+            // "(no editor for type str)" and was the one voice setting that
+            // could never actually be changed from the admin page.
+            type: 'string',
             label: 'Preferred patient accent',
             help: 'Which accent to prefer when picking a Hume voice — a key from the patterns below, or "any" for no preference. These scenarios are Australian, so australian is the default. Applies to the whole tool, not per patient: a per-scenario accent would need to be authored on the scenario itself. Ignored when a curated HUME_TTS_VOICE_POOL entry supplies the voice, since that is already a choice made by ear.',
             default: 'australian'
@@ -656,6 +659,29 @@
               indian: 'indian',
               any: ''
             }
+          },
+          VOICE_HISTORY_TURNS: {
+            type: 'number',
+            label: 'Conversation turns kept',
+            help: 'How many past question/answer exchanges are replayed to the model as real user/assistant turns, so the patient stays consistent with what they have already said about anything the scenario never authored. Stored in sim_sessions.voice_transcript and trimmed to this many. Raising it costs tokens on every reply and lengthens the prompt; lowering it makes the patient start contradicting themselves sooner.',
+            default: 12
+          },
+          VOICE_AGE_BANDS: {
+            type: 'table',
+            label: 'Voice age bands',
+            help: 'Two jobs in one table: `max`/`min` are the patient’s age in years (child ≤ 12, teen ≤ 19, senior ≥ 65 — four hard bands, not a ramp, because a voice changes at two physical events rather than gradually), and `match` is a case-insensitive regex matched against each Hume voice’s own tag text to find voices for that band. Matching client-side rather than filtering server-side is deliberate: Hume’s age tag vocabulary is unknown to this code, so guessing “AGE:Child” would silently return nothing. Keep the patterns NARROW — under-matching falls through to the adult pool and logs a warning, over-matching hands a seven-year-old an adult voice while claiming it found a child one. Leave “adult” with no pattern: it is defined as whatever no narrow band claims. A pattern that will not compile degrades to no pattern for that band.',
+            columns: [
+              { name: 'band', type: 'string' },
+              { name: 'max', type: 'number' },
+              { name: 'min', type: 'number' },
+              { name: 'match', type: 'string' }
+            ],
+            default: [
+              { band: 'child', max: 12, match: '\\b(child|children|kid|juvenile)\\b' },
+              { band: 'teen', max: 19, match: '\\b(teen|teenage|teenager|adolescent)\\b' },
+              { band: 'senior', min: 65, match: '\\b(senior|elderly|elder|old man|old woman)\\b' },
+              { band: 'adult', match: null }
+            ]
           },
           HUME_AGE_DIRECTION: {
             type: 'map_str_str',
@@ -897,6 +923,257 @@
               "shouted": "Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. \"Get off me. I said get off! I am not going anywhere with you.\" — not one long even sentence. Never write in capitals.",
               "footer": "This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it."
             }
+          },
+          COGNITIVE_MAP: {
+            type: 'table',
+            label: 'Baseline cognitive-status keyword map',
+            help: 'Maps patient_meta.baseline_cognitive_status to a note key above. Checked AFTER the normal-baseline list below, because the overwhelmingly common authored value is the generator’s own “Normal baseline cognition” and it must produce no note at all. Order matters — first match wins.',
+            columns: [
+              { name: 'kind', type: 'string' },
+              { name: 'keywords', type: 'string_list' }
+            ],
+            default: [
+              {
+                "kind": "dementia",
+                "keywords": [
+                  "dementia",
+                  "alzheimer",
+                  "cognitive decline",
+                  "cognitive impairment",
+                  "memory loss",
+                  "memory problems"
+                ]
+              },
+              {
+                "kind": "intellectual",
+                "keywords": [
+                  "intellectual disability",
+                  "intellectually disabled",
+                  "developmental delay",
+                  "down syndrome",
+                  "learning disability",
+                  "global developmental"
+                ]
+              },
+              {
+                "kind": "braininjury",
+                "keywords": [
+                  "brain injury",
+                  "acquired brain",
+                  "traumatic brain",
+                  " abi",
+                  " tbi",
+                  "post-stroke cognitive"
+                ]
+              }
+            ]
+          },
+          COGNITIVE_NORMAL: {
+            type: 'string_list',
+            label: 'Normal-baseline phrases',
+            help: 'Any authored baseline containing one of these resolves to “no cognitive baseline to mention” and renders nothing — an ordinary patient has to produce a byte-identical prompt to one with no field at all. Checked before the keyword map above.',
+            default: [
+              "normal baseline",
+              "normal cognition",
+              "no cognitive",
+              "nil cognitive",
+              "cognitively intact",
+              "not applicable",
+              "unremarkable",
+              "none"
+            ]
+          },
+          BEHAVIOURAL_LEADS: {
+            type: 'table',
+            label: 'Behavioural-state keyword map (anchored)',
+            help: 'Matched against the START of patient_meta.behavioural_state — the authored format is “one keyword — then a clause”, so the first word is the reliable signal and the clause is prose that happens to contain whatever words it contains. Order matters: “delirium tremens” is special-cased to withdrawal in code ahead of all of these, since it would otherwise win the anchored match on “delirium” and lose the whole alcohol-withdrawal picture.',
+            columns: [
+              { name: 'kind', type: 'string' },
+              { name: 'words', type: 'string_list' }
+            ],
+            default: [
+              {
+                "kind": "withdrawal",
+                "words": [
+                  "withdrawal",
+                  "withdrawing",
+                  "detox"
+                ]
+              },
+              {
+                "kind": "delirium",
+                "words": [
+                  "delirium",
+                  "delirious"
+                ]
+              },
+              {
+                "kind": "intoxicated",
+                "words": [
+                  "intoxicated",
+                  "intoxication"
+                ]
+              },
+              {
+                "kind": "depression",
+                "words": [
+                  "depression",
+                  "depressed"
+                ]
+              }
+            ]
+          },
+          BEHAVIOURAL_MAP: {
+            type: 'table',
+            label: 'Behavioural-state keyword map (substring fallback)',
+            help: 'Used only when the authored value ignored the “one keyword first” format. Keep it deliberately NARROWER than the anchored list above — every word here has to be one that cannot plausibly turn up in another state’s descriptive clause. Free substring scanning is what made “depression — flat and withdrawn” parse as withdrawal.',
+            columns: [
+              { name: 'kind', type: 'string' },
+              { name: 'words', type: 'string_list' }
+            ],
+            default: [
+              {
+                "kind": "withdrawal",
+                "words": [
+                  "withdrawal",
+                  "withdrawing",
+                  "detoxing",
+                  "coming down"
+                ]
+              },
+              {
+                "kind": "delirium",
+                "words": [
+                  "deliri"
+                ]
+              },
+              {
+                "kind": "intoxicated",
+                "words": [
+                  "intoxicat",
+                  "under the influence",
+                  "drunk",
+                  "overdose",
+                  "high on",
+                  "substance affected",
+                  "drug affected"
+                ]
+              },
+              {
+                "kind": "depression",
+                "words": [
+                  "depress",
+                  "low mood",
+                  "anhedoni"
+                ]
+              }
+            ]
+          },
+          BEHAVIOURAL_NONE: {
+            type: 'string_list',
+            label: 'No-behavioural-state phrases',
+            help: 'Authored values meaning “no acute behavioural disturbance”, which render nothing. Unlike trait and mood there is no neutral value for this field — generator.html writes no default, and the absence of the field IS the normal case.',
+            default: [
+              "none",
+              "nil",
+              "not applicable",
+              "no acute behavioural",
+              "unremarkable",
+              "normal"
+            ]
+          },
+          SUBSTANCE_MAP: {
+            type: 'table',
+            label: 'Substance keyword map',
+            help: 'Parsed out of the same behavioural-state free text rather than being its own scenario field — the authored clause already says which substance, so a second field would only be a thing to disagree with itself.',
+            columns: [
+              { name: 'key', type: 'string' },
+              { name: 'words', type: 'string_list' }
+            ],
+            default: [
+              {
+                "key": "alcohol",
+                "words": [
+                  "alcohol",
+                  "etoh",
+                  "drunk",
+                  "drinking",
+                  "beer",
+                  "spirits",
+                  "wine",
+                  "intoxicated by drink"
+                ]
+              },
+              {
+                "key": "opioid",
+                "words": [
+                  "opioid",
+                  "heroin",
+                  "fentanyl",
+                  "oxycod",
+                  "morphine",
+                  "methadone"
+                ]
+              },
+              {
+                "key": "stimulant",
+                "words": [
+                  "stimulant",
+                  "methamph",
+                  "meth",
+                  "ice",
+                  "amphetamine",
+                  "cocaine",
+                  "mdma"
+                ]
+              },
+              {
+                "key": "benzo",
+                "words": [
+                  "benzo",
+                  "diazepam",
+                  "alprazolam",
+                  "sedative",
+                  "temazepam"
+                ]
+              },
+              {
+                "key": "cannabis",
+                "words": [
+                  "cannabis",
+                  "marijuana",
+                  "weed",
+                  "thc"
+                ]
+              }
+            ]
+          },
+          TRAIT_PICKER_LABELS: {
+            type: 'map_str_str',
+            label: 'Manner tab — trait picker labels',
+            help: 'Assessor-facing wording for sim_control.html’s Manner tab, per canonical trait key. The picker’s option LIST is built from TRAIT_MAP above rather than from this, so a trait added there appears automatically — but with no label here it shows as the bare key. Add both together.',
+            default: {
+              plain: 'Straightforward (no particular manner)',
+              stoic: 'Stoic — plays it down',
+              guarded: 'Guarded — short answers, must be drawn out',
+              talkative: 'Talkative — wanders onto tangents',
+              precise: 'Precise — reliable historian',
+              vague: 'Vague — poor historian',
+              deferential: 'Deferential — apologetic, no fuss',
+              blunt: 'Blunt — gruff, impatient'
+                        }
+          },
+          MOOD_PICKER_LABELS: {
+            type: 'map_str_str',
+            label: 'Manner tab — mood picker labels',
+            help: 'Same, per canonical mood key from medications.MOOD_MAP. “plain” and “calm” are each parser’s fall-through default and are absent from their maps (nothing maps TO them), so they are prepended to the pickers in code and need a label here.',
+            default: {
+              calm: 'Calm and cooperative',
+              anxious: 'Anxious / frightened',
+              tearful: 'Tearful',
+              agitated: 'Agitated / restless',
+              angry: 'Angry / hostile'
+                        }
           }
         }
       },
@@ -952,6 +1229,24 @@
             label: 'Confused-patient note (GCS-Verbal 4 only)',
             help: 'Appended into {{confusedNote}} in the prompt above only when the patient\'s GCS-Verbal score is exactly 4 (confused conversation) — empty string otherwise.',
             default: (window.PatientVoice && window.PatientVoice.DEFAULT_CONFUSED_NOTE)
+          },
+          ORIENTATION_PROFILE_PROMPT: {
+            type: 'prompt_text',
+            label: 'GCS-Verbal 4 orientation profile (Sonnet)',
+            help: 'Run ONCE per session for a GCS-Verbal 4 patient, deciding what exactly this patient is and is not oriented to. The result is cached and read by the voice on every reply, which is what makes a confused patient answer the same way each time the crew asks. Must keep instructing the AI to return ONLY the JSON shape shown, or the profile fails to parse and the patient falls back to being confused inconsistently.',
+            default: "You are setting up a paramedic training patient whose GCS Verbal score is 4 (confused conversation) — they hold a real conversation but are disoriented. Decide, ONCE, exactly what this specific patient is and isn't confused about, so the simulator can answer consistently every time the crew asks.\n\nGround it in this patient: their age, condition, medications, and where they were found. A hypoglycaemic 30-year-old, a post-ictal teenager and an 85-year-old with a UTI are confused in different ways.\n\nReturn ONLY valid JSON, no prose, in exactly this shape:\n{\"time\": {\"believes\": \"...\", \"correct\": false}, \"date\": {\"believes\": \"...\", \"correct\": false}, \"place\": {\"believes\": \"...\", \"correct\": true}, \"person\": {\"believes\": \"...\", \"correct\": false}, \"event\": {\"believes\": \"...\", \"correct\": false}}\n\nRules:\n- 'believes' is written from the outside, describing what they think, e.g. \"that it is late evening, around 9pm\" or \"that the paramedic is her son Peter\". Short phrases, not sentences the patient would say.\n- 'correct' true means they have that domain RIGHT — include it anyway, so the simulator knows to answer it accurately.\n- Real disorientation is patchy, not total. Get 1-3 domains WRONG and leave the rest correct. Time and date are the most commonly affected; person is the most severe and should only be wrong on a genuinely obtunded or elderly/demented picture. Never mark all five wrong.\n- Wrong beliefs must be plausible for THIS person's own life — a familiar place, a real relative, a time of day they would ordinarily be somewhere. Never surreal or random.\n- Keep it internally consistent: if they think it is the evening, do not also have them think they are at a morning appointment.\n\n- Training placeholder pending clinical review, not a validated clinical model."
+          },
+          DIVERGENCE_NOTE: {
+            type: 'prompt_text',
+            label: 'Rewind/fork note (appended to trajectory user prompts)',
+            help: 'Appended to the treatment and scripted-event user messages when the scenario was rewound and a different action taken, so the whole previously-projected future has been discarded. Without it the AI omits vitals it considers unchanged and they hold flat forever — the omission rule that normally means “leave this alone” is exactly wrong after a fork. Empty string when not forking.',
+            default: "IMPORTANT — the scenario was rewound to this moment and a different action taken, so the entire previously-projected future has been DISCARDED: nothing at all is scheduled beyond this point now (which is why the two 'currently scheduled' lines above read 'none'). Anything you omit will hold flat at its current value for the rest of the scenario, which is very unlikely to be clinically right. Project the COMPLETE forward picture for every vital that will realistically change from here — including any continued deterioration from the underlying untreated condition that this action does NOT address, and including a 'rhythm' entry if the rhythm will change (or needs to change back — e.g. a previously projected arrest that this action now prevents must NOT be left scheduled, and an arrest that is still coming must be re-stated here or it will not happen at all)."
+          },
+          CPR_PROMPT_NOTE: {
+            type: 'prompt_text',
+            label: 'CPR-in-progress note (appended to trajectory user prompts)',
+            help: 'Appended to both trajectory user messages whenever overrides.cpr.active is true. CPR drives HR/BP/EtCO2 directly with no AI call, so without this the model can read compression-driven numbers as a genuine pulse or ROSC. {{ratioLabel}} is replaced with the live compression:ventilation ratio. Empty string (no mention at all) otherwise.',
+            default: "NOTE — CPR is currently in progress (compression:ventilation ratio {{ratioLabel}}). The HR and BP given below as \"vitals at the moment this was given\" are the patient's TRUE underlying values (still whatever the arrest rhythm implies, e.g. 0) — they are NOT inflated by compressions; only EtCO2 is genuinely elevated by effective CPR (a real, directly-observed capnography finding). Do not interpret the raised EtCO2, or any hidden compression-generated pulse, as ROSC or a perfusing rhythm unless this action itself achieves that (e.g. successful defibrillation, or a rhythm-converting antiarrhythmic) — reason from the true underlying rhythm instead."
           },
           EXAM_FINDING_PROMPT: {
             type: 'prompt_text',

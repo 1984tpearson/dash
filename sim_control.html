@@ -561,6 +561,9 @@ async function loadSimConfig() {
     // patient_voice.js is a separate <script src> — if it failed to load, the
     // voice path is already broken and this must not also take out the rest
     // of loadSimConfig().
+    TRAIT_PICKER_LABELS = pick(field('manner', 'TRAIT_PICKER_LABELS'), TRAIT_PICKER_LABELS);
+    MOOD_PICKER_LABELS = pick(field('manner', 'MOOD_PICKER_LABELS'), MOOD_PICKER_LABELS);
+
     if (window.PatientVoice && PatientVoice.applyConfigOverrides) {
       PatientVoice.applyConfigOverrides({
         TRAIT_MAP: field('manner', 'TRAIT_MAP'),
@@ -570,11 +573,21 @@ async function loadSimConfig() {
         BEHAVIOURAL_NOTES: field('manner', 'BEHAVIOURAL_NOTES'),
         SUBSTANCE_NOTES: field('manner', 'SUBSTANCE_NOTES'),
         SAT_NOTES: field('manner', 'SAT_NOTES'),
-        SAT_DELIVERY: field('manner', 'SAT_DELIVERY')
+        SAT_DELIVERY: field('manner', 'SAT_DELIVERY'),
+        COGNITIVE_MAP: field('manner', 'COGNITIVE_MAP'),
+        COGNITIVE_NORMAL: field('manner', 'COGNITIVE_NORMAL'),
+        BEHAVIOURAL_LEADS: field('manner', 'BEHAVIOURAL_LEADS'),
+        BEHAVIOURAL_MAP: field('manner', 'BEHAVIOURAL_MAP'),
+        BEHAVIOURAL_NONE: field('manner', 'BEHAVIOURAL_NONE'),
+        SUBSTANCE_MAP: field('manner', 'SUBSTANCE_MAP'),
+        VOICE_HISTORY_TURNS: field('voice', 'VOICE_HISTORY_TURNS')
       });
     }
 
     UNTREATED_PROJECTION_PROMPT = pick(field('prompts', 'UNTREATED_PROJECTION_PROMPT'), UNTREATED_PROJECTION_PROMPT);
+    ORIENTATION_PROFILE_PROMPT = pick(field('prompts', 'ORIENTATION_PROFILE_PROMPT'), ORIENTATION_PROFILE_PROMPT);
+    DIVERGENCE_NOTE = pick(field('prompts', 'DIVERGENCE_NOTE'), DIVERGENCE_NOTE);
+    CPR_PROMPT_NOTE = pick(field('prompts', 'CPR_PROMPT_NOTE'), CPR_PROMPT_NOTE);
     TREATMENT_UPDATE_PROMPT = pick(field('prompts', 'TREATMENT_UPDATE_PROMPT'), TREATMENT_UPDATE_PROMPT);
     SCRIPTED_EVENT_PROMPT = pick(field('prompts', 'SCRIPTED_EVENT_PROMPT'), SCRIPTED_EVENT_PROMPT);
     TREATMENT_ROUTER_PROMPT = pick(field('prompts', 'TREATMENT_ROUTER_PROMPT'), TREATMENT_ROUTER_PROMPT);
@@ -817,7 +830,7 @@ function orientationProfileInfoHtml() {
 //
 // The two are NOT symmetric in reach, which the labels below make explicit:
 // trait is voice-only, while mood also drives the avatar's live expression.
-const TRAIT_PICKER_LABELS = {
+let TRAIT_PICKER_LABELS = {
   plain: 'Straightforward (no particular manner)',
   stoic: 'Stoic — plays it down',
   guarded: 'Guarded — short answers, must be drawn out',
@@ -827,7 +840,7 @@ const TRAIT_PICKER_LABELS = {
   deferential: 'Deferential — apologetic, no fuss',
   blunt: 'Blunt — gruff, impatient'
 };
-const MOOD_PICKER_LABELS = {
+let MOOD_PICKER_LABELS = {
   calm: 'Calm and cooperative',
   anxious: 'Anxious / frightened',
   tearful: 'Tearful',
@@ -4760,7 +4773,9 @@ async function giveTreatment(providedText, opts) {
 // nothing else scheduled, and a key left unmentioned will simply hold flat
 // forever. Says so explicitly rather than letting the model assume the old
 // schedule still covers what it leaves out.
-const DIVERGENCE_NOTE = `
+let CPR_PROMPT_NOTE = `NOTE — CPR is currently in progress (compression:ventilation ratio {{ratioLabel}}). The HR and BP given below as "vitals at the moment this was given" are the patient's TRUE underlying values (still whatever the arrest rhythm implies, e.g. 0) — they are NOT inflated by compressions; only EtCO2 is genuinely elevated by effective CPR (a real, directly-observed capnography finding). Do not interpret the raised EtCO2, or any hidden compression-generated pulse, as ROSC or a perfusing rhythm unless this action itself achieves that (e.g. successful defibrillation, or a rhythm-converting antiarrhythmic) — reason from the true underlying rhythm instead.`;
+
+let DIVERGENCE_NOTE = `
 IMPORTANT — the scenario was rewound to this moment and a different action taken, so the entire previously-projected future has been DISCARDED: nothing at all is scheduled beyond this point now (which is why the two 'currently scheduled' lines above read 'none'). Anything you omit will hold flat at its current value for the rest of the scenario, which is very unlikely to be clinically right. Project the COMPLETE forward picture for every vital that will realistically change from here — including any continued deterioration from the underlying untreated condition that this action does NOT address, and including a 'rhythm' entry if the rhythm will change (or needs to change back — e.g. a previously projected arrest that this action now prevents must NOT be left scheduled, and an arrest that is still coming must be re-stated here or it will not happen at all).`;
 
 // CPR (see SimEngine.computeCprEffect) drives HR/BPsys/BPdia/EtCO2 directly,
@@ -4774,7 +4789,9 @@ IMPORTANT — the scenario was rewound to this moment and a different action tak
 function cprPromptNote(freshOverrides) {
   const cpr = freshOverrides && freshOverrides.cpr;
   if (!cpr || !cpr.active) return '';
-  return `\nNOTE — CPR is currently in progress (compression:ventilation ratio ${cpr.ratioLabel || '30:2'}). The HR and BP given below as "vitals at the moment this was given" are the patient's TRUE underlying values (still whatever the arrest rhythm implies, e.g. 0) — they are NOT inflated by compressions; only EtCO2 is genuinely elevated by effective CPR (a real, directly-observed capnography finding). Do not interpret the raised EtCO2, or any hidden compression-generated pulse, as ROSC or a perfusing rhythm unless this action itself achieves that (e.g. successful defibrillation, or a rhythm-converting antiarrhythmic) — reason from the true underlying rhythm instead.`;
+  // {{ratioLabel}} is the only token — the rest of the text is admin-
+  // editable via prompts.CPR_PROMPT_NOTE.
+  return '\n' + CPR_PROMPT_NOTE.replace(/\{\{ratioLabel\}\}/g, cpr.ratioLabel || '30:2');
 }
 
 // Recalculates the patient's future trajectory in response to a specific
