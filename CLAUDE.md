@@ -1471,12 +1471,6 @@ editing.
   outside a render pass (hit-testing, tool logic) must use the standalone
   versions (which read `_lastLayout`), not assume the local ones are in
   scope. Mixing them up is a silent `ReferenceError` at the call site.
-- **Always push finished work to `main` directly** (rebase onto latest
-  `main` if it moved, then fast-forward) — do not stop at a feature/`claude/*`
-  branch and wait to be told to merge, and do not open a PR. This is a solo
-  project with no review step; a branch sitting unmerged means GitHub Pages
-  never redeploys, which defeats the point. Only skip this — stay on a
-  branch, or open a PR — if explicitly told to for that task.
 - **`max-height:<percent>` on an element inside a flex column compounds with
   the container's own flex-shrink, instead of just capping it once.** Bit
   `sim_patient.html`'s avatar: its containing block (`#head-wrap`, sized
