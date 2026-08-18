@@ -134,6 +134,10 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
 .vtile-dot { position: absolute; top: 5px; left: 5px; width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); }
 .vtile .vlabel { font-size: 9px; color: #6b8299; text-transform: uppercase; letter-spacing: 1px; }
 .vtile .vval { font-size: 17px; font-weight: 900; color: #0369a1; }
+.vtile .vval-parts { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #6b8299; margin-left: 6px; }
+/* Forces GCS + Health onto their own row below the monitor tiles — see
+   tickVitals(). Zero-height so it costs no vertical space of its own. */
+.vtile-rowbreak { flex-basis: 100%; height: 0; }
 #edit-mode-btn.active { background: #0369a1; }
 .topbar-logo-img { height: 26px; width: auto; max-width: 150px; object-fit: contain; flex-shrink: 0; display: block; }
 #topbar #avnav-hamburger { width: 34px; height: 34px; font-size: 15px; }
@@ -3569,10 +3573,8 @@ function updateDynamicAppearance(v) {
 // Renders one vitals-grid tile's markup for a VITAL_DEFS entry — extracted
 // out of tickVitals() so the same tile (with its Edit Mode arming, graph
 // on/off dot, and manual-entry-modal click behaviour all intact) can be
-// rendered in more than one place. Currently that's just GCS: it moved off
-// the main monitor grid (replaced by the Pulse tile below — see
-// pulseTileHtml, added as a genuinely new tile rather than replacing GCS —
-// GCS stays on the main grid exactly as it always was, see tickVitals().
+// rendered in more than one place — currently the monitor row and the
+// GCS/Health row below it, which tickVitals() builds separately.
 function vitalTileHtml(def, v) {
   let val;
   if (def.key === 'BP') val = `${Math.round(v.BPsys)}/${Math.round(v.BPdia)}`;
@@ -3611,10 +3613,18 @@ function vitalTileHtml(def, v) {
   const isOn = graphKeys.length && graphSeriesOn[graphKeys[0]];
   const dotColor = def.isHealth ? healthLineColor(val) : (graphKeys.length ? GRAPH_SERIES.find(s => s.key === graphKeys[0]).color : '#cbd5e1');
   const clickFn = vitalsEditMode ? `handleVtileClick('${def.key}')` : `toggleVitalVisibility('${def.key}')`;
+  // GCS is the one tile whose total hides the information the assessor
+  // actually marks against — E4 V5 M6 and E1 V4 M10 can't both be 15, but
+  // 12 could be several very different patients. Shown inline next to the
+  // total (not on the unit line, which stays "/15") now that GCS shares the
+  // wide second row with Health and has the horizontal space for it.
+  const valExtra = def.isGCS
+    ? ` <span class="vval-parts">E${Math.round(v.gcsE)} V${Math.round(v.gcsV)} M${Math.round(v.gcsM)}</span>`
+    : '';
   return `<div class="vtile" style="${armedStyle}" onclick="${clickFn}">
       <span class="vtile-dot" style="background:${isOn ? dotColor : '#cbd5e1'};"></span>
       <div class="vlabel">${def.label}</div>
-      <div class="vval">${val}</div>
+      <div class="vval">${val}${valExtra}</div>
       <div class="muted">${unitText}</div>
     </div>`;
 }
@@ -3652,17 +3662,24 @@ function tickVitals() {
   const v = SimEngine.getVitalsRaw(liveConfig, simNow());
   updateDynamicAppearance(v);
   const grid = document.getElementById('vitals-grid');
-  // GCS stays a normal VITAL_DEFS tile on the main grid, unchanged from
-  // before Pulse existed — Pulse is inserted as an extra tile (right
-  // before Health) rather than taking GCS's place.
+  // Two deliberate rows rather than one wrapping run. The monitor-style
+  // numbers (HR/BP/SpO2/…/Pulse) fill the first row and wrap among
+  // themselves; GCS and Health are pushed onto a second row of their own by
+  // an explicit break, so each gets ~half the panel width. That's what buys
+  // GCS the room to show its E/V/M breakdown next to the total (see
+  // vitalTileHtml) instead of a bare number, and it stops the pair from
+  // shuffling between rows every time a tile is added or dropped.
   // Agitation's tile is dropped entirely unless the scenario scripted it.
   // The tile IS the graph toggle (see toggleVitalVisibility), so filtering
   // here is what keeps the whole feature invisible on the ~99% of scenarios
   // where it is irrelevant, rather than showing a permanently-flat trace.
+  const isSecondRow = def => def.isGCS || def.isHealth;
   const tiles = VITAL_DEFS
-    .filter(def => !def.isSat || SimEngine.isAgitationScripted(liveConfig))
+    .filter(def => !isSecondRow(def) && (!def.isSat || SimEngine.isAgitationScripted(liveConfig)))
     .map(def => vitalTileHtml(def, v));
-  tiles.splice(Math.max(0, tiles.length - 1), 0, pulseTileHtml(simNow()));
+  tiles.push(pulseTileHtml(simNow()));
+  const bottom = VITAL_DEFS.filter(isSecondRow).map(def => vitalTileHtml(def, v));
+  if (bottom.length) tiles.push('<div class="vtile-rowbreak"></div>', ...bottom);
   grid.innerHTML = tiles.join('');
   if (Object.keys(patientActions).some(k => patientActions[k].status === 'pending')) renderPendingActionsStack(); // live countdown while anything's mid-timer
   renderGraph();
