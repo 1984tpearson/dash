@@ -314,43 +314,33 @@
   // gcsTotalOpt lets a caller that has already computed GCS for this instant
   // pass it in — renderGraph samples this hundreds of times per draw and would
   // otherwise recompute the three GCS components for every sample.
-  // GCS components and total, rounded so the three parts always sum to the
-  // total displayed next to them. Rounding each component independently and
-  // separately rounding their sum does NOT agree — the errors are independent
-  // — so a patient sliding from 15 to 3 spent much of the trip showing
-  // e.g. "14  E4 V5 M6" (15) or "13  E3 V4 M5" (12). Largest-remainder
-  // rounding instead: floor everything, then hand the leftover points to
-  // whichever components have the biggest fractional part and still have
-  // headroom in their own range. The total is then taken FROM the rounded
-  // parts rather than computed alongside them, so the two cannot disagree
-  // even in the corner where a clamp eats a point.
+  // The single place a continuous GCS is turned into the integers everyone
+  // else reads — the assessor's tile, the student's GCS reading, the voice
+  // tier, and the avatar's eye opening. Each component is rounded on its
+  // own (E, V and M are each scored independently in real life) and the
+  // TOTAL is then their sum, not a separately-rounded sum of the raw values.
   //
-  // The engine keeps the components continuous on purpose (that is what lets
-  // a trajectory ramp GCS smoothly and what the graph traces), so this is
-  // display-only — nothing here changes the underlying values, and callers
-  // that want the raw sum (the graph series, the SAT gate) still use it.
+  // That ordering is the whole point, and it is what makes the patient
+  // present correctly:
+  //   - The parts always add up to the total shown beside them. Rounding the
+  //     sum separately does not agree with rounding the parts, and on a
+  //     linear 15->3 ramp the two disagreed on ~30% of samples.
+  //   - More importantly, the number on the tile is the SAME integer that
+  //     drives behaviour. PatientVoice.tierFor already rounds V to pick its
+  //     tier, so a patient at V4.4 talks like a confused patient (V4); the
+  //     tile must therefore say V4 too, and the total must be built from
+  //     that rather than from the raw 4.4. Deriving the parts backwards from
+  //     a rounded total could hand V a 5 while the patient carried on
+  //     answering confused.
+  //
+  // The engine keeps the underlying components continuous on purpose — that
+  // is what lets a trajectory ramp GCS smoothly, and what the graph traces.
+  // This is the display/behaviour boundary, applied once so nothing downstream
+  // has to re-decide it.
   function gcsComponents(v) {
-    const raw = [
-      { key: 'E', val: Math.min(4, Math.max(1, v.gcsE || 0)), max: 4 },
-      { key: 'V', val: Math.min(5, Math.max(1, v.gcsV || 0)), max: 5 },
-      { key: 'M', val: Math.min(6, Math.max(1, v.gcsM || 0)), max: 6 }
-    ];
-    const target = Math.min(15, Math.max(3, Math.round(raw[0].val + raw[1].val + raw[2].val)));
-    const parts = raw.map(r => ({ key: r.key, max: r.max, whole: Math.floor(r.val), frac: r.val - Math.floor(r.val) }));
-    let left = target - parts.reduce((sum, p) => sum + p.whole, 0);
-    // Biggest fractional part gets the first spare point; ties go to the
-    // component listed first (E, then V, then M), which is arbitrary but
-    // stable — an unstable tiebreak would make the parts flicker between
-    // ticks while the total sat still.
-    const order = parts.map((p, i) => ({ p, i })).sort((a, b) => (b.p.frac - a.p.frac) || (a.i - b.i));
-    for (const { p } of order) {
-      if (left <= 0) break;
-      if (p.whole < p.max) { p.whole += 1; left -= 1; }
-    }
-    const out = {};
-    parts.forEach(p => { out[p.key] = p.whole; });
-    out.total = out.E + out.V + out.M;
-    return out;
+    const round = (val, lo, hi) => Math.min(hi, Math.max(lo, Math.round(val || 0)));
+    const E = round(v.gcsE, 1, 4), V = round(v.gcsV, 1, 5), M = round(v.gcsM, 1, 6);
+    return { E, V, M, total: E + V + M };
   }
 
   function getSatAt(cfg, nowMs, gcsTotalOpt) {
@@ -1251,9 +1241,20 @@
   function getAppearanceState(v) {
     v = v || {};
     const hr = numOr(v.HR, 80), rr = numOr(v.RR, 16), spo2 = numOr(v.SpO2, 98),
-          bpSys = numOr(v.BPsys, 120), pain = numOr(v.pain, 0),
-          gcsE = numOr(v.gcsE, 4), gcsV = numOr(v.gcsV, 5), gcsM = numOr(v.gcsM, 6);
-    const unresponsive = (gcsE + gcsV + gcsM) <= 8;
+          bpSys = numOr(v.BPsys, 120), pain = numOr(v.pain, 0);
+    // GCS reaches the avatar as the same rounded integers the tile shows (see
+    // gcsComponents), NOT the raw continuous values. Both callers test the
+    // returned gcsE with `=== 3` to render "opens to voice" droopy eyes, and
+    // a ramping E is almost never exactly 3.0 — at E2.6 it matched neither
+    // `<= 2` nor `=== 3` and fell through to fully open, so a patient part
+    // way down to unresponsive looked wide awake. Rounding here also keeps
+    // the unresponsive flag agreeing with the displayed total instead of
+    // flipping a fraction before or after it.
+    const gcsParts = gcsComponents({
+      gcsE: numOr(v.gcsE, 4), gcsV: numOr(v.gcsV, 5), gcsM: numOr(v.gcsM, 6)
+    });
+    const gcsE = gcsParts.E, gcsV = gcsParts.V, gcsM = gcsParts.M;
+    const unresponsive = gcsParts.total <= 8;
     const hypoxia = spo2Severity(spo2);
     const perfusion = Math.max(hrSeverity(hr), bpSysSeverity(bpSys));
     const distressLevel = Math.max(hrSeverity(hr), rrSeverity(rr), hypoxia, painSeverity(pain));
