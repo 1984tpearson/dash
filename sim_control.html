@@ -134,7 +134,7 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
 .vtile-dot { position: absolute; top: 5px; left: 5px; width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); }
 .vtile .vlabel { font-size: 9px; color: #6b8299; text-transform: uppercase; letter-spacing: 1px; }
 .vtile .vval { font-size: 17px; font-weight: 900; color: #0369a1; }
-.vtile .vval-parts { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #6b8299; margin-left: 6px; }
+.vtile .vval-parts { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #6b8299; }
 /* GCS + Health wrap as one unit rather than as two independent tiles — see
    tickVitals(). A hard row break was tried first and is wrong here: it puts
    the pair on a line of THEIR own, so once the monitor tiles themselves
@@ -3590,7 +3590,9 @@ function vitalTileHtml(def, v) {
   // see SimEngine.gcsComponents on why rounding them separately does not.
   const gcs = def.isGCS ? SimEngine.gcsComponents(v) : null;
   if (def.key === 'BP') val = `${Math.round(v.BPsys)}/${Math.round(v.BPdia)}`;
-  else if (def.isGCS) val = gcs.total;
+  // Total carries its own "/15" so the third line is free for the
+  // components — the unit is only meaningful read against the number anyway.
+  else if (def.isGCS) val = `${gcs.total}${def.unit || ''}`;
   else if (def.isHealth) val = Math.round(SimEngine.getDisplayHealthScore(liveConfig, simNow()));
   // Not part of getVitalsRaw (see SimEngine.getSatAt on why agitation is not
   // a vital), so it is read separately rather than off v.
@@ -3626,18 +3628,17 @@ function vitalTileHtml(def, v) {
   const dotColor = def.isHealth ? healthLineColor(val) : (graphKeys.length ? GRAPH_SERIES.find(s => s.key === graphKeys[0]).color : '#cbd5e1');
   const clickFn = vitalsEditMode ? `handleVtileClick('${def.key}')` : `toggleVitalVisibility('${def.key}')`;
   // GCS is the one tile whose total hides the information the assessor
-  // actually marks against — E4 V5 M6 and E1 V4 M10 can't both be 15, but
-  // 12 could be several very different patients. Shown inline next to the
-  // total (not on the unit line, which stays "/15") now that GCS shares the
-  // wide second row with Health and has the horizontal space for it.
-  const valExtra = def.isGCS
-    ? ` <span class="vval-parts">E${gcs.E} V${gcs.V} M${gcs.M}</span>`
-    : '';
+  // actually marks against — 12 could be several very different patients.
+  // The components take the third line (where every other tile puts its
+  // unit), stacked under a total that carries the "/15" itself.
+  const bottomLine = def.isGCS
+    ? `<span class="vval-parts">E${gcs.E} V${gcs.V} M${gcs.M}</span>`
+    : unitText;
   return `<div class="vtile" style="${armedStyle}" onclick="${clickFn}">
       <span class="vtile-dot" style="background:${isOn ? dotColor : '#cbd5e1'};"></span>
       <div class="vlabel">${def.label}</div>
-      <div class="vval">${val}${valExtra}</div>
-      <div class="muted">${unitText}</div>
+      <div class="vval">${val}</div>
+      <div class="muted">${bottomLine}</div>
     </div>`;
 }
 
