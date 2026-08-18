@@ -3586,8 +3586,11 @@ function updateDynamicAppearance(v) {
 // GCS/Health row below it, which tickVitals() builds separately.
 function vitalTileHtml(def, v) {
   let val;
+  // Components and total come from the one helper so they always agree —
+  // see SimEngine.gcsComponents on why rounding them separately does not.
+  const gcs = def.isGCS ? SimEngine.gcsComponents(v) : null;
   if (def.key === 'BP') val = `${Math.round(v.BPsys)}/${Math.round(v.BPdia)}`;
-  else if (def.isGCS) val = Math.round(v.gcsE + v.gcsV + v.gcsM);
+  else if (def.isGCS) val = gcs.total;
   else if (def.isHealth) val = Math.round(SimEngine.getDisplayHealthScore(liveConfig, simNow()));
   // Not part of getVitalsRaw (see SimEngine.getSatAt on why agitation is not
   // a vital), so it is read separately rather than off v.
@@ -3628,7 +3631,7 @@ function vitalTileHtml(def, v) {
   // total (not on the unit line, which stays "/15") now that GCS shares the
   // wide second row with Health and has the horizontal space for it.
   const valExtra = def.isGCS
-    ? ` <span class="vval-parts">E${Math.round(v.gcsE)} V${Math.round(v.gcsV)} M${Math.round(v.gcsM)}</span>`
+    ? ` <span class="vval-parts">E${gcs.E} V${gcs.V} M${gcs.M}</span>`
     : '';
   return `<div class="vtile" style="${armedStyle}" onclick="${clickFn}">
       <span class="vtile-dot" style="background:${isOn ? dotColor : '#cbd5e1'};"></span>

@@ -1774,7 +1774,9 @@ function onActionComplete(key, now) {
   }
   if (oneOffDefs[key]) {
     const v = extendedVitalsNow();
-    actionState[key].value = key === 'gcs' ? Math.round(v.gcsE + v.gcsV + v.gcsM) : v[key];
+    // Same rounding as the assessor's GCS tile (SimEngine.gcsComponents), so
+    // the number the student reads back can't differ from the one on control.
+    actionState[key].value = key === 'gcs' ? SimEngine.gcsComponents(v).total : v[key];
   }
   if (key === 'pulse') {
     // Reports whichever site is actually the BEST available, not a

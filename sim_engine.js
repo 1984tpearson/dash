@@ -314,6 +314,45 @@
   // gcsTotalOpt lets a caller that has already computed GCS for this instant
   // pass it in — renderGraph samples this hundreds of times per draw and would
   // otherwise recompute the three GCS components for every sample.
+  // GCS components and total, rounded so the three parts always sum to the
+  // total displayed next to them. Rounding each component independently and
+  // separately rounding their sum does NOT agree — the errors are independent
+  // — so a patient sliding from 15 to 3 spent much of the trip showing
+  // e.g. "14  E4 V5 M6" (15) or "13  E3 V4 M5" (12). Largest-remainder
+  // rounding instead: floor everything, then hand the leftover points to
+  // whichever components have the biggest fractional part and still have
+  // headroom in their own range. The total is then taken FROM the rounded
+  // parts rather than computed alongside them, so the two cannot disagree
+  // even in the corner where a clamp eats a point.
+  //
+  // The engine keeps the components continuous on purpose (that is what lets
+  // a trajectory ramp GCS smoothly and what the graph traces), so this is
+  // display-only — nothing here changes the underlying values, and callers
+  // that want the raw sum (the graph series, the SAT gate) still use it.
+  function gcsComponents(v) {
+    const raw = [
+      { key: 'E', val: Math.min(4, Math.max(1, v.gcsE || 0)), max: 4 },
+      { key: 'V', val: Math.min(5, Math.max(1, v.gcsV || 0)), max: 5 },
+      { key: 'M', val: Math.min(6, Math.max(1, v.gcsM || 0)), max: 6 }
+    ];
+    const target = Math.min(15, Math.max(3, Math.round(raw[0].val + raw[1].val + raw[2].val)));
+    const parts = raw.map(r => ({ key: r.key, max: r.max, whole: Math.floor(r.val), frac: r.val - Math.floor(r.val) }));
+    let left = target - parts.reduce((sum, p) => sum + p.whole, 0);
+    // Biggest fractional part gets the first spare point; ties go to the
+    // component listed first (E, then V, then M), which is arbitrary but
+    // stable — an unstable tiebreak would make the parts flicker between
+    // ticks while the total sat still.
+    const order = parts.map((p, i) => ({ p, i })).sort((a, b) => (b.p.frac - a.p.frac) || (a.i - b.i));
+    for (const { p } of order) {
+      if (left <= 0) break;
+      if (p.whole < p.max) { p.whole += 1; left -= 1; }
+    }
+    const out = {};
+    parts.forEach(p => { out[p.key] = p.whole; });
+    out.total = out.E + out.V + out.M;
+    return out;
+  }
+
   function getSatAt(cfg, nowMs, gcsTotalOpt) {
     if (!isAgitationScripted(cfg)) return null;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -1562,7 +1601,7 @@
     getActionDurationSec, getVitals, getVitalsRaw, getSimNow, getStaticVitalAt, getRhythmAt, getAppearanceState,
     parseTimeOfDay, getScenarioFictionalNow,
     getHealthScore, getHealthTrendLevel, getDisplayHealthScore, getDisplayHealthTrendLevel,
-    getSatAt, isAgitationScripted,
+    getSatAt, isAgitationScripted, gcsComponents,
     deriveRhythmFromHR, classifyRhythmForDefib, classifyRhythmForPulse, getPulseState, computeSurvivabilityScore, computeDefibrillationEffect, computeCprEffect, spliceAiOverridePlan, spliceRhythmPlan, clearFutureFromFork,
     parseAgeFromScenario, parseScenarioMood, cleanSpontaneousLines,
     hrSeverity, rrSeverity, spo2Severity, painSeverity, bpSysSeverity,
