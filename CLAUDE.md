@@ -217,9 +217,28 @@ recently-added area with no editor at all. Four things worth knowing:
 - As everywhere else here, **the schema copy is the one that runs.** Change the
   wording in `patient_voice.js` alone and nothing happens.
 - `SAT_DELIVERY` was split out of `satNoteFor()` for this: `mild` at +1,
-  `shouted` at +2 and above, and `footer` appended at every level. The footer
+  `shouted` at +2 and above, `footer` appended at every level, and
+  `precedence` at +2 and above. The footer
   is separate deliberately — it carries the rule that agitation moves from the
   series only, so editing the tone instructions can't drop it.
+  **`precedence` resolves a real self-contradiction in the assembled prompt.**
+  The trait and behavioural-state notes are written defensively against the
+  model's agitation stereotype (see the paragraph below on why), so several of
+  them assert the patient is calm: `TRAIT_NOTES.blunt` says "Not aggressive or
+  a threat to the crew" with no qualifier at all, `TRAIT_NOTES.guarded` says
+  "Not hostile", and `BEHAVIOURAL_NOTES.intoxicated` says "play them as
+  cooperative". Those are right when nothing has scripted agitation and a flat
+  contradiction of `SAT_NOTES[2]`/`[3]` when something has — an intoxicated
+  blunt patient at +3 was being told "not a threat to the crew" and "make
+  explicit threats" in one prompt. The four behavioural notes that carry an
+  "unless separately told otherwise" hatch still relied on the model inferring
+  that the SAT block is what that refers to. Stating precedence explicitly was
+  the smaller fix than rewriting six admin-editable strings and losing the
+  defensive intent they were written with. **Not emitted at +1**, where there
+  is nothing to resolve — `SAT_NOTES[1]` itself says the patient is still
+  cooperative and still answering, so it agrees with those notes. Verified:
+  unscripted and +1 output byte-identical to before, +2/+3 gain exactly this
+  one line.
 - Mood *matching* is NOT here; it stays `medications.MOOD_MAP`, which
   `sim_engine.js` owns because the avatar reads it too. Only the per-mood voice
   note lives in `manner`.

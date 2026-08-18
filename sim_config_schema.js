@@ -917,11 +917,12 @@
           SAT_DELIVERY: {
             type: 'map_str_text',
             label: 'Agitation delivery instructions',
-            help: '“mild” is used at SAT +1, “shouted” at +2 and above, and “footer” is appended at every level. Written form is doing real work here: the TTS engine takes its delivery from punctuation and sentence length, so an angry line written as one even sentence comes out sounding calm however hostile the words are. No capitals — some engines spell them out.',
+            help: '“mild” is used at SAT +1, “shouted” at +2 and above, “footer” is appended at every level, and “precedence” at +2 and above. Precedence resolves a real conflict: the trait and behavioural-state notes are written defensively against the model’s agitation stereotype, so several of them assert the patient is cooperative and not a threat — correct with no agitation scripted, a flat contradiction of the +2/+3 ladder with it. Do not delete it. Written form is doing real work here: the TTS engine takes its delivery from punctuation and sentence length, so an angry line written as one even sentence comes out sounding calm however hostile the words are. No capitals — some engines spell them out.',
             default: {
               "mild": "Write it clipped and impatient — short sentences, not long even ones.",
               "shouted": "Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. \"Get off me. I said get off! I am not going anywhere with you.\" — not one long even sentence. Never write in capitals.",
-              "footer": "This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it."
+              "footer": "This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.",
+              "precedence": "This section overrides anything above that describes this patient as cooperative, settled, not hostile, or not a threat to the crew. Those notes describe how this person comes across WITHOUT the agitation; the agitation is the stronger and more recent fact about them. Where they conflict, this section wins."
             }
           },
           COGNITIVE_MAP: {

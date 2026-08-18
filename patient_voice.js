@@ -351,7 +351,8 @@
   var SAT_DELIVERY = {
     mild: 'Write it clipped and impatient — short sentences, not long even ones.',
     shouted: 'Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. "Get off me. I said get off! I am not going anywhere with you." — not one long even sentence. Never write in capitals.',
-    footer: 'This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.'
+    footer: 'This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.',
+    precedence: 'This section overrides anything above that describes this patient as cooperative, settled, not hostile, or not a threat to the crew. Those notes describe how this person comes across WITHOUT the agitation; the agitation is the stronger and more recent fact about them. Where they conflict, this section wins.'
   };
 
   // Deliberately excludes distress. Pain, fear and breathlessness are
@@ -372,7 +373,24 @@
     // matter how hostile the words are. Short bursts and repetition are also
     // simply how people actually talk when they are furious.
     var delivery = level >= 2 ? SAT_DELIVERY.shouted : SAT_DELIVERY.mild;
-    return '\n' + note + '\n' + delivery + '\n' + SAT_DELIVERY.footer + '\n';
+    // Emitted from +2 only, and deliberately not at +1. The trait and
+    // behavioural-state notes above are written defensively against the
+    // model's agitation stereotype (an unqualified 'delirium' otherwise
+    // produces a shouting patient nearly every time), so several of them
+    // assert outright that the patient is cooperative and not a threat —
+    // TRAIT_NOTES.blunt says 'Not aggressive or a threat to the crew' with no
+    // qualifier at all, and BEHAVIOURAL_NOTES.intoxicated says 'play them as
+    // cooperative'. Those are correct when nothing has scripted agitation,
+    // and a flat contradiction of SAT_NOTES[2]/[3] when something has. The
+    // ones that DO carry an 'unless separately told otherwise' hatch still
+    // rely on the model inferring that this block is what it refers to.
+    // Stating precedence explicitly is what makes that reliable.
+    //
+    // Nothing to resolve at +1: SAT_NOTES[1] itself says the patient is still
+    // cooperative and still answering, so it agrees with those notes rather
+    // than contradicting them.
+    var precedence = level >= 2 ? ('\n' + SAT_DELIVERY.precedence) : '';
+    return '\n' + note + '\n' + delivery + '\n' + SAT_DELIVERY.footer + precedence + '\n';
   }
 
   // --- Mood ------------------------------------------------------------
