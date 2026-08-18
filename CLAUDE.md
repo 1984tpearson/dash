@@ -1471,6 +1471,15 @@ editing.
   outside a render pass (hit-testing, tool logic) must use the standalone
   versions (which read `_lastLayout`), not assume the local ones are in
   scope. Mixing them up is a silent `ReferenceError` at the call site.
+- **Once Tim has approved a push to `main` in a session, keep pushing
+  finished work there for the rest of it without asking again** (rebase onto
+  latest `main` if it moved, then fast-forward; don't open a PR). This is a
+  solo project with no review step, and a branch sitting unmerged means
+  GitHub Pages never redeploys, which defeats the point. The approval is
+  per-session, not standing: ask the first time, then treat it as granted
+  until he says otherwise. He can revoke it at any point for a task or for
+  the rest of the session — "stay on the branch", "don't push yet" — and
+  that sticks until he says otherwise again.
 - **`max-height:<percent>` on an element inside a flex column compounds with
   the container's own flex-shrink, instead of just capping it once.** Bit
   `sim_patient.html`'s avatar: its containing block (`#head-wrap`, sized
