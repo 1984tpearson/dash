@@ -556,6 +556,24 @@ async function loadSimConfig() {
 
     CHRONIC_RESP_KEYWORDS = pick(field('severity', 'CHRONIC_RESP_KEYWORDS'), CHRONIC_RESP_KEYWORDS);
 
+    // Patient manner/agitation voice tables (patient_voice.js owns them; the
+    // schema copy above is the one that actually runs). Guarded because
+    // patient_voice.js is a separate <script src> — if it failed to load, the
+    // voice path is already broken and this must not also take out the rest
+    // of loadSimConfig().
+    if (window.PatientVoice && PatientVoice.applyConfigOverrides) {
+      PatientVoice.applyConfigOverrides({
+        TRAIT_MAP: field('manner', 'TRAIT_MAP'),
+        TRAIT_NOTES: field('manner', 'TRAIT_NOTES'),
+        MOOD_NOTES: field('manner', 'MOOD_NOTES'),
+        COGNITIVE_NOTES: field('manner', 'COGNITIVE_NOTES'),
+        BEHAVIOURAL_NOTES: field('manner', 'BEHAVIOURAL_NOTES'),
+        SUBSTANCE_NOTES: field('manner', 'SUBSTANCE_NOTES'),
+        SAT_NOTES: field('manner', 'SAT_NOTES'),
+        SAT_DELIVERY: field('manner', 'SAT_DELIVERY')
+      });
+    }
+
     UNTREATED_PROJECTION_PROMPT = pick(field('prompts', 'UNTREATED_PROJECTION_PROMPT'), UNTREATED_PROJECTION_PROMPT);
     TREATMENT_UPDATE_PROMPT = pick(field('prompts', 'TREATMENT_UPDATE_PROMPT'), TREATMENT_UPDATE_PROMPT);
     SCRIPTED_EVENT_PROMPT = pick(field('prompts', 'SCRIPTED_EVENT_PROMPT'), SCRIPTED_EVENT_PROMPT);

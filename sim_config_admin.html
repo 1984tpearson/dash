@@ -49,6 +49,11 @@
   .color-swatch input[type=color] { width: 26px; height: 26px; border: none; padding: 0; background: none; }
   .map-row { display: flex; gap: 6px; align-items: center; }
   .map-row input.map-key { width: 160px; }
+  /* map_str_text rows hold a paragraph, not a word — top-align the key
+     against a tall value box rather than centring it against one. */
+  .map-row.tall { align-items: flex-start; }
+  .map-row.tall input.map-key { margin-top: 2px; }
+  .map-row.tall textarea { flex: 1; min-height: 90px; line-height: 1.5; resize: vertical; }
   .status-msg { font-size: 12px; margin-top: 10px; min-height: 16px; }
   .status-msg.ok { color: #0f5132; }
   .status-msg.err { color: #b91c1c; }
@@ -254,6 +259,7 @@ function renderField(sk, fk, field) {
       case 'string_list': renderStringList(body, sk, fk); break;
       case 'number_list': renderNumberList(body, sk, fk); break;
       case 'map_str_str': renderMap(body, sk, fk, 'text'); break;
+      case 'map_str_text': renderMap(body, sk, fk, 'textarea'); break;
       case 'map_str_num': renderMap(body, sk, fk, 'number'); break;
       case 'map_str_list': renderMapStrList(body, sk, fk); break;
       case 'color_list': renderColorList(body, sk, fk); break;
@@ -367,8 +373,15 @@ function renderMap(body, sk, fk, inputType) {
         if (keyInput.value === key || !keyInput.value) { keyInput.value = key; return; }
         const v = obj[key]; delete obj[key]; obj[keyInput.value] = v; redraw();
       };
-      const valInput = document.createElement('input');
-      valInput.type = inputType; if (inputType === 'number') valInput.step = 'any';
+      // 'textarea' (map_str_text) is for maps whose values are prose the AI
+      // is shown verbatim — the voice notes in the Manner section run to a
+      // paragraph each, and a one-line text input makes them uneditable in
+      // practice. Everything else stays a plain input.
+      const isText = inputType === 'textarea';
+      if (isText) row.className = 'map-row tall';
+      const valInput = document.createElement(isText ? 'textarea' : 'input');
+      if (!isText) { valInput.type = inputType; if (inputType === 'number') valInput.step = 'any'; }
+      else valInput.style.flex = '1';
       valInput.value = obj[key];
       valInput.oninput = () => { obj[key] = inputType === 'number' ? parseFloat(valInput.value) || 0 : valInput.value; };
       const del = document.createElement('button');

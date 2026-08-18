@@ -194,6 +194,36 @@ in-fiction scenario clock (so a 3am callout answered orientation questions
 with the tester's local time). **Don't reintroduce a local copy of either
 prompt string or the user-prompt shape.**
 
+**Every one of the tables below is admin-editable**, via
+`sim_config_admin.html`'s **Patient Manner & Agitation** section
+(`sim_config_schema.js`'s `manner`) — `TRAIT_MAP`, `TRAIT_NOTES`,
+`MOOD_NOTES`, `COGNITIVE_NOTES`, `BEHAVIOURAL_NOTES`, `SUBSTANCE_NOTES`,
+`SAT_NOTES` and `SAT_DELIVERY`. This is all prose the model is shown verbatim,
+so it belongs with the AI prompts rather than in code, and it was the one
+recently-added area with no editor at all. Four things worth knowing:
+- `PatientVoice.applyConfigOverrides()` **mutates the tables in place** rather
+  than reassigning them. They are exported by reference and `sim_control.html`
+  builds its Manner pickers straight off `PatientVoice.TRAIT_MAP` — a
+  reassignment would leave that picker on the pre-config array.
+- Called from BOTH pages' `loadSimConfig()`, guarded on `window.PatientVoice`
+  existing, same hand-synced glue as everything else in those two functions.
+- As everywhere else here, **the schema copy is the one that runs.** Change the
+  wording in `patient_voice.js` alone and nothing happens.
+- `SAT_DELIVERY` was split out of `satNoteFor()` for this: `mild` at +1,
+  `shouted` at +2 and above, and `footer` appended at every level. The footer
+  is separate deliberately — it carries the rule that agitation moves from the
+  series only, so editing the tone instructions can't drop it.
+- Mood *matching* is NOT here; it stays `medications.MOOD_MAP`, which
+  `sim_engine.js` owns because the avatar reads it too. Only the per-mood voice
+  note lives in `manner`.
+Verified: applying the shipped schema defaults produces a byte-identical system
+prompt to the pre-config code path, and every trait key still round-trips
+through `parseTrait`.
+
+The editor gained one field type for this, **`map_str_text`** — a
+`map_str_str` whose values render as textareas. These notes run to a paragraph
+each and were uneditable in a one-line input.
+
 What deliberately stays per-page: where the scenario/vitals/treatments are
 read from (`currentScenario`/`liveConfig` vs `scenarioMeta`/`testConfig`),
 what happens to the reply afterwards (logged and written back for the
@@ -455,6 +485,13 @@ Deliberate details, several of which are the opposite of how vitals behave:
   `OVERRIDE_KEY_LABELS`, `MOUTH_VARIANT`. Those schema defaults are preferred
   over the in-page values, so a change in the page alone does nothing. This is
   the same trap that broke the Manner tab's highlighting.
+  A fifth was missed at the time and has since been added: `GRAPH_SERIES` had
+  no `sat` row, so the agitation trace's colour/range were the one part of the
+  feature not admin-editable. That one is merged BY KEY rather than replaced
+  wholesale (the `get` accessors are closures, not data), which is why a
+  missing row degraded silently instead of erroring. The same audit found
+  `health`'s colour and `plotMax` had drifted between the two copies, with the
+  schema's stale values winning — both now match the page.
 
 **The voice ladder** (`PatientVoice.SAT_NOTES`) is read from the live series at
 prompt-build time, so it changes mid-scenario as the patient escalates or is

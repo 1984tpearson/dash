@@ -343,6 +343,17 @@
     3: "This patient is severely agitated and out of control (SAT +3). Continuous shouting, sustained abuse and explicit threats of violence toward the crew — telling them what they will do to them, that they will find them, that they should get away before something happens. They will not be redirected, will not tolerate being approached or touched, and do not answer clinical questions at all; anything they say is refusal, abuse or threat. If it fits the person, this can include crude sexual remarks aimed at a crew member. Do not soften this into a merely grumpy patient: the point of the scenario is a crew deciding they are not safe and acting on it. What you must NOT write is slurs about race, religion, sexuality, disability or gender identity — if the person would be abusive in that register, convey it as the crew being abused in those terms without producing the words themselves."
   };
 
+  // Split out of satNoteFor so the delivery instruction is admin-editable
+  // alongside the notes themselves (see applyConfigOverrides below). 'mild'
+  // is used at +1, 'shouted' at +2 and above, and 'footer' is appended at
+  // every level — it is the rule that agitation comes from the series only,
+  // so it must not be droppable by editing one of the other two.
+  var SAT_DELIVERY = {
+    mild: 'Write it clipped and impatient — short sentences, not long even ones.',
+    shouted: 'Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. "Get off me. I said get off! I am not going anywhere with you." — not one long even sentence. Never write in capitals.',
+    footer: 'This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.'
+  };
+
   // Deliberately excludes distress. Pain, fear and breathlessness are
   // getAppearanceState().distressLevel and are already handled by the main
   // prompt's "let their condition colour HOW they answer" line — a STEMI
@@ -360,10 +371,8 @@
     // written as one flowing sentence comes out sounding perfectly calm no
     // matter how hostile the words are. Short bursts and repetition are also
     // simply how people actually talk when they are furious.
-    var delivery = level >= 2
-      ? 'Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. "Get off me. I said get off! I am not going anywhere with you." — not one long even sentence. Never write in capitals.'
-      : 'Write it clipped and impatient — short sentences, not long even ones.';
-    return '\n' + note + '\n' + delivery + '\nThis is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it.\n';
+    var delivery = level >= 2 ? SAT_DELIVERY.shouted : SAT_DELIVERY.mild;
+    return '\n' + note + '\n' + delivery + '\n' + SAT_DELIVERY.footer + '\n';
   }
 
   // --- Mood ------------------------------------------------------------
@@ -598,8 +607,51 @@
       .slice(-VOICE_HISTORY_TURNS);
   }
 
+  // --- Admin config -----------------------------------------------------
+  // Every table above is now editable from sim_config_admin.html's "Patient
+  // Manner & Agitation" section, which is what makes the trait/mood/
+  // behavioural/SAT wording tunable without a code change — the same deal
+  // the AI prompts already had. Both host pages call this from their own
+  // loadSimConfig(), before the first voice reply can be built.
+  //
+  // Mutates in place rather than reassigning, because the tables are exported
+  // by reference and sim_control.html builds its Manner pickers straight off
+  // PatientVoice.TRAIT_MAP — a reassignment here would leave that picker
+  // pointing at the pre-config array.
+  //
+  // A field the caller omits (or that fails to load) is left completely
+  // alone, so a missing sim_config row degrades to this file's own defaults
+  // rather than to an empty table. Same posture as SimEngine's own
+  // applyConfigOverrides.
+  function replaceObject(target, src) {
+    if (!src || typeof src !== 'object' || Array.isArray(src)) return;
+    Object.keys(target).forEach(function (k) { delete target[k]; });
+    Object.keys(src).forEach(function (k) { target[k] = src[k]; });
+  }
+  function applyConfigOverrides(cfg) {
+    var c = cfg || {};
+    if (Array.isArray(c.TRAIT_MAP)) {
+      // Order is priority (first match wins), so splice the whole list in
+      // rather than merging by trait key.
+      TRAIT_MAP.length = 0;
+      c.TRAIT_MAP.forEach(function (r) {
+        if (r && r.trait && Array.isArray(r.keywords)) TRAIT_MAP.push({ trait: r.trait, keywords: r.keywords });
+      });
+    }
+    replaceObject(TRAIT_NOTES, c.TRAIT_NOTES);
+    replaceObject(MOOD_NOTES, c.MOOD_NOTES);
+    replaceObject(COGNITIVE_NOTES, c.COGNITIVE_NOTES);
+    replaceObject(BEHAVIOURAL_NOTES, c.BEHAVIOURAL_NOTES);
+    replaceObject(SUBSTANCE_NOTES, c.SUBSTANCE_NOTES);
+    replaceObject(SAT_NOTES, c.SAT_NOTES);
+    replaceObject(SAT_DELIVERY, c.SAT_DELIVERY);
+  }
+
   window.PatientVoice = {
     DEFAULT_PROMPT: DEFAULT_PROMPT,
+    applyConfigOverrides: applyConfigOverrides,
+    SUBSTANCE_NOTES: SUBSTANCE_NOTES,
+    SAT_DELIVERY: SAT_DELIVERY,
     DEFAULT_CONFUSED_NOTE: DEFAULT_CONFUSED_NOTE,
     tierFor: tierFor,
     TRAIT_MAP: TRAIT_MAP,

@@ -340,7 +340,10 @@
               { key: 'gcs', label: 'GCS', color: '#d02e8b', unit: '/15', min: 3, max: 15, plotMax: 18 },
               { key: 'pain', label: 'Pain', color: '#dd9806', unit: '/10', min: 0, max: 10 },
               { key: 'nausea', label: 'Nausea', color: '#14b8a6', unit: '/10', min: 0, max: 10 },
-              { key: 'health', label: 'Health', color: '#000000', unit: '', min: 0, max: 100, plotMax: 200 }
+              // Agitation. Only drawn on scenarios that scripted it (see
+              // SimEngine.getSatAt) — every draw site gates on graphSeriesOn.
+              { key: 'sat', label: 'Agitation', color: '#b91c1c', unit: ' SAT', min: 0, max: 3, plotMax: 4 },
+              { key: 'health', label: 'Health', color: '#16a34a', unit: '', min: 0, max: 100, plotMax: 150 }
             ]
           },
           GRAPH_DEFAULT_ON: {
@@ -677,6 +680,222 @@
               intoxicated: 'slurred, sloppy, disinhibited',
               withdrawal: 'shaky, queasy, wretched, uncomfortable',
               depression: 'flat, quiet, slow, no energy'
+            }
+          }
+        }
+      },
+
+      // Everything that makes the patient a PERSON rather than a set of
+      // vitals: communication style (trait), acute behavioural state, their
+      // permanent cognitive floor, and the agitation ladder. All of it is
+      // prose the AI is shown verbatim, so it is tuned by editing wording
+      // here rather than by changing code — the same treatment the AI
+      // prompts section already had, and the reason these tables moved out
+      // of "hardcoded in patient_voice.js" at all.
+      //
+      // These are the defaults for PatientVoice's own tables, applied via
+      // PatientVoice.applyConfigOverrides() from BOTH host pages'
+      // loadSimConfig(). They are a second copy of the literals in
+      // patient_voice.js and, exactly like the SimEngine-owned fields above,
+      // the schema copy is the one that actually runs — keep them in sync by
+      // hand if the wording changes there.
+      //
+      // Mood keyword MATCHING is not here: it is medications.MOOD_MAP, which
+      // sim_engine.js owns because the avatar's eyebrows read it too. Only
+      // the spoken-voice note per resolved mood lives here.
+      manner: {
+        label: 'Patient Manner & Agitation',
+        help: 'Communication style, mood, cognitive baseline, acute behavioural state and the SAT agitation ladder — the notes appended to the patient-voice system prompt. Wording here is sent to the AI verbatim.',
+        fields: {
+          TRAIT_MAP: {
+            type: 'table',
+            label: 'Communication-style keyword map',
+            help: 'Fuzzy-maps a scenario’s free-text patient_meta.trait to one of the styles below. Order matters — checked top-to-bottom, first match wins, and the LEADING keyword is tried across the whole list before any substring match. Keywords are plain substrings (not regex). Anything unmatched falls through to “plain”, which adds no note at all.',
+            columns: [
+              { name: 'trait', type: 'string', enum: ["stoic", "deferential", "guarded", "talkative", "precise", "vague", "blunt"] },
+              { name: 'keywords', type: 'string_list' }
+            ],
+            default: [
+              {
+                "trait": "stoic",
+                "keywords": [
+                  "stoic",
+                  "minimis",
+                  "minimiz",
+                  "understat",
+                  "plays it down",
+                  "plays things down",
+                  "downplay",
+                  "tough",
+                  "no fuss"
+                ]
+              },
+              {
+                "trait": "deferential",
+                "keywords": [
+                  "deferential",
+                  "apologetic",
+                  "apologis",
+                  "apologiz",
+                  "sorry",
+                  "polite",
+                  "timid",
+                  "meek",
+                  "doesn't want to be a bother",
+                  "not want to be a bother"
+                ]
+              },
+              {
+                "trait": "guarded",
+                "keywords": [
+                  "guarded",
+                  "reserved",
+                  "reticent",
+                  "withdrawn",
+                  "closed",
+                  "quiet",
+                  "terse",
+                  "monosyllab",
+                  "short answers",
+                  "reluctant"
+                ]
+              },
+              {
+                "trait": "talkative",
+                "keywords": [
+                  "talkative",
+                  "chatty",
+                  "rambl",
+                  "garrulous",
+                  "verbose",
+                  "over-explain",
+                  "overexplain",
+                  "tangent",
+                  "digress"
+                ]
+              },
+              {
+                "trait": "precise",
+                "keywords": [
+                  "precise",
+                  "detailed",
+                  "articulate",
+                  "organis",
+                  "organiz",
+                  "methodical",
+                  "good historian",
+                  "reliable historian",
+                  "clear historian"
+                ]
+              },
+              {
+                "trait": "vague",
+                "keywords": [
+                  "vague",
+                  "poor historian",
+                  "unreliable historian",
+                  "fuzzy",
+                  "hazy",
+                  "unsure of detail",
+                  "imprecise",
+                  "woolly"
+                ]
+              },
+              {
+                "trait": "blunt",
+                "keywords": [
+                  "blunt",
+                  "gruff",
+                  "brusque",
+                  "abrupt",
+                  "curt",
+                  "impatient",
+                  "no-nonsense",
+                  "gets to the point"
+                ]
+              }
+            ]
+          },
+          TRAIT_NOTES: {
+            type: 'map_str_text',
+            label: 'Communication-style voice notes',
+            help: 'One note per trait key above, appended to the patient-voice system prompt. These change only the TEXTURE of a reply — never how much clinical information it gives away, which the main prompt’s answer-scope rule governs. Suppressed below GCS-Verbal 5. A key with no matching trait in the map above is simply never reached.',
+            default: {
+              "stoic": "This patient plays things down. They are not a complainer, they do not want a fuss, and they will describe something genuinely serious in mild terms ('bit of discomfort', 'not too bad', 'I've had worse'). If pressed on a specific point they will admit the real answer rather than lie. Understating is how they talk, not something they are hiding.",
+              "guarded": "This patient gives short, closed answers and does not elaborate. They answer exactly what was asked, often in a few words, and then stop. Not hostile or evasive — just not forthcoming. The crew has to keep asking to build a picture.",
+              "talkative": "This patient is chatty and wanders off the point — they answer the question, then drift into unrelated life detail (what they were doing, who was there, a story about something that happened last week). The digressions are personal and conversational ONLY: never wander into extra symptoms, history, medications or anything else clinical the crew has not asked about. They are a talker, not a walking handover.",
+              "precise": "This patient is an organised, reliable historian — clear, specific and accurate about times, amounts and sequence when asked. Precise about what they were asked, not comprehensive: being a good historian means giving an exact answer, not a complete one.",
+              "vague": "This patient is a poor historian. Times are approximate and shaky ('a while back? maybe this morning'), details are fuzzy or slightly inconsistent, and they often are not sure. This is ordinary fuzziness about their own story, NOT disorientation — they know who and where they are, they just cannot pin the details down.",
+              "deferential": "This patient is apologetic and does not want to be any trouble — they say sorry a lot, worry they have wasted the crew's time, and defer to whatever the crew suggests. They tend to soften how bad things are so as not to make a fuss.",
+              "blunt": "This patient is gruff and to the point, with a low tolerance for questions — short answers, mild impatience, the occasional 'does that matter?' or 'I just told you'. They do cooperate and answer, they are just brusque about it. Not aggressive or a threat to the crew, just abrupt."
+            }
+          },
+          MOOD_NOTES: {
+            type: 'map_str_text',
+            label: 'Mood voice notes',
+            help: 'Per-mood tone note, keyed by the resolved mood from medications.MOOD_MAP. Rendered into “Right now this patient is <note>.” — write it as a phrase that completes that sentence, not as a standalone instruction. “calm” has no entry deliberately: it is the default and adds nothing.',
+            default: {
+              "anxious": "frightened and on edge — quick, uneven sentences, asking whether they are going to be alright",
+              "tearful": "crying, or close to it — their voice keeps breaking and they have to stop and restart",
+              "agitated": "restless and irritable — snappy, impatient, does not want to be crowded or fussed over",
+              "angry": "angry and hostile toward the crew — short, sharp, openly annoyed at being questioned"
+            }
+          },
+          COGNITIVE_NOTES: {
+            type: 'map_str_text',
+            label: 'Baseline cognitive-status notes',
+            help: 'The patient’s PERMANENT floor (dementia, intellectual disability, acquired brain injury), from patient_meta.baseline_cognitive_status. Deliberately NOT suppressed by GCS tier — it composes with the GCS-Verbal 4 confusion note, because baseline dementia plus acute delirium on top is the presentation being assessed. The scenario’s authored sentence is passed to the AI alongside whichever note is picked.',
+            default: {
+              "dementia": "This patient has dementia. That is their BASELINE, not something new today: they may repeat themselves or ask the same question again, lose the thread of a longer question, reach for words, or fill a gap with something plausible but wrong rather than saying they do not know. They are not distressed by any of it — this is ordinary for them. Keep it consistent and fairly mild unless the description below says otherwise, and never announce or explain the diagnosis; they simply talk this way.",
+              "intellectual": "This patient has an intellectual disability. That is their BASELINE, not an acute change: they speak plainly and concretely, may take a question literally, need things asked simply and one at a time, and may look to a carer or family member for an answer. They can absolutely describe how they feel when asked in plain words. Never portray this as confusion or as being unwell, and never have them announce the diagnosis.",
+              "braininjury": "This patient has an acquired brain injury. That is their BASELINE: they may be slow to answer, lose track mid-sentence, repeat themselves, or be unexpectedly blunt or disinhibited, while still knowing who and where they are. Never portray this as an acute deterioration, and never have them explain the diagnosis.",
+              "other": "The line below describes this patient's NORMAL baseline mental state, not a change today. Let it shape how they speak, keep it consistent, and never have them announce or explain it."
+            }
+          },
+          BEHAVIOURAL_NOTES: {
+            type: 'map_str_text',
+            label: 'Acute behavioural-state notes',
+            help: 'What is different about this patient TODAY, from patient_meta.behavioural_state. Absent on most scenarios and renders nothing when absent. Keep every note defensive about agitation: a behavioural state does NOT imply an agitated patient — the model’s stereotype is strong enough that an unqualified “delirium” produces a shouting patient nearly every time, and the quiet presentations are both more common and better assessments. Agitation is the separate opt-in SAT ladder below.',
+            default: {
+              "delirium": "This patient is delirious — an ACUTE, fluctuating disturbance of attention and thinking, on top of however they normally are. They lose the thread of a question, drift between topics, and their attention comes and goes: they may follow one question well and be somewhere else entirely by the next. Their sense of what is happening and where they are is unreliable and can shift within the same conversation, which is what separates this from a stable confusion.",
+              "delirium_hypo": "This patient has HYPOACTIVE delirium — drowsy, withdrawn, slowed down, barely engaging. They answer late, in very few words, sometimes drift off mid-sentence, and volunteer nothing at all. Their attention wanders and their answers can be wrong or vague. They are NOT distressed, NOT restless and NOT difficult; the whole point of this presentation is that a quiet patient is seriously unwell and easy to under-call.",
+              "delirium_hyper": "This patient has HYPERACTIVE delirium — restless and unsettled, attention jumping, starting to answer one thing and arriving somewhere else, sometimes misinterpreting what is going on around them. Unsettled and hard to hold on topic is the presentation; do NOT make them aggressive or abusive toward the crew unless separately told they are agitated.",
+              "intoxicated": "This patient is intoxicated. Their speech and judgement are affected: slower or slurred, repeating themselves, losing track, and hazy on times, amounts and the order things happened in. They tend to under-report how much they have had and may genuinely not remember parts of it. Being intoxicated is NOT the same as being aggressive — unless separately told otherwise, play them as cooperative in their own disorganised way.",
+              "withdrawal": "This patient is in withdrawal. They feel dreadful — shaky, sweating, queasy, unable to get comfortable, and preoccupied with how bad they feel. They are focused on their own symptoms and may be irritable about being kept waiting, but do NOT make them aggressive toward the crew unless separately told they are agitated.",
+              "depression": "This patient is significantly depressed. Flat, quiet, slow to answer, minimal engagement — short answers with long gaps, little spontaneous speech, no real interest in what is happening around them. They are not being obstructive; there is simply very little there. Never volunteer anything about self-harm or wanting to die, and if the crew asks about it directly, answer briefly and flatly without elaborating.",
+              "other": "The line below describes an acute behavioural state affecting how this patient is presenting today. Let it shape how they speak and stay consistent with it. Do not make them aggressive or abusive toward the crew unless it explicitly says so."
+            }
+          },
+          SUBSTANCE_NOTES: {
+            type: 'map_str_text',
+            label: 'Substance notes (intoxication / withdrawal)',
+            help: 'Appended alongside the behavioural note when a substance is named in the authored text. One line each — the behavioural note already carries the presentation, this only says which substance.',
+            default: {
+              "alcohol": "The substance is alcohol — slurred, repetitive, unsteady, breath smells of it.",
+              "opioid": "The substance is an opioid — drowsy, drifting, very slow to answer, drops off between questions.",
+              "stimulant": "The substance is a stimulant — fast, pressured, jumpy speech, hard to interrupt, may be suspicious of what the crew is doing.",
+              "benzo": "The substance is a sedative — drowsy, slurred, poor recall of the last few hours.",
+              "cannabis": "The substance is cannabis — vague, slowed, easily sidetracked, sometimes anxious about their own symptoms."
+            }
+          },
+          SAT_NOTES: {
+            type: 'map_str_text',
+            label: 'Agitation (SAT) ladder',
+            help: 'Keyed by SAT level 1/2/3 — the positive half of the Sedation Assessment Tool only (the negative half is sedation depth, which GCS already represents). Read from the live overrides.sat series at prompt-build time, so it changes mid-scenario as the patient escalates or is sedated. Written to be genuinely confronting at +3 because this is occupational violence and aggression training. Two limits are deliberate and should survive any edit: discriminatory abuse is conveyed in register rather than as written-out slurs, and nothing escalates in response to the crew.',
+            default: {
+              "1": "This patient is restless and will not settle (SAT +1). They fidget, shift about, want to get up, and answer in a clipped, impatient way. They are still cooperative and still answering, just visibly wound up and hard to keep still for anything.",
+              "2": "This patient is agitated and hostile (SAT +2). They are loud, they swear freely, and they are openly resistant — objecting to being touched or examined, telling the crew to leave them alone, calling them names, refusing to answer questions properly and demanding to know who called an ambulance. Real profanity and real insults directed at the crew, not implied ones. They are not yet threatening violence. Answers to clinical questions come grudgingly, half-answered, or not at all.",
+              "3": "This patient is severely agitated and out of control (SAT +3). Continuous shouting, sustained abuse and explicit threats of violence toward the crew — telling them what they will do to them, that they will find them, that they should get away before something happens. They will not be redirected, will not tolerate being approached or touched, and do not answer clinical questions at all; anything they say is refusal, abuse or threat. If it fits the person, this can include crude sexual remarks aimed at a crew member. Do not soften this into a merely grumpy patient: the point of the scenario is a crew deciding they are not safe and acting on it. What you must NOT write is slurs about race, religion, sexuality, disability or gender identity — if the person would be abusive in that register, convey it as the crew being abused in those terms without producing the words themselves."
+            }
+          },
+          SAT_DELIVERY: {
+            type: 'map_str_text',
+            label: 'Agitation delivery instructions',
+            help: '“mild” is used at SAT +1, “shouted” at +2 and above, and “footer” is appended at every level. Written form is doing real work here: the TTS engine takes its delivery from punctuation and sentence length, so an angry line written as one even sentence comes out sounding calm however hostile the words are. No capitals — some engines spell them out.',
+            default: {
+              "mild": "Write it clipped and impatient — short sentences, not long even ones.",
+              "shouted": "Write it the way it would actually be shouted: short bursts, not sentences. Break it up with full stops and exclamation marks, repeat words for emphasis, cut yourself off. \"Get off me. I said get off! I am not going anywhere with you.\" — not one long even sentence. Never write in capitals.",
+              "footer": "This is a behavioural state, not distress about their symptoms, and it is fixed by the scenario — it does not get better because the crew is polite or worse because they are not. Stay at this level until the scenario changes it."
             }
           }
         }
