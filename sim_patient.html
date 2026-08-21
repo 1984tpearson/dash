@@ -1936,6 +1936,7 @@ function computeCuffPressure(st, now) {
 // --- ECG: rhythm from an AI/assessor-scripted event when there is one,
 // otherwise derived from current HR (no name ever shown in either case) ---
 let _ecgInst = null;
+let _ecgBuiltBox = { w: 0, h: 0 }; // geometry the live instance was constructed for — see observeEcgResize()
 let _show12Lead = false;
 let _currentRhythmKey = null;
 let _lastHR = 90;
@@ -1953,6 +1954,11 @@ function ensureECG(hr) {
     const container = document.getElementById('ecg-12lead-container');
     const wrap = document.getElementById('ecg-display-wrap');
     const availH = wrap.clientHeight;
+    // Remember the geometry this instance was actually built for — the
+    // resize watcher below compares against THIS, not against the last size
+    // it happened to observe, so ordinary layout jitter never accumulates
+    // into a rebuild.
+    _ecgBuiltBox = { w: Math.round(wrap.clientWidth), h: Math.round(availH) };
     _ecgInst = new ECGEngine(container, { mode: '12lead', theme: 'monitor', height: availH });
     _ecgInst.setRhythm(mapped.key, mapped.bpm, mapped.bbbMode);
     _currentRhythmKey = mapped.key;
@@ -2567,26 +2573,60 @@ document.addEventListener('DOMContentLoaded', async () => {
 // window listener is no longer needed. Debounced to the trailing edge —
 // a pane reveal or a drag fires many callbacks, and each rebuild is a full
 // destroy/recreate of the engine.
+// A rebuild is a full destroy/recreate that wipes the trace buffer, so the
+// trace visibly restarts from the left edge every time one runs. That makes
+// "did the box actually change in a way the baked-in geometry can't
+// tolerate" the question this has to answer — NOT "did the box change at
+// all". The wrap is squeezed constantly in normal use: the strips below it
+// in the same flex column (#monitor-actions-bar, #oneoff-strip,
+// #joule-tower) show, hide and re-render as monitoring is applied and the
+// defib is used, the voice modal panel takes vertical space, and on iPad
+// Safari's toolbar collapsing on scroll resizes the viewport under it. An
+// observer that rebuilt on any change turned every one of those into a
+// reset — worst on iPad, where the toolbar alone can fire it repeatedly.
+//
+// So: compare against the geometry the LIVE INSTANCE WAS BUILT FOR
+// (_ecgBuiltBox, set in ensureECG), never against the last size observed —
+// otherwise a series of sub-threshold nudges accumulates into a rebuild
+// that no single change justified. Width is the sensitive axis: it sets the
+// sweep/scale, and a wrong width is the actual combo-pane bug this watcher
+// exists for, so it gets a tight threshold. Height only shifts the vertical
+// scale — a modest mismatch just letterboxes slightly, which is far cheaper
+// than a reset, so it gets a much looser one. Any real rotation or pane
+// reveal moves width well past its threshold anyway.
+const ECG_REBUILD_W_DELTA = 8;      // px of width change before a rebuild is worth a reset
+const ECG_REBUILD_H_FRACTION = 0.35; // height tolerance, as a fraction of the built height…
+const ECG_REBUILD_H_MIN = 64;        // …with a floor, so a short box isn't hair-trigger
+// Proportional rather than a flat pixel count because the things that
+// squeeze this box vertically scale with it: the joule tower appearing can
+// take a chunk of a tall monitor and barely register on a short one. What
+// matters is how far off the vertical scale looks, which is a ratio.
+function ecgHeightTolerance() {
+  return Math.max(ECG_REBUILD_H_MIN, _ecgBuiltBox.h * ECG_REBUILD_H_FRACTION);
+}
 let _ecgResizeTimer = null;
-let _lastEcgBox = { w: 0, h: 0 };
 function observeEcgResize() {
   const wrap = document.getElementById('ecg-display-wrap');
   if (!wrap || typeof ResizeObserver === 'undefined') return;
-  let first = true;
   new ResizeObserver(entries => {
     const box = entries[0].contentRect;
     const w = Math.round(box.width), h = Math.round(box.height);
-    if (w === _lastEcgBox.w && h === _lastEcgBox.h) return;
-    // The observer's own initial callback is just "here is the current
-    // size", not a change — record it without rebuilding, so an already
-    // correctly-sized trace isn't wiped and restarted on load.
-    if (first) { first = false; _lastEcgBox = { w, h }; return; }
-    _lastEcgBox = { w, h };
     if (!w || !h) return; // collapsed (hidden combo pane) — nothing worth rebuilding into, wait for it to come back
+    if (!_ecgInst || actionState.ecg.status !== 'done') return; // nothing built yet; whenever it is, it uses the size current then
+    if (Math.abs(w - _ecgBuiltBox.w) < ECG_REBUILD_W_DELTA &&
+        Math.abs(h - _ecgBuiltBox.h) < ecgHeightTolerance()) return;
     clearTimeout(_ecgResizeTimer);
     _ecgResizeTimer = setTimeout(() => {
+      // Re-check rather than trusting the measurement that scheduled this:
+      // a transient squeeze (a strip appearing and disappearing again) can
+      // resolve back to the built geometry within the debounce window, and
+      // rebuilding then would be a reset for nothing.
+      const nw = Math.round(wrap.clientWidth), nh = Math.round(wrap.clientHeight);
+      if (!nw || !nh) return;
+      if (Math.abs(nw - _ecgBuiltBox.w) < ECG_REBUILD_W_DELTA &&
+          Math.abs(nh - _ecgBuiltBox.h) < ecgHeightTolerance()) return;
       if (actionState.ecg.status === 'done') rebuildECG(_lastHR);
-    }, 200);
+    }, 350);
   }).observe(wrap);
 }
 observeEcgResize();
