@@ -1641,13 +1641,15 @@ async function generateWithAnthropic(apiKey, systemPrompt, userPrompt, kqCount =
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    // The system prompt carries the whole ~8k-token instruction block and the
-    // injected CPG content, and is byte-identical for any two generations in the
-    // same category/pack — so cache it. Repeat generations read the prefix from
-    // cache instead of reprocessing it, which cuts time-to-first-token (and costs
-    // a tenth as much). Everything that varies per generation is in userPrompt,
-    // which sits after the breakpoint and so can never invalidate it.
-    body: JSON.stringify({ model: _model, max_tokens: 4000, stream: true, system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: userPrompt }] })
+    // No prompt caching here, deliberately. Generation is a single call per
+    // scenario, and the system prompt ends with buildCPGContext()'s output — the
+    // full text of a CPG package chosen at RANDOM from the category pool — so two
+    // generations rarely share a prefix at all, let alone within the 5-minute TTL.
+    // A cache write costs 1.25x on input tokens, so caching a prefix that reliably
+    // misses is a straight cost increase. It would also not help the thing it looks
+    // like it should: caching only shortens time-to-first-token on the input side,
+    // and generation time here is dominated by ~1,800 output tokens.
+    body: JSON.stringify({ model: _model, max_tokens: 4000, stream: true, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) { const e=await response.json().catch(()=>({})); throw new Error(e.error?.message||`Anthropic API error ${response.status}`); }
 
