@@ -3617,6 +3617,77 @@ const BARGE_IN_CONFIRM_MS = 600;
 let _rtPlaybackStartedAt = 0; // Date.now() when _rtSpeaking last became true — grace period is measured from here
 let _rtBargeInArmedAt = null; // Date.now() a SpeechStarted armed a possible barge-in, or null if none pending
 
+// --- Self-echo suppression ------------------------------------------------
+// GRACE_MS above only protects the START of a reply, and once replies were
+// split into two segments (see createSpeechQueue) it stopped protecting the
+// second one at all: the grace clock is per REPLY, so by the time segment
+// two begins it has long expired and every millisecond of it is armed. Any
+// echo the browser's AEC doesn't fully cancel then arms AND confirms a
+// barge-in against the patient's own voice — which cuts the reply off, and
+// then reaches speech_final and gets sent back to the model as the
+// student's next question. That is "it hears itself and interjects over its
+// own reply", and it also swallows the student's real next question, which
+// arrives while the patient is busy answering its own echo.
+//
+// Timing alone can't separate the two speakers, but we know something the
+// grace period doesn't: the exact words the patient is currently saying. A
+// transcript that is mostly those words is the speaker leaking into the
+// mic, not a person. That is device-independent (it helps Chrome too, it is
+// just less load-bearing there) and, unlike gating the mic shut, it keeps
+// genuine barge-in working.
+const RT_ECHO_MEMORY_MS = 1500;   // how long after playback ends the words can still come back as echo — the room's own decay plus Deepgram's lag
+const RT_ECHO_MATCH_RATIO = 0.7;  // fraction of the transcript's words that must appear in what the patient just said to call it echo
+// Words spoken during the CURRENT reply, and when they stop counting as
+// possible echo. `until` is 0 while playback is still running (the words
+// are live, so no expiry yet).
+let _rtSpokenEcho = { text: '', until: 0 };
+
+function echoWords(str) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9\s']/g, ' ').split(/\s+/).filter(Boolean);
+}
+
+// Called as each segment starts playing, so a two-segment reply accumulates
+// both halves — segment one's words are still in the room while segment two
+// plays, and are exactly what comes back late.
+function noteSpokenText(text) {
+  _rtSpokenEcho.text = (_rtSpokenEcho.text + ' ' + (text || '')).trim();
+  _rtSpokenEcho.until = 0;
+}
+function startEchoExpiry() {
+  if (_rtSpokenEcho.text) _rtSpokenEcho.until = Date.now() + RT_ECHO_MEMORY_MS;
+}
+function activeEchoText() {
+  if (!_rtSpokenEcho.text) return '';
+  if (_rtSpokenEcho.until && Date.now() > _rtSpokenEcho.until) { _rtSpokenEcho.text = ''; return ''; }
+  return _rtSpokenEcho.text;
+}
+
+// Deliberately only ever true while there IS live echo to be confused with
+// (during playback plus RT_ECHO_MEMORY_MS) — outside that window nothing is
+// suppressed, which keeps the false-positive surface as small as possible.
+// A student who genuinely repeats the patient's words back is the one thing
+// this can misread; requiring MOST of the transcript to be the patient's
+// words (not just some overlap) is what keeps a normal follow-up question —
+// which reuses a noun or two at most — well clear of the threshold.
+function looksLikeSelfEcho(text) {
+  const spoken = activeEchoText();
+  if (!spoken || !text) return false;
+  const said = echoWords(text);
+  if (!said.length) return false;
+  const spokenSet = new Set(echoWords(spoken));
+  const hits = said.filter(w => spokenSet.has(w)).length;
+  return (hits / said.length) >= RT_ECHO_MATCH_RATIO;
+}
+
+// A small grace at each SEGMENT boundary, on top of the per-reply one. The
+// per-reply clock is deliberately not restarted here — that is what made a
+// student interrupting the second half of a sentence wait out a fresh 600ms
+// of deafness, which is why it was made per-reply in the first place. This
+// is short enough not to bring that back, and only has to cover the moment
+// the join itself is loudest.
+const BARGE_IN_SEGMENT_GRACE_MS = 200;
+let _rtSegmentGraceUntil = 0;
+
 // Set once the student has tapped Talk's red X to close the mic while a
 // reply is still finishing playback — see requestEndRealtimeCall(). Kept
 // separate from _rtActive (which stays true until the reply actually
@@ -3766,6 +3837,10 @@ function isDeliberateStop(err, callId) {
 
 function stopRealtimeAudio() {
   _rtSpeaking = false;
+  // The words are no longer being spoken, but they are still in the room and
+  // still in Deepgram's pipeline — they stay echo-suppressible for a moment
+  // longer. See RT_ECHO_MEMORY_MS.
+  startEchoExpiry();
   _rtBargeInArmedAt = null; // any pending barge-in arm/confirm cycle ends with the audio it was about
   if (_rtAudioEl) { try { _rtAudioEl.pause(); } catch (e) {} }
   stopTalkAnimation();
@@ -3880,7 +3955,8 @@ async function startRealtimeCapture() {
       // outright. Otherwise it ARMS — the actual cut happens below, in the
       // Results branch, only if real transcribed text follows within
       // BARGE_IN_CONFIRM_MS.
-      if (_rtSpeaking && !_rtBargeInArmedAt && (Date.now() - _rtPlaybackStartedAt) > BARGE_IN_GRACE_MS) {
+      if (_rtSpeaking && !_rtBargeInArmedAt && (Date.now() - _rtPlaybackStartedAt) > BARGE_IN_GRACE_MS
+          && Date.now() > _rtSegmentGraceUntil) {
         _rtBargeInArmedAt = Date.now();
       }
       return;
@@ -3888,6 +3964,18 @@ async function startRealtimeCapture() {
     if (msg.type !== 'Results') return;
     const alt = msg.channel && msg.channel.alternatives && msg.channel.alternatives[0];
     const text = (alt && alt.transcript) || '';
+    // The patient's own voice coming back through the mic — see
+    // looksLikeSelfEcho(). Computed once and used twice below: it must
+    // neither confirm a barge-in nor accumulate into the text that gets sent
+    // to the model as the student's next question.
+    const selfEcho = looksLikeSelfEcho(text);
+    if (selfEcho) {
+      // A VAD trigger whose only follow-up was the patient's own words is
+      // the same false alarm an expired window is, so disarm rather than
+      // leaving it armed for real speech that may never come.
+      _rtBargeInArmedAt = null;
+      return;
+    }
     if (_rtBargeInArmedAt) {
       if (Date.now() - _rtBargeInArmedAt > BARGE_IN_CONFIRM_MS) {
         _rtBargeInArmedAt = null; // confirmation window expired with nothing behind it — AEC residual/noise, false alarm, keep playing
@@ -4269,6 +4357,10 @@ function finishSpeechRun(run) {
 function createSpeechQueue(callId) {
   const run = { cancelled: false, finished: false, cbs: [] };
   _rtSpeechRun = run;
+  // A new reply starts a new echo window — the previous reply's words are
+  // long out of the room by the time the student has asked something else
+  // and the model has answered.
+  _rtSpokenEcho = { text: '', until: 0 };
   let chain = Promise.resolve();
   let any = false;
   return {
@@ -4326,6 +4418,9 @@ function releaseAudioObjectUrl() {
 // the join meant a student speaking over the second half of a sentence had
 // to get past a fresh 600ms of deafness first.
 function markPlaybackStarted(run) {
+  // Short grace at every segment start, including the join — see
+  // BARGE_IN_SEGMENT_GRACE_MS.
+  _rtSegmentGraceUntil = Date.now() + BARGE_IN_SEGMENT_GRACE_MS;
   if (run && run.playbackStartedAt) { _rtPlaybackStartedAt = run.playbackStartedAt; return; }
   _rtPlaybackStartedAt = Date.now();
   if (run) run.playbackStartedAt = _rtPlaybackStartedAt;
@@ -4373,6 +4468,10 @@ async function playRealtimeSegment(resP, text, callId, run) {
     // applies on the Web Speech fallback path, via utterance.rate.
     audio.playbackRate = 1;
     audio.preservesPitch = true;
+    // Registered just before playback rather than at synthesis time: this is
+    // the point past every cancellation check, so words that are never
+    // actually spoken can't suppress a real question later.
+    noteSpokenText(text);
     // Stream via MediaSource where possible — see playStreamedMp3() for why
     // this is the actual latency win over the old res.blob()-then-play
     // approach (audio starts on the FIRST chunk instead of the whole file).

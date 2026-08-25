@@ -753,6 +753,45 @@ previous URL as it sets the next, so exactly one is ever live; a call
 teardown calls `releaseRealtimeAudio()`. **Anything new that calls
 `URL.createObjectURL` on this path must go through `setAudioSrc`.**
 
+**The patient hearing itself is suppressed by TEXT, not by timing.**
+`BARGE_IN_GRACE_MS` only ever protected the start of a reply, and segmenting
+it into two (see above) stopped it protecting the second half at all: the
+grace clock is per REPLY — deliberately, so interrupting the back half of a
+sentence doesn't wait out a fresh 600ms of deafness — so by the time segment
+two starts it has long expired and every millisecond of it is armed. Any echo
+the browser's AEC doesn't fully cancel then both arms AND confirms a barge-in
+against the patient's own voice, cutting the reply off, and the same words
+then reach `speech_final` and are sent back to the model as the student's
+next question. That is "it hears itself and interjects over its own reply" —
+and it also eats the student's real next question, which arrives while the
+patient is answering its own echo. It presents as an iPad-only fault only
+because AEC there is weaker than Chrome's, not because iOS is special.
+
+Timing cannot separate the two speakers, but the exact words the patient is
+saying are known: `looksLikeSelfEcho()` calls a transcript echo when
+`RT_ECHO_MATCH_RATIO` (0.7) or more of its words appear in what is currently
+being spoken. Echo neither confirms a barge-in nor accumulates into
+`_rtPendingText`. Four things worth keeping:
+- **It only applies while there is live echo to be confused with** — during
+  playback plus `RT_ECHO_MEMORY_MS` after it (the room's decay plus
+  Deepgram's own lag). Outside that window nothing is ever suppressed, which
+  is what keeps the false-positive surface small.
+- **Segments accumulate** (`noteSpokenText` per segment, reset per reply in
+  `createSpeechQueue`): segment one's words are still in the room while
+  segment two plays, and are exactly what comes back late.
+- Registered **just before playback**, past every cancellation check, so
+  words that are never actually spoken can't suppress a real question later.
+- Requiring MOST of the transcript to be the patient's words, rather than
+  some overlap, is what keeps ordinary follow-ups clear of it — those reuse a
+  noun or two at most. Verified against 13 realistic pairs (5 echo, 8 genuine
+  follow-ups): no misses, no false positives. A student who repeats the
+  patient's words back verbatim is the one case it can misread.
+
+`BARGE_IN_SEGMENT_GRACE_MS` (200ms) adds a short grace at each segment start
+on top of the per-reply one, covering the moment the join itself is loudest.
+The per-reply clock is deliberately NOT restarted there — that is the exact
+behaviour that was removed for making interruption sluggish.
+
 **`socket.onclose` is not a no-op.** It used to be, on the assumption that
 `endRealtimeCall()` was the only thing that ever ended a stream. Deepgram
 hangs up on an idle stream (~10-12s — which a backgrounded phone tab
