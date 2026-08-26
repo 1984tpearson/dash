@@ -4191,7 +4191,7 @@ async function generateRealtimePatientReply(question, onSegment) {
     // Likely the larger of the two latency wins here — see the streaming
     // comment below.
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-haiku-4-5',
       max_tokens: 120,
       stream: true,
       system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],

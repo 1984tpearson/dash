@@ -1116,15 +1116,29 @@ function parseFirstJSON(raw) {
 // This page doesn't load nav.js (no shared nav bar here), so it can't use
 // AVNav.logAIUsage — this mirrors it exactly (same table, same pricing, same
 // formula) so all three AI tools on this page show up in the admin cost visualiser.
+// The model ids and the thinking rule are mirrored from nav.js for the same
+// reason. Keep them in step with it: leaving thinking on for a model that
+// defaults to it spends max_tokens on reasoning and can return no text at all.
+const MODEL_SONNET = 'claude-sonnet-5';
+const MODEL_HAIKU = 'claude-haiku-4-5';
+const THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+function thinkingFor(model) {
+  return THINKING_ON_BY_DEFAULT.includes(model) ? { thinking: { type: 'disabled' } } : {};
+}
 const MODEL_PRICING = {
   'claude-sonnet-5': { input: 3, output: 15 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 }
 };
 async function logAIUsage(opts) {
   try {
     opts = opts || {};
-    const pricing = MODEL_PRICING[opts.model] || { input: 0, output: 0 };
+    let pricing = MODEL_PRICING[opts.model];
+    if (!pricing) {
+      console.warn('logAIUsage: no MODEL_PRICING entry for "' + opts.model + '" — cost logged as $0.');
+      pricing = { input: 0, output: 0 };
+    }
     const inTok = opts.input_tokens || 0;
     const outTok = opts.output_tokens || 0;
     const cost = (inTok / 1e6 * pricing.input) + (outTok / 1e6 * pricing.output);
@@ -1223,7 +1237,8 @@ async function runNotesExtraction(key) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: MODEL_SONNET,
+        ...thinkingFor(MODEL_SONNET),
         max_tokens: 4096,
         system: NOTES_EXTRACT_SYSTEM_PROMPT,
         messages: [{ role: 'user', content }]
@@ -1231,7 +1246,7 @@ async function runNotesExtraction(key) {
     });
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
-    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Add to Notes: ' + (DATA[key].title || key) });
+    if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Add to Notes: ' + (DATA[key].title || key) });
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const extracted = parseFirstJSON(rawText);
 
@@ -1325,7 +1340,8 @@ async function generateTestQuestions(key) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: MODEL_SONNET,
+        ...thinkingFor(MODEL_SONNET),
         max_tokens: 1200,
         system: TEST_QUESTIONS_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: `${context}\nGenerate 3 knowledge-assessment questions and answers for this CPG now.` }]
@@ -1333,7 +1349,7 @@ async function generateTestQuestions(key) {
     });
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
-    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Test Questions: ' + (DATA[key].title || key) });
+    if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Test Questions: ' + (DATA[key].title || key) });
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const parsed = parseFirstJSON(rawText);
     const qs = Array.isArray(parsed.questions) ? parsed.questions : [];
@@ -1432,7 +1448,8 @@ async function runExtraction() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: MODEL_SONNET,
+        ...thinkingFor(MODEL_SONNET),
         max_tokens: 4000,
         system: EXTRACT_SYSTEM_PROMPT,
         messages: [{ role: 'user', content }]
@@ -1440,7 +1457,7 @@ async function runExtraction() {
     });
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
-    if (data.usage) logAIUsage({ model: 'claude-sonnet-4-6', input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Extract from Document' });
+    if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Extract from Document' });
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const extracted = parseFirstJSON(rawText);
     finalizeExtractedPackage(extracted);

@@ -214,12 +214,6 @@ select, input[type=number], input[type=text] { font-family: 'Courier New', monos
     <label style="font-size:10px;margin:0;display:flex;align-items:center;gap:4px;" title="Caches the treatment-effect system prompt so repeat calls within a session cost ~1/10th on input tokens. Costs a small premium instead on a single one-off call with no follow-up — turn off while doing isolated test runs.">
       <input type="checkbox" id="cache-toggle" checked onchange="promptCachingEnabled = this.checked"> Cache
     </label>
-    <div style="display:flex;align-items:center;gap:5px;">
-      <label for="ai-model-select" style="font-size:10px;margin:0;">AI Model</label>
-      <select id="ai-model-select" onchange="aiModel = this.value" style="font-size:11px;padding:3px 5px;">
-        <option value="claude-sonnet-4-6" selected>Sonnet</option>
-      </select>
-    </div>
     <div id="run-status"></div>
     <button class="btn btn-secondary" id="join-btn" style="font-size:11px;padding:6px 10px;display:none;" onclick="openJoinModal()">
       <span id="join-btn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#b45309;margin-right:5px;"></span>Join Info
@@ -682,7 +676,18 @@ function extractJsonObject(text) {
 
 let sessionCode = null;
 let currentScenario = null; // set on session creation — provides context for treatment-effect regeneration
-let aiModel = 'claude-sonnet-4-6'; // switchable via the AI Model picker in the topbar
+// Model ids and the thinking rule, mirrored from nav.js — which this page does
+// load, but only at the very bottom, after this script has already run. Keep in
+// step with nav.js: leaving thinking on for a model that defaults to it spends
+// max_tokens on reasoning and can return no visible text at all.
+const MODEL_SONNET = 'claude-sonnet-5';
+const THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+function thinkingFor(model) {
+  return THINKING_ON_BY_DEFAULT.includes(model) ? { thinking: { type: 'disabled' } } : {};
+}
+// Physiological reasoning is Sonnet-only and deliberately not switchable — see
+// CLAUDE.md on why the Haiku option was removed from this path.
+let aiModel = MODEL_SONNET;
 let promptCachingEnabled = true; // switchable via the Cache toggle in the topbar — see regenerateTimelineAfterTreatment
 
 // Running Anthropic API cost for this page session (resets on reload — not
@@ -691,6 +696,7 @@ let promptCachingEnabled = true; // switchable via the Cache toggle in the topba
 const MODEL_PRICING = {
   'claude-sonnet-5': { input: 3, output: 15 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 1, output: 5 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 }
 };
 let sessionAiCostUsd = 0;
@@ -722,7 +728,11 @@ function endAiWork() {
 
 function addAiCost(model, usage) {
   if (!usage) return;
-  const pricing = MODEL_PRICING[model] || { input: 0, output: 0 };
+  let pricing = MODEL_PRICING[model];
+  if (!pricing) {
+    console.warn('addAiCost: no MODEL_PRICING entry for "' + model + '" — cost counted as $0.');
+    pricing = { input: 0, output: 0 };
+  }
   const freshIn = usage.input_tokens || 0;
   const cacheWriteIn = usage.cache_creation_input_tokens || 0;
   const cacheReadIn = usage.cache_read_input_tokens || 0;
@@ -1257,7 +1267,7 @@ Project the deterioration/progression from these starting vitals assuming no tre
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: aiModel, max_tokens: 4096, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: aiModel, ...thinkingFor(aiModel), max_tokens: 4096, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();
@@ -1350,11 +1360,11 @@ Decide this patient's fixed disorientation picture.`;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, system: ORIENTATION_PROFILE_PROMPT, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 400, system: ORIENTATION_PROFILE_PROMPT, messages: [{ role: 'user', content: userPrompt }] })
     });
     if (!res.ok) return {};
     const data = await res.json();
-    addAiCost('claude-haiku-4-5-20251001', data.usage);
+    addAiCost('claude-haiku-4-5', data.usage);
     const text = (data.content || []).map(b => b.text || '').join('').trim();
     const parsed = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim());
     return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
@@ -3951,11 +3961,11 @@ async function classifyTreatmentWithHaiku(actionText) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 400, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) throw new Error(`Router call failed (${response.status})`);
   const data = await response.json();
-  addAiCost('claude-haiku-4-5-20251001', data.usage);
+  addAiCost('claude-haiku-4-5', data.usage);
   const text = (data.content || []).map(b => b.text || '').join('');
   const parsed = extractJsonObject(text);
   const items = Array.isArray(parsed.items) ? parsed.items : [];
@@ -4257,11 +4267,11 @@ async function callPatientAI(question, v, gcsV) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
+      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
     });
     if (response.ok) {
       const data = await response.json();
-      addAiCost('claude-haiku-4-5-20251001', data.usage);
+      addAiCost('claude-haiku-4-5', data.usage);
       replyText = (data.content || []).map(b => b.text || '').join('').trim() || replyText;
       recordVoiceExchange(question, replyText);
     }
@@ -4360,11 +4370,11 @@ Report the finding.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 300, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
     });
     if (response.ok) {
       const data = await response.json();
-      addAiCost('claude-haiku-4-5-20251001', data.usage);
+      addAiCost('claude-haiku-4-5', data.usage);
       replyText = (data.content || []).map(b => b.text || '').join('').trim() || replyText;
     }
   } catch (e) { /* fall through with the apologetic default reply */ }
@@ -4894,7 +4904,7 @@ Project how this patient's vitals change from here, given this specific action.`
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: aiModel, max_tokens: 4096, system: systemParam, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: aiModel, ...thinkingFor(aiModel), max_tokens: 4096, system: systemParam, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();
@@ -5074,7 +5084,7 @@ Project how this patient's vitals change from here, given this command.`;
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: aiModel, max_tokens: 4096, system: systemParam, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: aiModel, ...thinkingFor(aiModel), max_tokens: 4096, system: systemParam, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();

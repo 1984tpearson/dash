@@ -1485,6 +1485,28 @@ editing.
   system before a second pack actually exists that needs a different
   section skeleton. If that day comes, the `hasAvLegalPack()` branches are
   the seams to generalize into a real per-pack renderer choice.
+- **A model that thinks by default will spend `max_tokens` on reasoning and
+  can return no text at all.** The suite runs on two models, named in
+  `nav.js` as `AVNav.MODEL_SONNET` / `AVNav.MODEL_HAIKU`. Sonnet 5 runs
+  adaptive thinking whenever no `thinking` parameter is sent (Sonnet 4.6 did
+  not), and thinking tokens come out of `max_tokens` — so moving generation
+  to it broke the page outright: 4000 max_tokens, 4000 spent thinking, an
+  empty response, and a misleading "No JSON object found" from the parser
+  rather than anything naming the real cause. Every Anthropic call here asks
+  for a bounded JSON or prose answer with nothing to reason about, so all of
+  them pass `...thinkingFor(model)`, which yields `{thinking:{type:'disabled'}}`
+  only for models that both default it on and accept the parameter — Haiku
+  4.5 predates it and 400s. **Anything new that calls the Messages API must
+  spread it too.** The rule is mirrored in four places for load-order reasons
+  that are each commented at the site: `nav.js` is the source; `cpg_editor.html`
+  does not load nav.js at all; `sim_control.html` loads it after the inline
+  script runs; and `pack_overlay.js` guards every other AVNav use behind
+  `window.AVNav &&`, so it must not start assuming it.
+- **`MODEL_PRICING` prices an unknown model at $0 rather than throwing**, so a
+  model added without a pricing row logs real spend as $0.00 and nothing says
+  so. That is not hypothetical — it happened the day Sonnet 5 landed. All three
+  copies (`nav.js`, `sim_control.html`, `cpg_editor.html`) now `console.warn`
+  on a miss, but the row still has to be added by hand in each.
 - **Backticks inside a prompt string break the JS parse.** The AI system
   prompts are themselves JS template literals (backtick-delimited) — never
   use `` ` `` for markdown-style emphasis inside that text (use single

@@ -4805,7 +4805,8 @@ async function rateKQ(index, rating) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: AVNav.MODEL_SONNET,
+        ...AVNav.thinkingFor(AVNav.MODEL_SONNET),
         max_tokens: 500,
         system: `You write a single short-answer knowledge-recall question for${hasAvLegalPack() ? ' Ambulance Victoria paramedic' : ' clinical'} training, testing direct factual knowledge of one specific CPG. All clinical content must come exclusively from the CPG content provided — no invented facts.
 

@@ -21,13 +21,38 @@
   var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
   var ADMIN_UUID = 'fe1f2d3f-2139-44ec-bbe0-14ad6bb748ac';
 
+  // The two models the whole suite runs on. Referenced by name rather than
+  // written as literals at each call site so a future move is one edit here.
+  var MODEL_SONNET = 'claude-sonnet-5';
+  var MODEL_HAIKU = 'claude-haiku-4-5';
+
   // Per-million-token USD pricing for AI usage cost tracking.
   // Add a new entry here whenever a new model is used anywhere in the suite.
+  // Sonnet 5 is listed at its standard rate, not the introductory one that
+  // expires 2026-08-31. The dated Haiku id is kept alongside the bare one so a
+  // still-open older tab keeps pricing correctly after the id was shortened.
   var MODEL_PRICING = {
     'claude-sonnet-5': { input: 3, output: 15 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
+    'claude-haiku-4-5': { input: 1, output: 5 },
     'claude-haiku-4-5-20251001': { input: 1, output: 5 }
   };
+
+  // Models that think by default when no 'thinking' parameter is sent. Every
+  // call in this suite asks for a bounded JSON or prose answer with no tool
+  // use and nothing to reason about, so thinking is pure cost — and because
+  // thinking tokens are spent against max_tokens, leaving it on can consume
+  // the entire budget before any visible text is produced. That is not
+  // theoretical: it broke scenario generation outright the day Sonnet 5
+  // landed (4000 max_tokens, 4000 spent thinking, empty response).
+  // Sent only for models that accept the parameter — Haiku 4.5 predates it
+  // and returns a 400 — so spread this rather than hardcoding it.
+  var THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+  function thinkingFor(model) {
+    return THINKING_ON_BY_DEFAULT.indexOf(model) === -1
+      ? {}
+      : { thinking: { type: 'disabled' } };
+  }
   var SEARCH_COST = 0.01; // per web_search call
 
   if (typeof supabase === 'undefined') {
@@ -236,7 +261,14 @@
   async function logAIUsage(opts) {
     try {
       opts = opts || {};
-      var pricing = MODEL_PRICING[opts.model] || { input: 0, output: 0 };
+      // An unknown model prices at zero rather than throwing, so a missing
+      // entry would otherwise log $0.00 silently and understate real spend —
+      // which is exactly what happened when Sonnet 5 was added without one.
+      var pricing = MODEL_PRICING[opts.model];
+      if (!pricing) {
+        console.warn('AVNav.logAIUsage: no MODEL_PRICING entry for "' + opts.model + '" — cost logged as $0. Add it to nav.js.');
+        pricing = { input: 0, output: 0 };
+      }
       var inTok = opts.input_tokens || 0;
       var outTok = opts.output_tokens || 0;
       var searches = opts.search_count || 0;
@@ -1141,6 +1173,9 @@
   }
 
   window.AVNav = {
+    MODEL_SONNET: MODEL_SONNET,
+    MODEL_HAIKU: MODEL_HAIKU,
+    thinkingFor: thinkingFor,
     toggle: toggle,
     close: close,
     openSettings: openSettings,

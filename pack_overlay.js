@@ -81,12 +81,26 @@
     }
   }
 
+  // Mirrored from nav.js rather than read off AVNav: every other AVNav use in
+  // this file is guarded with `window.AVNav &&`, so this file does not assume
+  // nav.js is present and must not start now. Keep in step with nav.js — a
+  // model that thinks by default will spend max_tokens reasoning and can come
+  // back with no text at all.
+  var MODEL_SONNET = 'claude-sonnet-5';
+  var MODEL_HAIKU = 'claude-haiku-4-5';
+  var THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+  function _thinkingFor(model) {
+    return THINKING_ON_BY_DEFAULT.indexOf(model) === -1 ? {} : { thinking: { type: 'disabled' } };
+  }
+
   async function _callClaude(model, maxTokens, systemPrompt, userPrompt, label) {
     var apiKey = await _getAnthropicKey();
     var response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: model, max_tokens: maxTokens, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify(Object.assign({ model: model, max_tokens: maxTokens },
+        _thinkingFor(model),
+        { system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] }))
     });
     if (!response.ok) { var e = await response.json().catch(function () { return {}; }); throw new Error((e.error && e.error.message) || ('API error ' + response.status)); }
     var data = await response.json();
@@ -115,7 +129,7 @@
       if (!narrative) return [];
       var systemPrompt = 'You write short-answer knowledge-recall questions for clinical training use across paramedic, nursing, and medical education, testing general knowledge of the clinical topic a scenario covers. Respond with valid JSON only — no markdown, no preamble. Format: {"kq":[{"q":"...","answer":"...","max":2}, ...]}. Write EXACTLY 5 questions. Do NOT write clinical vignettes or case presentations — never start a question with a patient description. Ask directly for a fact instead: a definition, a threshold/criterion, a general management principle, a contraindication, or what to do in a specific named situation relevant to this clinical topic. Do not reference this specific patient or scenario in the questions — these test broader knowledge of the topic area, not recall of this one case. Phrase questions in general clinical language, not paramedic-specific jargon (avoid "pre-hospital"/"on-scene"/ambulance-specific phrasing) — this content may be used for nursing or medical training as well as paramedic training. Ground every question in genuinely standard, widely-taught clinical knowledge — do not invent obscure or disputed facts. Answers should be short and direct, not paragraphs. Every question object\'s "max" field must be 2.';
       var userPrompt = 'Scenario summary:\n' + narrative + '\n\nWrite 5 general knowledge-recall questions (and model answers) about the clinical topic this scenario covers, per the rules above.';
-      var parsed = await _callClaude('claude-sonnet-4-6', 1200, systemPrompt, userPrompt, 'generic KQ downgrade');
+      var parsed = await _callClaude(MODEL_SONNET, 1200, systemPrompt, userPrompt, 'generic KQ downgrade');
       var kq = Array.isArray(parsed && parsed.kq) ? parsed.kq : [];
       return kq.filter(function (q) { return q && q.q && q.answer; }).slice(0, 5).map(function (q) {
         return { q: q.q, answer: q.answer, max: 2 };
@@ -186,7 +200,7 @@
 
       var classifySystem = 'You are classifying a clinical scenario summary against a fixed catalogue of CPG codes. Respond with valid JSON only — no markdown, no preamble. Format: {"keys":["key1","key2"]}. Rules: (1) Only use keys that appear exactly as written in the catalogue below (the first column before the first "|"). (2) Return the 1-2 keys that are the CLOSEST clinically appropriate match, even if no exact match exists — pick the nearest reasonable fit rather than returning nothing. (3) Only return an empty array if the summary gives genuinely no clinical signal to classify. (4) Order matters — put the single most central/primary condition first.\n\nCATALOGUE (key | category | code | title):\n' + catalogue;
       var classifyUser = 'Scenario summary:\n' + narrative + '\n\nReturn the best-fitting CPG key(s) as JSON.';
-      var classifyParsed = await _callClaude('claude-haiku-4-5-20251001', 200, classifySystem, classifyUser, 'pack overlay classification');
+      var classifyParsed = await _callClaude(MODEL_HAIKU, 200, classifySystem, classifyUser, 'pack overlay classification');
       var validKeys = {};
       Object.keys(CPG_PACKAGES || {}).forEach(function (k) { validKeys[k] = true; });
       var keys = (Array.isArray(classifyParsed && classifyParsed.keys) ? classifyParsed.keys : []).filter(function (k) { return validKeys[k]; }).slice(0, 2);
@@ -195,7 +209,7 @@
       var context = _contextForKeys(keys);
       var kqSystem = 'You write short-answer knowledge-recall questions for clinical training, testing direct factual knowledge of the CPG content provided. All clinical content must come exclusively from the CPG content provided — no invented facts. Respond with valid JSON only, no markdown. Format: {"kq":[{"q":"...","answer":"...","cpgCode":"...","max":2}, ...]}. Write EXACTLY 3 questions. Each item must include a "cpgCode" field set to the exact CPG code of the guideline that question is testing, taken from the "--- CPG: title (code) ---" headers below — never leave it blank or invent a code that is not shown. Do NOT write a clinical vignette or case presentation — never start with a patient description. Ask directly for the fact instead: a dose/route, a threshold/criterion, a contraindication, an indication, a definition, or what to do in a specific named situation from the CPG. Answers should be short and direct, not paragraphs. Every question object\'s "max" field must be 2.\n\n' + context;
       var kqUser = 'Scenario summary (for topical relevance only — do not reference it in the questions):\n' + narrative + '\n\nWrite 3 CPG-grounded, tagged knowledge questions per the rules above.';
-      var kqParsed = await _callClaude('claude-sonnet-4-6', 1200, kqSystem, kqUser, 'pack overlay KQ generation');
+      var kqParsed = await _callClaude(MODEL_SONNET, 1200, kqSystem, kqUser, 'pack overlay KQ generation');
       var kq = (Array.isArray(kqParsed && kqParsed.kq) ? kqParsed.kq : []).filter(function (q) { return q && q.q && q.answer && q.cpgCode; }).slice(0, 3).map(function (q) {
         return { q: q.q, answer: q.answer, cpgCode: q.cpgCode, max: 2 };
       });

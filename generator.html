@@ -732,16 +732,9 @@ function isAdmin() { return (_authProfile && _authProfile.role === 'admin') || g
 // localStorage from the old default) falls back to the default rather than
 // silently pinning an admin to the slow path.
 const GEN_MODELS = ['claude-sonnet-5', 'claude-sonnet-4-6', 'claude-haiku-4-5'];
-// Models that default to adaptive thinking when no 'thinking' parameter is sent,
-// and that accept being told not to. Sonnet 5 does; Sonnet 4.6 and Haiku 4.5 do
-// not think unless asked, and Haiku 4.5 predates the parameter entirely (sending
-// it there is a 400), which is why this is an explicit list rather than a
-// blanket send. Scenario generation wants none of it: the whole output is a
-// fixed JSON template with no tool use and nothing to reason about, so thinking
-// tokens are spent against max_tokens and add latency for nothing. Leaving it on
-// broke generation outright — the model burned all 4000 tokens thinking and
-// emitted no visible text at all, so the parse found no JSON to read.
-const GEN_MODELS_THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+// The thinking rule itself lives in nav.js (AVNav.thinkingFor) — see there for
+// why every call in the suite disables it. This page keeps only its own list of
+// which models the admin picker offers.
 const GEN_MODEL_DEFAULT = 'claude-sonnet-5';
 function getSelectedModel(){
   if (!isAdmin()) return GEN_MODEL_DEFAULT;
@@ -1230,12 +1223,12 @@ async function classifyCPGFromText(freeText) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 200, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 200, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
     });
     if (!response.ok) return [];
     const data = await response.json();
     if (data.usage && window.AVNav && AVNav.logAIUsage) {
-      AVNav.logAIUsage({ source:'generator', model:'claude-haiku-4-5-20251001', input_tokens:data.usage.input_tokens, output_tokens:data.usage.output_tokens, label:'CPG classification' });
+      AVNav.logAIUsage({ source:'generator', model:'claude-haiku-4-5', input_tokens:data.usage.input_tokens, output_tokens:data.usage.output_tokens, label:'CPG classification' });
     }
     const text = (data.content || []).map(b => b.text || '').join('');
     const parsed = parseFirstJSON(text);
@@ -1660,7 +1653,7 @@ async function generateWithAnthropic(apiKey, systemPrompt, userPrompt, kqCount =
     // like it should: caching only shortens time-to-first-token on the input side,
     // and generation time here is dominated by ~1,800 output tokens.
     body: JSON.stringify({ model: _model, max_tokens: 4000, stream: true,
-      ...(GEN_MODELS_THINKING_ON_BY_DEFAULT.includes(_model) ? { thinking: { type: 'disabled' } } : {}),
+      ...AVNav.thinkingFor(_model),
       system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) { const e=await response.json().catch(()=>({})); throw new Error(e.error?.message||`Anthropic API error ${response.status}`); }
