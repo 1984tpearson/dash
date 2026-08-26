@@ -24,6 +24,7 @@
   // Per-million-token USD pricing for AI usage cost tracking.
   // Add a new entry here whenever a new model is used anywhere in the suite.
   var MODEL_PRICING = {
+    'claude-sonnet-5': { input: 3, output: 15 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-haiku-4-5-20251001': { input: 1, output: 5 }
   };
