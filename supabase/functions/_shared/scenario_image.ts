@@ -153,53 +153,81 @@ export async function resolveImagePrompt(s: Scenario, supabase: SupabaseClient) 
 // caller is a human waiting on the "Regenerate Image" modal for a single
 // image — a callback would need a second function and a round trip back to
 // the browser to tell it the picture had landed.
-//
-// Auth: use an API-Key-Only Wiro project. Signature projects additionally
-// require x-nonce/x-signature per request, which buys nothing here — the key
-// never leaves the edge function, so there is no client-side exposure for a
-// signature to protect against.
-export const WIRO_RUN_BASE = "https://api.wiro.ai/v1/Run";
-export const WIRO_TASK_DETAIL = "https://api.wiro.ai/v1/Task/Detail";
-export const WIRO_POLL_INTERVAL_MS = 1500;
-export const WIRO_POLL_TIMEOUT_MS = 90000;
+const WIRO_RUN_BASE = "https://api.wiro.ai/v1/Run";
+const WIRO_TASK_DETAIL = "https://api.wiro.ai/v1/Task/Detail";
+const WIRO_POLL_INTERVAL_MS = 1500;
+const WIRO_POLL_TIMEOUT_MS = 90000;
 
-// Pulls the first image URL out of a completed task payload. Wiro's task
-// detail shape varies by model, so on a miss the whole payload is logged
-// rather than guessed at — one real run then tells you the exact shape to
-// read, which is faster than defending against every possible one.
-export function firstImageUrl(payload: unknown): string | null {
-  const seen = new Set<unknown>();
-  const walk = (node: unknown): string | null => {
-    if (typeof node === "string") {
-      return /^https?:\/\/\S+\.(png|jpe?g|webp)(\?|$)/i.test(node) ? node : null;
-    }
-    if (!node || typeof node !== "object" || seen.has(node)) return null;
-    seen.add(node);
-    for (const v of Object.values(node as Record<string, unknown>)) {
-      const hit = walk(v);
-      if (hit) return hit;
-    }
-    return null;
+// The model lives in the Run URL (/v1/Run/<owner>/<model>) — there is no
+// account default — so one has to be named here. WIRO_IMAGE_MODEL overrides
+// it, which is what makes trying a different model a secret rather than a
+// deploy; unset, this is what runs.
+const WIRO_DEFAULT_MODEL = "bytedance/seedream-v5-pro";
+
+// Seedream takes a resolution tier and an aspect ratio rather than explicit
+// pixel dimensions. 4:3 matches the card's own aspect-ratio, and 1k (1152x864)
+// is already more than a background behind text needs — 2k costs more for
+// pixels the card never shows. Merged over by WIRO_IMAGE_PARAMS, since a
+// different model will want different keys entirely.
+const WIRO_DEFAULT_PARAMS: Record<string, unknown> = {
+  resolution: "1k",
+  aspectRatio: "4:3",
+  outputFormat: "jpeg",
+  watermark: "false"
+};
+
+// Terminal statuses, per Wiro's task-status list. Anything else (task_queue,
+// task_accept, task_assign, task_preprocess_*, task_start, task_output) means
+// still running, so polling continues.
+const WIRO_STATUS_DONE = "task_postprocess_end";
+const WIRO_STATUS_CANCELLED = "task_cancel";
+
+// Signature auth: hex HMAC-SHA256 over (secret + nonce), keyed with the API
+// key. Wiro projects come in two flavours — API-Key-Only sends just the key,
+// Signature projects additionally require x-nonce and x-signature — so the
+// secret's presence is what selects between them.
+async function wiroSignature(apiKey: string, secret: string, nonce: string) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", enc.encode(apiKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(secret + nonce));
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function wiroHeaders(apiKey: string) {
+  // Wiro's own examples send a JSON body under a multipart/form-data content
+  // type. That is odd, but it is the documented, known-working combination —
+  // don't "correct" it to application/json without testing.
+  const headers: Record<string, string> = {
+    "Content-Type": "multipart/form-data",
+    "x-api-key": apiKey
   };
-  return walk(payload);
+  const secret = Deno.env.get("WIRO_API_SECRET");
+  if (secret) {
+    const nonce = String(Math.floor(Date.now() / 1000));
+    headers["x-nonce"] = nonce;
+    headers["x-signature"] = await wiroSignature(apiKey, secret, nonce);
+  }
+  return headers;
 }
 
 export type WiroImage = { bytes: Uint8Array; contentType: string; ext: string };
 
+function extFor(contentType: string) {
+  return contentType === "image/jpeg" ? "jpg"
+    : contentType === "image/webp" ? "webp"
+    : "png";
+}
+
 export async function generateWiroImage(prompt: string): Promise<WiroImage | null> {
   const apiKey = Deno.env.get("WIRO_API_KEY");
-  const model = Deno.env.get("WIRO_IMAGE_MODEL"); // "<owner-slug>/<model-slug>"
-  if (!apiKey || !model) {
-    console.warn("WIRO_API_KEY / WIRO_IMAGE_MODEL not set — skipping image generation");
+  if (!apiKey) {
+    console.warn("WIRO_API_KEY not set — skipping image generation");
     return null;
   }
-  const headers = { "Content-Type": "application/json", "x-api-key": apiKey };
+  const model = Deno.env.get("WIRO_IMAGE_MODEL") || WIRO_DEFAULT_MODEL;
 
-  // Models disagree on how the output size is expressed — FLUX takes
-  // width/height, Seedream and Nano Banana take an aspect_ratio — so the
-  // non-prompt half of the body is configuration, not code. WIRO_IMAGE_PARAMS
-  // is a JSON object merged over the defaults, which makes trying a different
-  // model two secrets and no redeploy.
   let extraParams: Record<string, unknown> = {};
   const rawParams = Deno.env.get("WIRO_IMAGE_PARAMS");
   if (rawParams) {
@@ -212,17 +240,21 @@ export async function generateWiroImage(prompt: string): Promise<WiroImage | nul
     }
   }
 
+  const headers = await wiroHeaders(apiKey);
+  // No inputImage: this is text-to-image. Passing one would make Seedream
+  // edit that picture instead of generating a new one.
   const runRes = await fetch(`${WIRO_RUN_BASE}/${model}`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ width: 1024, height: 768, ...extraParams, prompt })
+    body: JSON.stringify({ ...WIRO_DEFAULT_PARAMS, ...extraParams, prompt })
   });
   if (!runRes.ok) {
     console.error("Wiro run error:", runRes.status, (await runRes.text().catch(() => "")).slice(0, 500));
     return null;
   }
   const run = await runRes.json();
-  const taskid = run?.taskid || run?.taskId;
+  if (run?.errors?.length) console.error("Wiro run reported errors:", JSON.stringify(run.errors).slice(0, 500));
+  const taskid = run?.taskid;
   if (!taskid) {
     console.error("Wiro run returned no taskid:", JSON.stringify(run).slice(0, 500));
     return null;
@@ -231,9 +263,11 @@ export async function generateWiroImage(prompt: string): Promise<WiroImage | nul
   const deadline = Date.now() + WIRO_POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, WIRO_POLL_INTERVAL_MS));
+    // Each poll re-signs: the nonce must be fresh, so headers cannot be
+    // hoisted out of the loop on a signature project.
     const detailRes = await fetch(WIRO_TASK_DETAIL, {
       method: "POST",
-      headers,
+      headers: await wiroHeaders(apiKey),
       body: JSON.stringify({ taskid })
     });
     if (!detailRes.ok) {
@@ -241,28 +275,32 @@ export async function generateWiroImage(prompt: string): Promise<WiroImage | nul
       continue;
     }
     const detail = await detailRes.json();
-    const status = String(detail?.status ?? detail?.tasks?.[0]?.status ?? "").toLowerCase();
-    if (status.includes("fail") || status.includes("error") || status.includes("cancel")) {
-      console.error("Wiro task failed:", JSON.stringify(detail).slice(0, 500));
+    const task = detail?.tasklist?.[0];
+    const status = task?.status;
+    if (status === WIRO_STATUS_CANCELLED) {
+      console.error("Wiro task was cancelled:", JSON.stringify(task?.debugerror || detail).slice(0, 500));
       return null;
     }
-    const url = firstImageUrl(detail);
-    if (!url) continue;
+    if (status !== WIRO_STATUS_DONE) continue;
 
-    const fileRes = await fetch(url);
-    if (!fileRes.ok) {
-      console.error("Wiro output fetch failed:", fileRes.status, url);
+    // Terminal and successful — an output is expected from here, so a missing
+    // one is a real failure rather than a reason to keep waiting.
+    const output = task?.outputs?.[0];
+    if (!output?.url) {
+      console.error("Wiro task finished with no output URL:", JSON.stringify(task).slice(0, 500));
       return null;
     }
-    // The model decides the output format, so the extension/content-type come
-    // from what actually came back rather than being assumed to be PNG — a
-    // JPEG saved as .png renders fine but is a lie to anything reading the
-    // bucket later.
-    const contentType = (fileRes.headers.get("content-type") || "image/png").split(";")[0].trim();
-    const ext = contentType === "image/jpeg" ? "jpg"
-      : contentType === "image/webp" ? "webp"
-      : "png";
-    return { bytes: new Uint8Array(await fileRes.arrayBuffer()), contentType, ext };
+    const fileRes = await fetch(output.url);
+    if (!fileRes.ok) {
+      console.error("Wiro output fetch failed:", fileRes.status, output.url);
+      return null;
+    }
+    // Prefer the task's own contenttype over the CDN response header — it is
+    // what Wiro says it produced, and outputFormat is ours to set.
+    const contentType = (output.contenttype
+      || fileRes.headers.get("content-type")
+      || "image/png").split(";")[0].trim();
+    return { bytes: new Uint8Array(await fileRes.arrayBuffer()), contentType, ext: extFor(contentType) };
   }
   console.error(`Wiro task ${taskid} did not complete within ${WIRO_POLL_TIMEOUT_MS}ms`);
   return null;
