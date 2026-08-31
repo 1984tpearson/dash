@@ -195,14 +195,17 @@ async function wiroSignature(apiKey: string, secret: string, nonce: string) {
   return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Deliberately sets no Content-Type. Wiro reads form FIELDS, and the body is
+// a FormData, so fetch has to write the header itself — a multipart type
+// without the boundary fetch generates is unparseable.
+//
+// Wiro's own curl example is self-contradictory here: it sends a JSON string
+// body under a hand-set multipart/form-data header, which is not multipart at
+// all. Copying it verbatim produced "Request parameter [prompt] required" for
+// every required field — nothing was parsed. Don't reinstate a hand-set
+// Content-Type on these requests.
 async function wiroHeaders(apiKey: string) {
-  // Wiro's own examples send a JSON body under a multipart/form-data content
-  // type. That is odd, but it is the documented, known-working combination —
-  // don't "correct" it to application/json without testing.
-  const headers: Record<string, string> = {
-    "Content-Type": "multipart/form-data",
-    "x-api-key": apiKey
-  };
+  const headers: Record<string, string> = { "x-api-key": apiKey };
   const secret = Deno.env.get("WIRO_API_SECRET");
   if (secret) {
     const nonce = String(Math.floor(Date.now() / 1000));
@@ -210,6 +213,16 @@ async function wiroHeaders(apiKey: string) {
     headers["x-signature"] = await wiroSignature(apiKey, secret, nonce);
   }
   return headers;
+}
+
+// Every value goes over as a string — these are form fields, so booleans like
+// watermark travel as "false", not false.
+function wiroForm(fields: Record<string, unknown>) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined && v !== null) form.append(k, String(v));
+  }
+  return form;
 }
 
 export type WiroImage = { bytes: Uint8Array; contentType: string; ext: string };
@@ -246,7 +259,7 @@ export async function generateWiroImage(prompt: string): Promise<WiroImage | nul
   const runRes = await fetch(`${WIRO_RUN_BASE}/${model}`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ ...WIRO_DEFAULT_PARAMS, ...extraParams, prompt })
+    body: wiroForm({ ...WIRO_DEFAULT_PARAMS, ...extraParams, prompt })
   });
   if (!runRes.ok) {
     console.error("Wiro run error:", runRes.status, (await runRes.text().catch(() => "")).slice(0, 500));
@@ -268,7 +281,7 @@ export async function generateWiroImage(prompt: string): Promise<WiroImage | nul
     const detailRes = await fetch(WIRO_TASK_DETAIL, {
       method: "POST",
       headers: await wiroHeaders(apiKey),
-      body: JSON.stringify({ taskid })
+      body: wiroForm({ taskid })
     });
     if (!detailRes.ok) {
       console.error("Wiro task detail error:", detailRes.status);
