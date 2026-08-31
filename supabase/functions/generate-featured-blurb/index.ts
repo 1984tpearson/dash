@@ -8,12 +8,11 @@
 //     AI blurb" / "Regenerate image" buttons — Authorization: Bearer <user JWT>,
 //     body { scenario_id, image_only?, image_prompt? }. image_only=true keeps
 //     the existing blurb for that scenario/week (if any) and only rerolls
-//     the image. image_prompt overrides the auto-built Dezgo prompt (used by
+//     the image. image_prompt overrides the auto-built image prompt (used by
 //     the "review before regenerating" modal). Not restricted to the
 //     recent-10 pool — admin can feature anything.
 // Both paths generate a short AI blurb (Anthropic) and a background image
-// (Dezgo, Flux 1 via multipart/form-data) and write them into
-// featured_case_blurbs.
+// (Wiro) and write them into featured_case_blurbs.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CORS_HEADERS = {
@@ -52,6 +51,112 @@ function buildImagePrompt(s: { title?: string; dispatch?: string; arrival_hx?: s
     `Depict the patient and their immediate surroundings — not the person who called for help. ` +
     `Cinematic lighting, wide shot, professional editorial photography style, shallow depth of field.`
   );
+}
+
+// --- Wiro image generation ---------------------------------------------
+// Wiro's Run route is ASYNCHRONOUS: it returns { taskid, socketaccesstoken }
+// immediately and the image arrives later, unlike Dezgo (which this replaced)
+// which returned the PNG bytes in the same response. Results can be collected
+// by polling, websocket, or a callbackUrl; polling is used here because the
+// caller is a human waiting on the "Regenerate Image" modal for a single
+// image — a callback would need a second function and a round trip back to
+// the browser to tell it the picture had landed.
+//
+// Auth: use an API-Key-Only Wiro project. Signature projects additionally
+// require x-nonce/x-signature per request, which buys nothing here — the key
+// never leaves the edge function, so there is no client-side exposure for a
+// signature to protect against.
+const WIRO_RUN_BASE = "https://api.wiro.ai/v1/Run";
+const WIRO_TASK_DETAIL = "https://api.wiro.ai/v1/Task/Detail";
+const WIRO_POLL_INTERVAL_MS = 1500;
+const WIRO_POLL_TIMEOUT_MS = 90000;
+
+// Pulls the first image URL out of a completed task payload. Wiro's task
+// detail shape varies by model, so on a miss the whole payload is logged
+// rather than guessed at — one real run then tells you the exact shape to
+// read, which is faster than defending against every possible one.
+function firstImageUrl(payload: unknown): string | null {
+  const seen = new Set<unknown>();
+  const walk = (node: unknown): string | null => {
+    if (typeof node === "string") {
+      return /^https?:\/\/\S+\.(png|jpe?g|webp)(\?|$)/i.test(node) ? node : null;
+    }
+    if (!node || typeof node !== "object" || seen.has(node)) return null;
+    seen.add(node);
+    for (const v of Object.values(node as Record<string, unknown>)) {
+      const hit = walk(v);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  return walk(payload);
+}
+
+type WiroImage = { bytes: Uint8Array; contentType: string; ext: string };
+
+async function generateWiroImage(prompt: string): Promise<WiroImage | null> {
+  const apiKey = Deno.env.get("WIRO_API_KEY");
+  const model = Deno.env.get("WIRO_IMAGE_MODEL"); // "<owner-slug>/<model-slug>"
+  if (!apiKey || !model) {
+    console.warn("WIRO_API_KEY / WIRO_IMAGE_MODEL not set — skipping image generation");
+    return null;
+  }
+  const headers = { "Content-Type": "application/json", "x-api-key": apiKey };
+
+  const runRes = await fetch(`${WIRO_RUN_BASE}/${model}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ prompt, width: 1024, height: 768 })
+  });
+  if (!runRes.ok) {
+    console.error("Wiro run error:", runRes.status, (await runRes.text().catch(() => "")).slice(0, 500));
+    return null;
+  }
+  const run = await runRes.json();
+  const taskid = run?.taskid || run?.taskId;
+  if (!taskid) {
+    console.error("Wiro run returned no taskid:", JSON.stringify(run).slice(0, 500));
+    return null;
+  }
+
+  const deadline = Date.now() + WIRO_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, WIRO_POLL_INTERVAL_MS));
+    const detailRes = await fetch(WIRO_TASK_DETAIL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ taskid })
+    });
+    if (!detailRes.ok) {
+      console.error("Wiro task detail error:", detailRes.status);
+      continue;
+    }
+    const detail = await detailRes.json();
+    const status = String(detail?.status ?? detail?.tasks?.[0]?.status ?? "").toLowerCase();
+    if (status.includes("fail") || status.includes("error") || status.includes("cancel")) {
+      console.error("Wiro task failed:", JSON.stringify(detail).slice(0, 500));
+      return null;
+    }
+    const url = firstImageUrl(detail);
+    if (!url) continue;
+
+    const fileRes = await fetch(url);
+    if (!fileRes.ok) {
+      console.error("Wiro output fetch failed:", fileRes.status, url);
+      return null;
+    }
+    // The model decides the output format, so the extension/content-type come
+    // from what actually came back rather than being assumed to be PNG — a
+    // JPEG saved as .png renders fine but is a lie to anything reading the
+    // bucket later.
+    const contentType = (fileRes.headers.get("content-type") || "image/png").split(";")[0].trim();
+    const ext = contentType === "image/jpeg" ? "jpg"
+      : contentType === "image/webp" ? "webp"
+      : "png";
+    return { bytes: new Uint8Array(await fileRes.arrayBuffer()), contentType, ext };
+  }
+  console.error(`Wiro task ${taskid} did not complete within ${WIRO_POLL_TIMEOUT_MS}ms`);
+  return null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -93,7 +198,7 @@ Deno.serve(async (req: Request) => {
       requestedScenarioId = body?.scenario_id || null;
       imageOnly = !!body?.image_only;
       if (typeof body?.image_prompt === "string" && body.image_prompt.trim()) {
-        customImagePrompt = body.image_prompt.trim().slice(0, 1000); // Dezgo's own prompt length limit
+        customImagePrompt = body.image_prompt.trim().slice(0, 1000);
       }
       if (!requestedScenarioId) return json({ error: "scenario_id required" }, 400);
     }
@@ -208,52 +313,26 @@ Deno.serve(async (req: Request) => {
       if (!blurb) throw new Error("AI returned an empty blurb");
     }
 
-    // --- 2. Background image (Dezgo) ---
-    const dezgoKey = Deno.env.get("DEZGO_API_KEY");
+    // --- 2. Background image (Wiro) — non-fatal: a failed or unconfigured
+    // image generation still saves the blurb, and the card falls back to its
+    // plain (image-less) styling.
     let imageUrl: string | null = null;
-    if (dezgoKey) {
-      try {
-        const prompt = customImagePrompt || buildImagePrompt(s);
-        const formData = new FormData();
-        formData.append("prompt", prompt);
-        formData.append("width", "1024");
-        formData.append("height", "768");
-        formData.append("steps", "20");
-        formData.append("format", "png");
-        const imgRes = await fetch("https://api.dezgo.com/text2image_flux", {
-          method: "POST",
-          headers: {
-            "X-Dezgo-Key": dezgoKey
-          },
-          body: formData
-        });
-        if (!imgRes.ok) {
-          const errText = await imgRes.text().catch(() => "");
-          console.error("Dezgo error:", imgRes.status, errText.slice(0, 500));
+    try {
+      const img = await generateWiroImage(customImagePrompt || buildImagePrompt(s));
+      if (img) {
+        const path = `${weekKey}/${s.id}-${Date.now()}.${img.ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("featured-scenario-images")
+          .upload(path, img.bytes, { contentType: img.contentType, upsert: true });
+        if (uploadErr) {
+          console.error("Storage upload error:", uploadErr);
         } else {
-          const contentType = imgRes.headers.get("content-type") || "";
-          if (contentType.includes("json")) {
-            const errText = await imgRes.text().catch(() => "");
-            console.error("Dezgo returned JSON instead of an image:", errText.slice(0, 500));
-          } else {
-            const bytes = new Uint8Array(await imgRes.arrayBuffer());
-            const path = `${weekKey}/${s.id}-${Date.now()}.png`;
-            const { error: uploadErr } = await supabase.storage
-              .from("featured-scenario-images")
-              .upload(path, bytes, { contentType: "image/png", upsert: true });
-            if (uploadErr) {
-              console.error("Storage upload error:", uploadErr);
-            } else {
-              const { data: pub } = supabase.storage.from("featured-scenario-images").getPublicUrl(path);
-              imageUrl = pub.publicUrl;
-            }
-          }
+          const { data: pub } = supabase.storage.from("featured-scenario-images").getPublicUrl(path);
+          imageUrl = pub.publicUrl;
         }
-      } catch (imgErr) {
-        console.error("Image generation failed (non-fatal):", imgErr);
       }
-    } else {
-      console.warn("DEZGO_API_KEY not set — skipping image generation");
+    } catch (imgErr) {
+      console.error("Image generation failed (non-fatal):", imgErr);
     }
 
     // --- 3. Save ---
