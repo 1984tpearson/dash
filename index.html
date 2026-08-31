@@ -2416,16 +2416,12 @@ async function requestFeaturedScenarioGeneration(scenarioId, imageOnly, customPr
 // literal — the brief is written by an AI call now, so a second copy here
 // could not reproduce it and would quietly show the admin something other
 // than what the server actually sends.
-// Always asks generate-featured-blurb, even for the Most Popular card (whose
-// generation goes through generate-popular-blurb). Deliberate: the brief
-// depends only on the scenario, prompt_only writes nothing, and
-// generate-popular-blurb has no prompt_only mode — asking IT for a prompt
-// would kick off a real blurb+image generation as a side effect of opening
-// the modal. The prompt the admin confirms is still sent to whichever
-// function owns that card, via image_prompt.
-async function fetchFcImagePrompt(scenarioId) {
+// Asks whichever Edge Function owns this card for the image brief it would
+// send, so the review textarea shows the real thing. prompt_only builds the
+// brief and returns it without generating or writing anything.
+async function fetchFcImagePrompt(scenarioId, fnSlug) {
   if (!_authSession || !_authSession.access_token) throw new Error('Not signed in.');
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/generate-featured-blurb`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${fnSlug || 'generate-featured-blurb'}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${_authSession.access_token}`,
@@ -2443,7 +2439,7 @@ let _pendingImagePromptCtx = null;
 // Opening the modal now costs a round trip (the brief is written server-side),
 // so the textarea and the submit button are held disabled until it lands —
 // submitting an empty prompt would otherwise generate against nothing.
-async function openImagePromptModal(s, container, bg, icon, dot, regenBtn, genFn, renderFn) {
+async function openImagePromptModal(s, container, bg, icon, dot, regenBtn, genFn, renderFn, fnSlug) {
   _pendingImagePromptCtx = {
     s, container, bg, icon, dot, regenBtn,
     genFn: genFn || requestFeaturedScenarioGeneration,
@@ -2458,7 +2454,7 @@ async function openImagePromptModal(s, container, bg, icon, dot, regenBtn, genFn
   document.getElementById('ip-status').textContent = 'Writing image brief…';
   document.getElementById('image-prompt-modal').classList.add('open');
   try {
-    const prompt = await fetchFcImagePrompt(s.id);
+    const prompt = await fetchFcImagePrompt(s.id, fnSlug);
     // The admin can close the modal while this is in flight; don't write into
     // a textarea that now belongs to a different scenario (or to nothing).
     if (!_pendingImagePromptCtx || _pendingImagePromptCtx.s.id !== s.id) return;
@@ -2848,7 +2844,8 @@ async function buildMostPopularCase() {
       openImagePromptModal(
         s, container, bg, null, dot, regenBtn,
         requestPopularScenarioGeneration,
-        (c, ss, ic, dt, bl) => renderMostPopularCaseContent(c, ss, dt, bl)
+        (c, ss, ic, dt, bl) => renderMostPopularCaseContent(c, ss, dt, bl),
+        'generate-popular-blurb'
       );
     };
     container.appendChild(regenBtn);
