@@ -2410,32 +2410,69 @@ async function requestFeaturedScenarioGeneration(scenarioId, imageOnly, customPr
   return { blurb: data.blurb, imageUrl: data.imageUrl || null };
 }
 
-// Mirrors buildImagePrompt() in the generate-featured-blurb Edge Function —
-// used to pre-fill the review textarea with what the server would build by
-// default, before the admin edits and confirms it. Uses arrival_hx (crew's
-// third-person description of the patient/scene) rather than caller_hx
-// (caller's own report), which was causing images to depict the caller
-// instead of the patient.
-function buildFcImagePrompt(s) {
-  const clinicalPicture = s.arrival_hx || s.dispatch || s.title || 'a medical emergency';
-  return `Photorealistic photo of the patient described here: ${clinicalPicture} ` +
-    `Depict the patient and their immediate surroundings — not the person who called for help. ` +
-    `Cinematic lighting, wide shot, professional editorial photography style, shallow depth of field.`;
+// Asks the Edge Function for the image brief it would send, to pre-fill the
+// review textarea. This used to be a client-side mirror of the server's
+// buildImagePrompt(), which worked only while that prompt was a template
+// literal — the brief is written by an AI call now, so a second copy here
+// could not reproduce it and would quietly show the admin something other
+// than what the server actually sends.
+// Always asks generate-featured-blurb, even for the Most Popular card (whose
+// generation goes through generate-popular-blurb). Deliberate: the brief
+// depends only on the scenario, prompt_only writes nothing, and
+// generate-popular-blurb has no prompt_only mode — asking IT for a prompt
+// would kick off a real blurb+image generation as a side effect of opening
+// the modal. The prompt the admin confirms is still sent to whichever
+// function owns that card, via image_prompt.
+async function fetchFcImagePrompt(scenarioId) {
+  if (!_authSession || !_authSession.access_token) throw new Error('Not signed in.');
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/generate-featured-blurb`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${_authSession.access_token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ scenario_id: scenarioId, prompt_only: true })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error || ('Could not build prompt — ' + res.status));
+  return data.imagePrompt || '';
 }
 
 let _pendingImagePromptCtx = null;
 
-function openImagePromptModal(s, container, bg, icon, dot, regenBtn, genFn, renderFn) {
+// Opening the modal now costs a round trip (the brief is written server-side),
+// so the textarea and the submit button are held disabled until it lands —
+// submitting an empty prompt would otherwise generate against nothing.
+async function openImagePromptModal(s, container, bg, icon, dot, regenBtn, genFn, renderFn) {
   _pendingImagePromptCtx = {
     s, container, bg, icon, dot, regenBtn,
     genFn: genFn || requestFeaturedScenarioGeneration,
     renderFn: renderFn || renderFeaturedCase
   };
-  document.getElementById('ip-prompt-textarea').value = buildFcImagePrompt(s);
-  document.getElementById('ip-status').textContent = '';
-  document.getElementById('ip-submit-btn').disabled = false;
-  document.getElementById('ip-submit-btn').textContent = '🔄 Regenerate Image';
+  const textarea = document.getElementById('ip-prompt-textarea');
+  const submitBtn = document.getElementById('ip-submit-btn');
+  textarea.value = '';
+  textarea.disabled = true;
+  submitBtn.disabled = true;
+  submitBtn.textContent = '🔄 Regenerate Image';
+  document.getElementById('ip-status').textContent = 'Writing image brief…';
   document.getElementById('image-prompt-modal').classList.add('open');
+  try {
+    const prompt = await fetchFcImagePrompt(s.id);
+    // The admin can close the modal while this is in flight; don't write into
+    // a textarea that now belongs to a different scenario (or to nothing).
+    if (!_pendingImagePromptCtx || _pendingImagePromptCtx.s.id !== s.id) return;
+    textarea.value = prompt;
+    textarea.disabled = false;
+    submitBtn.disabled = false;
+    document.getElementById('ip-status').textContent = '';
+  } catch (err) {
+    if (!_pendingImagePromptCtx || _pendingImagePromptCtx.s.id !== s.id) return;
+    textarea.disabled = false;
+    document.getElementById('ip-status').innerHTML =
+      `<span style="color:var(--red)">⚠️ ${err.message} — write a prompt by hand to continue</span>`;
+    submitBtn.disabled = false;
+  }
 }
 
 function closeImagePromptModal() {

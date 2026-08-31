@@ -15,6 +15,8 @@
 // (Wiro) and write them into featured_case_blurbs.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+const BLURB_MODEL = "claude-haiku-4-5-20251001";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type, x-cron-secret",
@@ -36,21 +38,135 @@ function getWeekKey(now: Date) {
   return { weekKey: `${now.getFullYear()}-W${weekNum}`, weekNum };
 }
 
-// Uses arrival_hx — the crew's third-person description of the patient's
-// actual position/appearance/scene on arrival (e.g. "Patient found seated
-// at the kitchen table, slumped forward with head resting on her arms") —
-// rather than caller_hx, which is written from the CALLER's point of view
-// ("Caller is Isabella's housemate who reports...") and was causing the
-// image model to render the caller instead of the patient. Falls back to
-// dispatch, then title. Explicit instruction not to depict the caller kept
-// as a safety net since arrival_hx occasionally still mentions them briefly.
-function buildImagePrompt(s: { title?: string; dispatch?: string; arrival_hx?: string; caller_hx?: string }) {
-  const clinicalPicture = s.arrival_hx || s.dispatch || s.title || "a medical emergency";
-  return (
-    `Photorealistic photo of the patient described here: ${clinicalPicture} ` +
-    `Depict the patient and their immediate surroundings — not the person who called for help. ` +
-    `Cinematic lighting, wide shot, professional editorial photography style, shallow depth of field.`
-  );
+type Scenario = {
+  id?: string;
+  title?: string;
+  category?: string;
+  subcategory?: string;
+  subtitle?: string;
+  dispatch?: string;
+  arrival_hx?: string;
+  caller_hx?: string;
+  patient_meta?: Record<string, unknown>;
+  vitals?: Record<string, unknown>;
+};
+
+async function getAnthropicKey(supabase: ReturnType<typeof createClient>) {
+  // Same source the client uses (getAnthropicKeyForKQ in index.html).
+  const { data: cfg, error: cfgErr } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", "anthropic_api_key")
+    .maybeSingle();
+  if (cfgErr) throw cfgErr;
+  const key = cfg?.value;
+  if (!key) throw new Error("anthropic_api_key not found in app_config");
+  return key as string;
+}
+
+// Turns the scenario into a brief a camera could actually shoot. This is a
+// separate AI call rather than something built by string concatenation
+// because the source material is a clinical handover, and the two are not the
+// same kind of writing at all:
+//
+//  - Most of arrival_hx is unphotographable. "Wife states", "no known
+//    psychiatric history", "not himself for the past two days" describe a
+//    history, not a moment, and only dilute the handful of words that are
+//    actually an image.
+//  - Its negations were actively harmful. Diffusion models do not negate, so
+//    "denies any witnessed seizure activity, recent head trauma" simply put
+//    'seizure' and 'head trauma' into the prompt — the old prompt was asking
+//    for the injuries the scenario says are absent.
+//  - It routinely features the caller. The old prompt pasted the wife in and
+//    then appended "not the person who called for help" to argue with itself;
+//    leaving her out of the brief in the first place is the real fix, and is
+//    why that trailing instruction is gone.
+//  - It spans time (two days of illness, 90 minutes since found) where a
+//    photograph is one instant, and nothing said which instant.
+//  - The person was missing entirely. patient_meta has age, gender and
+//    ethnicity and none of it reached the image — hence both being selected
+//    now and being handed over as the first thing in the brief.
+//
+// The old "cinematic lighting / editorial / shallow depth of field" tail is
+// deliberately not reinstated here: that keyword-stuffing is what produced
+// the over-produced stock-photo gloss that reads as AI-generated.
+const IMAGE_BRIEF_PROMPT =
+  'You turn a clinical training scenario into a short brief for a photographer. ' +
+  'Describe ONE still photograph of the patient at the moment the crew arrives.\n\n' +
+  'Rules:\n' +
+  '- Open with the person: approximate age, sex, build, and what they are wearing. Infer clothing from the situation (someone found after going to bed is in sleepwear).\n' +
+  '- Then their posture and expression at this instant, then the room around them and the light in it.\n' +
+  '- Describe only what a camera in that room would see. No history, no symptoms that are not visible, no what anyone said, no diagnosis, no vital signs, no medical equipment unless the scenario puts it there.\n' +
+  '- The patient is ALONE in the frame. Never mention family, bystanders, callers or paramedics.\n' +
+  '- Describe only what IS in the picture. Never state that something is absent, normal, ruled out or denied — an image model cannot render an absence, and naming one puts it in the picture.\n' +
+  '- Plain declarative sentences, one paragraph, under 70 words. No camera brands, no lens specs, no photography style words, no artistic adjectives.\n' +
+  '- Output the brief only. No preamble, no quotation marks.';
+
+function briefSourceFor(s: Scenario) {
+  const pm = (s.patient_meta || {}) as Record<string, string>;
+  const timeOfDay = (s.vitals as Record<string, string> | undefined)?.TimeOfDay;
+  const lines = [
+    pm.age ? `Patient age: ${pm.age}` : "",
+    pm.gender ? `Patient sex: ${pm.gender}` : "",
+    pm.ethnicity ? `Patient ethnicity: ${pm.ethnicity}` : "",
+    timeOfDay ? `Time of day: ${timeOfDay}` : "",
+    s.title ? `Scenario: ${s.title}` : "",
+    s.dispatch ? `Dispatch: ${s.dispatch}` : "",
+    s.arrival_hx ? `Scene on arrival: ${s.arrival_hx}` : ""
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+// Fallback for when the brief call fails — deliberately demographics-led and
+// stripped back to the one sentence that describes the scene, rather than the
+// whole handover. Worse than the AI brief, but it is a photograph of a person
+// rather than a paragraph of negations.
+function buildFallbackImagePrompt(s: Scenario) {
+  const pm = (s.patient_meta || {}) as Record<string, string>;
+  const who = [pm.age ? `${pm.age}` : "", pm.gender || "person"].filter(Boolean).join(" ").trim();
+  const scene = (s.arrival_hx || s.dispatch || s.title || "a medical emergency").split(/(?<=[.!?])\s/)[0];
+  return `A photograph of a ${who || "person"} alone in the frame. ${scene}`;
+}
+
+async function buildImageBrief(s: Scenario, anthropicKey: string) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": anthropicKey,
+      "anthropic-version": "2023-06-01"
+    },
+    body: JSON.stringify({
+      model: BLURB_MODEL,
+      max_tokens: 300,
+      system: IMAGE_BRIEF_PROMPT,
+      messages: [{ role: "user", content: `${briefSourceFor(s)}\n\nWrite the photograph brief now.` }]
+    })
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error?.message || `Anthropic API error ${res.status}`);
+  }
+  const data = await res.json();
+  const text = (data.content || [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("")
+    .trim();
+  if (!text) throw new Error("AI returned an empty image brief");
+  return { prompt: text, usage: data.usage || null };
+}
+
+// Never throws: a brief that could not be written falls back rather than
+// costing the caller their blurb, matching how a failed image already behaves.
+async function resolveImagePrompt(s: Scenario, supabase: ReturnType<typeof createClient>) {
+  try {
+    const key = await getAnthropicKey(supabase);
+    return await buildImageBrief(s, key);
+  } catch (err) {
+    console.error("Image brief generation failed — falling back:", err);
+    return { prompt: buildFallbackImagePrompt(s), usage: null };
+  }
 }
 
 // --- Wiro image generation ---------------------------------------------
@@ -103,10 +219,27 @@ async function generateWiroImage(prompt: string): Promise<WiroImage | null> {
   }
   const headers = { "Content-Type": "application/json", "x-api-key": apiKey };
 
+  // Models disagree on how the output size is expressed — FLUX takes
+  // width/height, Seedream and Nano Banana take an aspect_ratio — so the
+  // non-prompt half of the body is configuration, not code. WIRO_IMAGE_PARAMS
+  // is a JSON object merged over the defaults, which makes trying a different
+  // model two secrets and no redeploy.
+  let extraParams: Record<string, unknown> = {};
+  const rawParams = Deno.env.get("WIRO_IMAGE_PARAMS");
+  if (rawParams) {
+    try {
+      const parsed = JSON.parse(rawParams);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) extraParams = parsed;
+      else console.error("WIRO_IMAGE_PARAMS is not a JSON object — ignoring");
+    } catch {
+      console.error("WIRO_IMAGE_PARAMS is not valid JSON — ignoring");
+    }
+  }
+
   const runRes = await fetch(`${WIRO_RUN_BASE}/${model}`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ prompt, width: 1024, height: 768 })
+    body: JSON.stringify({ width: 1024, height: 768, ...extraParams, prompt })
   });
   if (!runRes.ok) {
     console.error("Wiro run error:", runRes.status, (await runRes.text().catch(() => "")).slice(0, 500));
@@ -176,6 +309,7 @@ Deno.serve(async (req: Request) => {
     let requestedScenarioId: string | null = null;
     let manualUserId: string | null = null;
     let imageOnly = false;
+    let promptOnly = false;
     let customImagePrompt: string | null = null;
     if (!isCron) {
       const authHeader = req.headers.get("Authorization") || "";
@@ -197,6 +331,7 @@ Deno.serve(async (req: Request) => {
       const body = await req.json().catch(() => ({}));
       requestedScenarioId = body?.scenario_id || null;
       imageOnly = !!body?.image_only;
+      promptOnly = !!body?.prompt_only;
       if (typeof body?.image_prompt === "string" && body.image_prompt.trim()) {
         customImagePrompt = body.image_prompt.trim().slice(0, 1000);
       }
@@ -223,7 +358,7 @@ Deno.serve(async (req: Request) => {
       // Admin can feature any scenario by id, regardless of the recent pool.
       const { data: chosen, error: chosenErr } = await supabase
         .from("scenarios")
-        .select("id, title, category, subcategory, subtitle, dispatch, arrival_hx, caller_hx")
+        .select("id, title, category, subcategory, subtitle, dispatch, arrival_hx, caller_hx, patient_meta, vitals")
         .eq("id", requestedScenarioId)
         .maybeSingle();
       if (chosenErr) throw chosenErr;
@@ -235,7 +370,7 @@ Deno.serve(async (req: Request) => {
       // in buildFeaturedCase() (scenario.html).
       const { data: recentPool, error: poolErr } = await supabase
         .from("scenarios")
-        .select("id, title, category, subcategory, subtitle, dispatch, arrival_hx, caller_hx")
+        .select("id, title, category, subcategory, subtitle, dispatch, arrival_hx, caller_hx, patient_meta, vitals")
         .eq("ai_generated", true)
         .order("created_at", { ascending: false })
         .limit(10);
@@ -247,6 +382,16 @@ Deno.serve(async (req: Request) => {
     }
 
     const detail = s.subtitle || s.dispatch || s.caller_hx || "";
+
+    // prompt_only: build and return the image brief without generating
+    // anything. The brief is written by AI now, so the admin's review modal
+    // can no longer mirror it client-side the way buildFcImagePrompt() did —
+    // it asks for the real one instead, and a hand-copied second version
+    // cannot silently drift from what the server actually sends.
+    if (promptOnly) {
+      const { prompt: previewPrompt } = await resolveImagePrompt(s, supabase);
+      return json({ ok: true, imagePrompt: previewPrompt });
+    }
 
     // --- 1. Blurb (Anthropic) — skipped if image_only and a blurb for this
     // scenario/week already exists, so regenerating the image doesn't churn
@@ -266,15 +411,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!blurb) {
-      // Same source the client uses (getAnthropicKeyForKQ in scenario.html).
-      const { data: cfg, error: cfgErr } = await supabase
-        .from("app_config")
-        .select("value")
-        .eq("key", "anthropic_api_key")
-        .maybeSingle();
-      if (cfgErr) throw cfgErr;
-      const anthropicKey = cfg?.value;
-      if (!anthropicKey) throw new Error("anthropic_api_key not found in app_config");
+      const anthropicKey = await getAnthropicKey(supabase);
 
       const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -284,7 +421,7 @@ Deno.serve(async (req: Request) => {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          model: BLURB_MODEL,
           max_tokens: 200,
           system:
             'You write a short, punchy teaser (2 sentences), shown on a homepage "Featured Scenario" card for clinical instructors and educators browsing the scenario library. Write it as a vivid, standalone description of the patient and what\'s happening to them — like a case summary someone would tell a colleague. Do NOT reference the assessment, the learner/student, or what needs to be figured out/managed/determined in any form — no "assess", "determine the cause", "learners must", "requires quick thinking", or similar framing. Just describe the case itself. Never address the reader as "you". Plain text only, no markdown, no quotation marks. Under 40 words total. Do not invent clinical details not implied by what is given.',
@@ -317,8 +454,17 @@ Deno.serve(async (req: Request) => {
     // image generation still saves the blurb, and the card falls back to its
     // plain (image-less) styling.
     let imageUrl: string | null = null;
+    let imagePrompt = "";
+    let briefUsage: { input_tokens?: number; output_tokens?: number } | null = null;
     try {
-      const img = await generateWiroImage(customImagePrompt || buildImagePrompt(s));
+      if (customImagePrompt) {
+        imagePrompt = customImagePrompt;
+      } else {
+        const built = await resolveImagePrompt(s, supabase);
+        imagePrompt = built.prompt;
+        briefUsage = built.usage;
+      }
+      const img = await generateWiroImage(imagePrompt);
       if (img) {
         const path = `${weekKey}/${s.id}-${Date.now()}.${img.ext}`;
         const { error: uploadErr } = await supabase.storage
@@ -349,13 +495,13 @@ Deno.serve(async (req: Request) => {
 
     await supabase.from("ai_usage_log").insert({
       source: isCron ? "cron-featured-scenario" : "admin-featured-scenario",
-      model: "claude-haiku-4-5-20251001",
-      input_tokens: aiUsage?.input_tokens ?? 0,
-      output_tokens: aiUsage?.output_tokens ?? 0,
+      model: BLURB_MODEL,
+      input_tokens: (aiUsage?.input_tokens ?? 0) + (briefUsage?.input_tokens ?? 0),
+      output_tokens: (aiUsage?.output_tokens ?? 0) + (briefUsage?.output_tokens ?? 0),
       label: `Featured scenario ${imageOnly ? "image regen" : "blurb"}${imageUrl ? " + image" : ""} (${isCron ? "auto" : "manual"}) — ${s.title || s.id}`
     });
 
-    return json({ ok: true, weekKey, scenarioId: s.id, blurb, imageUrl });
+    return json({ ok: true, weekKey, scenarioId: s.id, blurb, imageUrl, imagePrompt });
   } catch (err) {
     console.error("generate-featured-blurb failed:", err);
     return json({ ok: false, error: String(err) }, 500);
