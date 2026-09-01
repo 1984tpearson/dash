@@ -25,8 +25,10 @@ is not dead code; don't remove it in a cleanup sweep.
 
 Backend is Supabase (`sim_sessions`, `scenarios`, `scenario_sim_timelines`
 tables; anon key is hardcoded client-side, this is a training tool not a
-security boundary). Two edge functions exist (`generate-avatar`,
-`generate-featured-blurb`) — unrelated to the sim engine below.
+security boundary). Three edge functions exist (`generate-avatar`,
+`generate-featured-blurb`, `generate-popular-blurb`) — all unrelated to the
+sim engine below; the latter two are covered in their own section further
+down.
 
 ## The real-time scenario simulator (most active area)
 
@@ -1294,6 +1296,122 @@ sorted overrides array per array reference (WeakMap) instead of
 re-sorting on every single sample — it was re-sorting the same small
 array dozens of times per render, across both pages, not just while
 editing.
+
+## The homepage cards' blurb + image pipeline
+
+`index.html`'s **Featured Scenario** and **Most Popular** cards each show an AI
+teaser over an AI-generated background image, produced by two Supabase edge
+functions — `generate-featured-blurb` (weekly cron via pg_cron + the admin's
+"Mark as Featured Scenario" / "Regenerate image" buttons) and
+`generate-popular-blurb` (whichever scenario currently has the most
+favourites). Results are cached in `featured_case_blurbs` /
+`popular_case_blurbs`; images land in the `featured-scenario-images` bucket
+and only the public URL is stored.
+
+**Everything not card-specific lives in
+`supabase/functions/_shared/scenario_image.ts`** — the image brief and its
+fallback, the Wiro client, the storage upload, the teaser prompt, the scenario
+column list, the Anthropic key lookup. The two functions were hand-copied from each other before this
+existed, `generate-popular-blurb`'s own comment said so ("Mirrors
+buildImagePrompt() in generate-featured-blurb"), and they had already drifted.
+What stays per-function is only what genuinely differs: how the target
+scenario is chosen, which table it writes, the storage path prefix, and the
+card's name in the teaser prompt. **A change here reaches both cards — which
+is the point, but it also means a mistake breaks both.**
+
+`generate-popular-blurb` was live for a long time with its source in nobody's
+repo (only `generate-avatar` and `generate-featured-blurb` were tracked). If a
+function seems to be doing something the code doesn't explain, check
+`list_edge_functions` against `supabase/functions/` before assuming.
+
+### The image prompt is a photograph brief, not the handover
+
+The old prompt pasted `arrival_hx` into "Photorealistic photo of the patient
+described here: …" and got back exactly what it asked for. Four things were
+wrong with it, and all four are the reason `IMAGE_BRIEF_PROMPT` is written the
+way it is:
+- **Most of a handover is unphotographable.** "Wife states", "no known
+  psychiatric history", "not himself for the past two days" describe a
+  history, not a moment, and dilute the few words that are an image.
+- **Negations were actively harmful.** Diffusion models don't negate, so
+  "denies any witnessed seizure activity, recent head trauma" put *seizure*
+  and *head trauma* into the prompt — asking for the injuries the scenario
+  says are absent. Hence the rule forbidding any statement that something is
+  absent, normal, ruled out or denied.
+- **It fought itself about the caller.** `arrival_hx` routinely features them,
+  so the prompt appended "not the person who called for help" to argue with
+  its own input. Leaving them out of the brief is the fix; that trailing
+  instruction is gone.
+- **The patient was missing.** `patient_meta` carries age, gender and
+  ethnicity and none of it reached the image — the function didn't even
+  select the column. It does now, along with `vitals.TimeOfDay` for the light.
+
+So the brief is written by **its own Haiku call** (`buildImageBrief`), not by
+string concatenation: turning a handover into one photographable instant is a
+language task. It is deliberately a **separate call from the teaser**, because
+`image_only` skips the teaser to avoid rewording something the admin was happy
+with — sharing a call would break that. A failed brief falls back to
+`buildFallbackImagePrompt` (demographics plus the first sentence of the scene)
+rather than costing the caller their blurb.
+
+**Do not reinstate a "cinematic lighting / editorial / shallow depth of field"
+tail.** That keyword-stuffing is what produced the over-produced stock-photo
+gloss that reads as AI-generated; newer models follow plain description better
+without it.
+
+The brief being AI-written is also why `index.html` asks the server for it
+(`prompt_only`) instead of mirroring it client-side. `buildFcImagePrompt()`
+worked only while the prompt was a template literal; a copy can't reproduce an
+AI call, and would have quietly shown the admin something other than what the
+server sends. `prompt_only` writes nothing, and each card asks its own
+function.
+
+### Wiro (`api.wiro.ai`) — the image provider, and its traps
+
+Replaced Dezgo (Flux 1), whose output was the complaint that started this.
+Four things about this API are non-obvious and all four cost a round of
+debugging:
+
+- **It takes FORM FIELDS, not JSON — and you must not set `Content-Type`.**
+  The body is a `FormData` so `fetch` writes the header with its own boundary.
+  Wiro's published curl example hand-sets `Content-Type: multipart/form-data`
+  and then sends a JSON string body, which is not multipart at all and cannot
+  ever have worked as printed. Copying it verbatim produced `Request parameter
+  [prompt] required` for every required field — nothing parsed, no task
+  created, and so nothing visible in the Wiro dashboard either. Values are
+  stringified going in: `watermark` travels as `"false"`.
+- **Run is ASYNCHRONOUS.** `POST /v1/Run/<owner>/<model>` returns
+  `{taskid, socketaccesstoken}`, not the image. Results come by polling,
+  websocket, or `callbackUrl`; polling is used because the caller is an admin
+  waiting on the Regenerate Image modal, and a callback would need a second
+  function plus a round trip back to the browser. Poll `POST /v1/Task/Detail`
+  and read `tasklist[0]`: `task_postprocess_end` is done, `task_cancel` is
+  dead, everything else means keep waiting. The image is
+  `tasklist[0].outputs[0].url`.
+- **The model is in the URL and there is no account default**, so one must be
+  named in code — `WIRO_DEFAULT_MODEL`, currently `bytedance/seedream-v5-pro`
+  (Seedream was picked to get something working; FLUX.1-Krea-dev is the
+  stronger candidate for photorealistic people and is worth trying).
+  `WIRO_IMAGE_MODEL` overrides it and `WIRO_IMAGE_PARAMS` (a JSON object)
+  overrides the body fields, so swapping models is secrets, not a deploy —
+  which matters because models disagree on the body entirely (Seedream takes
+  `resolution` + `aspectRatio`, FLUX takes `width`/`height`).
+- **Auth has two modes.** API-Key-Only sends just `x-api-key` (what this
+  project uses); Signature projects additionally need `x-nonce` and
+  `x-signature`, a hex HMAC-SHA256 over `secret + nonce` keyed with the API
+  key. Setting `WIRO_API_SECRET` is what switches modes. Each request re-signs
+  — the nonce must be fresh, so headers can't be hoisted out of the poll loop.
+
+Image generation is **non-fatal throughout**: an unset key, a failed run or a
+timeout logs and returns null, the teaser still saves, and the card renders in
+its plain image-less styling. That is why a broken image path looks like
+"nothing happened" rather than an error — **check the function logs, not the
+Wiro dashboard**, since a request rejected at parameter validation never
+becomes a task.
+
+**Note `wiro.ai` is blocked by the egress proxy in Claude Code web sessions**,
+so their docs can't be fetched from there. Paste the model's
+`llms-full.txt` in instead — it carries the exact body params and task shape.
 
 ## Open TODOs
 
