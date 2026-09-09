@@ -72,6 +72,34 @@
   input[type=range]{background:var(--btn-border)!important;}
   input[type=range]::-webkit-slider-thumb{background:var(--text-bright)!important;box-shadow:none!important;}
   .theme-btn.active{box-shadow:0 0 8px var(--text-bright)!important;}
+
+  /* ── Second-screen display mode ──────────────────────────────────────
+     Loaded as ecg.html?display=<code>. Everything that would name the
+     rhythm or let the viewer change it is hidden — the point is a bare
+     trace on a projector/tablet the student reads without being told
+     what they are looking at. */
+  body.display-mode{padding:0;justify-content:center;}
+  body.display-mode .monitor{width:100vw;max-width:none;border:none;border-radius:0;padding:10px 12px;}
+  body.display-mode .controls,
+  body.display-mode .footer,
+  body.display-mode .title-label,
+  body.display-mode .rhythm-name,
+  body.display-mode #captureBtn,
+  body.display-mode #secondScreenRow,
+  body.display-mode .bbb-row,
+  body.display-mode .theme-row{display:none!important;}
+  body.display-mode #ssStatus{position:fixed;bottom:6px;left:8px;font-size:9px;letter-spacing:1px;color:var(--text-dimmer,#005522);opacity:.6;}
+
+  /* ── Second-screen QR modal ───────────────────────────────────────── */
+  .ss-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+  .ss-backdrop.open{display:flex;}
+  .ss-card{background:var(--bg-monitor,#050f08);border:1px solid var(--btn-active-border,#00cc66);border-radius:6px;padding:20px;max-width:360px;width:100%;text-align:center;}
+  .ss-card h3{font-family:'Orbitron',monospace;font-size:12px;letter-spacing:3px;color:var(--text-bright,#00ff88);font-weight:700;margin-bottom:6px;}
+  .ss-card p{font-size:10px;letter-spacing:1px;color:var(--text-dim,#00aa55);line-height:1.6;margin-bottom:12px;}
+  #ssQr{background:#fff;padding:10px;border-radius:4px;display:inline-block;min-height:40px;}
+  #ssQr img,#ssQr canvas{display:block;}
+  .ss-url{margin-top:12px;font-size:9px;letter-spacing:.5px;color:var(--text-mid,#00cc66);word-break:break-all;}
+  .ss-url a{color:inherit;}
 </style>
 </head>
 <body>
@@ -139,23 +167,27 @@
       <span class="slider-note" id="sliderNote"></span>
     </div>
   </div>
-  <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+  <div class="bbb-row" style="margin-top:10px;display:flex;gap:8px;align-items:center;">
     <span style="font-size:9px;letter-spacing:2px;color:var(--text-dim,#00aa55);opacity:.7">BBB:</span>
     <button class="btn" id="bbb-none" onclick="setBBB('none')">NONE</button>
     <button class="btn" id="bbb-lbbb" onclick="setBBB('lbbb')">LBBB</button>
     <button class="btn" id="bbb-rbbb" onclick="setBBB('rbbb')">RBBB</button>
   </div>
-  <div style="margin-top:8px;display:flex;gap:6px;align-items:center;">
+  <div class="theme-row" style="margin-top:8px;display:flex;gap:6px;align-items:center;">
     <span style="font-size:9px;letter-spacing:2px;color:var(--text-dim);opacity:.7;white-space:nowrap;">THEME:</span>
     <button class="btn theme-btn active" id="theme-monitor" onclick="setTheme('monitor')" style="flex:1">⬛ MONITOR</button>
     <button class="btn theme-btn" id="theme-paper" onclick="setTheme('paper')" style="flex:1">📄 PAPER</button>
     <button class="btn theme-btn" id="theme-random"       onclick="setTheme('random')"       style="flex:1;font-size:9px;">RANDOM DARK</button>
     <button class="btn theme-btn" id="theme-random-paper" onclick="setTheme('random-paper')" style="flex:1;font-size:9px;">RANDOM PAPER</button>
   </div>
-  <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+  <div id="secondScreenRow" style="margin-top:8px;display:flex;gap:8px;align-items:center;">
     <button id="captureBtn" class="btn" onclick="toggleCapture()"
       style="flex:1;letter-spacing:2px;text-transform:uppercase;font-size:10px;">
       ⏸ CAPTURE
+    </button>
+    <button id="secondScreenBtn" class="btn" onclick="openSecondScreen()"
+      style="flex:1;letter-spacing:2px;text-transform:uppercase;font-size:10px;">
+      📺 SECOND SCREEN
     </button>
   </div>
   <div id="captureFlash" style="position:fixed;inset:0;background:white;opacity:0;pointer-events:none;z-index:9999;transition:opacity 0.15s;"></div>
@@ -164,13 +196,169 @@
   </div>
 </div>
 
+<div class="ss-backdrop" id="ssModal" onclick="if(event.target===this)closeSecondScreen()">
+  <div class="ss-card">
+    <h3>SECOND SCREEN</h3>
+    <p id="ssHint">Scan on the viewing device. It shows this trace only &mdash; no
+      controls, no rhythm name &mdash; and follows every change you make here.</p>
+    <div id="ssQr"></div>
+    <div class="ss-url" id="ssUrl"></div>
+    <button class="btn" onclick="closeSecondScreen()" style="margin-top:14px;width:100%;">CLOSE</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://1984tpearson.github.io/dash/ecg_engine.js"></script>
 <script>
 let _ecg = null;
 let _currentKey = 'nsr';
 let _currentBBB = 'none';
+let _currentTheme = 'monitor';
+let _currentBpm = 72;
+let _captureOn = false;
+
+// ── Second-screen sync ──────────────────────────────────────────────────
+// A viewing device loads this same file as ecg.html?display=<code> and
+// renders the trace alone (see .display-mode CSS). There is no server here,
+// so the two screens meet on one Supabase row: the control screen writes
+// {key,bpm,bbb,theme,capture} on every change, the display screen polls it.
+// The row is the whole protocol — nothing else is shared.
+const SS_SUPABASE_URL = 'https://befsjenbaruxqrntuhpn.supabase.co';
+const SS_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZnNqZW5iYXJ1eHFybnR1aHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjA5MjAsImV4cCI6MjA4ODE5NjkyMH0.hOFFbIvd1wAgu-QyghupQ-7ttSpg7sxz_UsJbXyXztA';
+const SS_POLL_MS = 1200;
+const SS_TABLE = 'ecg_display_sessions';
+
+let _sb = null;
+let _ssCode = null;          // set on the control screen once sharing starts
+let _displayCode = null;     // set on the display screen
+let _ssPublishTimer = null;
+
+function ssClient() {
+  if (_sb) return _sb;
+  if (typeof supabase === 'undefined') return null;
+  _sb = window.__avSupabaseClient
+     || (window.__avSupabaseClient = supabase.createClient(SS_SUPABASE_URL, SS_SUPABASE_KEY));
+  return _sb;
+}
+
+function ssNewCode() {
+  // Short and unambiguous — this ends up in a URL people may retype.
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = new Uint8Array(7);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+}
+
+function ssState() {
+  return { key: _currentKey, bpm: _currentBpm, bbb: _currentBBB,
+           theme: _currentTheme, capture: _captureOn };
+}
+
+// The rate slider fires continuously while dragged, so writes are coalesced
+// to one per SS_PUBLISH_MS rather than one per input event.
+const SS_PUBLISH_MS = 300;
+function publishState() {
+  if (!_ssCode || _ssPublishTimer) return;
+  _ssPublishTimer = setTimeout(async () => {
+    _ssPublishTimer = null;
+    const sb = ssClient();
+    if (!sb) return;
+    const { error } = await sb.from(SS_TABLE)
+      .upsert({ code: _ssCode, state: ssState(), updated_at: new Date().toISOString() });
+    if (error) console.warn('second screen publish failed', error);
+  }, SS_PUBLISH_MS);
+}
+
+async function openSecondScreen() {
+  const modal = document.getElementById('ssModal');
+  const hint = document.getElementById('ssHint');
+  const sb = ssClient();
+  if (!sb) { alert('Second screen needs a network connection.'); return; }
+
+  if (!_ssCode) {
+    _ssCode = ssNewCode();
+    const { error } = await sb.from(SS_TABLE)
+      .upsert({ code: _ssCode, state: ssState(), updated_at: new Date().toISOString() });
+    if (error) {
+      _ssCode = null;
+      hint.textContent = 'Could not start a second-screen session: ' + error.message;
+      modal.classList.add('open');
+      return;
+    }
+    const btn = document.getElementById('secondScreenBtn');
+    if (btn) btn.classList.add('active');
+  }
+
+  const url = location.origin + location.pathname + '?display=' + _ssCode;
+  const urlEl = document.getElementById('ssUrl');
+  urlEl.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+
+  // The QR is a convenience over the link, not the only way in — if the
+  // generator script did not load, the URL above still works.
+  const qrEl = document.getElementById('ssQr');
+  qrEl.innerHTML = '';
+  if (typeof qrcode === 'function') {
+    try {
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      qrEl.innerHTML = qr.createImgTag(5, 8);
+    } catch (e) {
+      qrEl.innerHTML = '<span style="color:#333;font-size:10px;">QR unavailable — use the link below</span>';
+    }
+  } else {
+    qrEl.innerHTML = '<span style="color:#333;font-size:10px;">QR unavailable — use the link below</span>';
+  }
+  modal.classList.add('open');
+}
+
+function closeSecondScreen() {
+  document.getElementById('ssModal').classList.remove('open');
+}
+
+// ── Display screen ──────────────────────────────────────────────────────
+function applyRemoteState(st) {
+  if (!_ecg || !st) return;
+  if (st.theme && st.theme !== _currentTheme) {
+    _currentTheme = st.theme;
+    _ecg.setTheme(_currentTheme);
+  }
+  if (st.key !== _currentKey || st.bbb !== _currentBBB || st.bpm !== _currentBpm) {
+    _currentKey = st.key;
+    _currentBBB = st.bbb || 'none';
+    _currentBpm = st.bpm;
+    _ecg.setRhythm(_currentKey, _currentBpm, _currentBBB);
+    const r = _ecg._pub && _ecg._pub.rhythms && _ecg._pub.rhythms[_currentKey];
+    document.getElementById('hrValue').textContent =
+      (r && r.sliderMin !== null && r.sliderMin !== undefined) ? _currentBpm : '\u2014';
+    // A rhythm change resumes the trace, so the capture flag has to be
+    // re-applied below rather than assumed to still hold.
+    _captureOn = false;
+  }
+  const wantCapture = !!st.capture;
+  if (wantCapture !== _captureOn) {
+    _ecg.toggleCapture();
+    _captureOn = wantCapture;
+  }
+}
+
+async function pollDisplay() {
+  const sb = ssClient();
+  const status = document.getElementById('ssStatus');
+  if (!sb) return;
+  const { data, error } = await sb.from(SS_TABLE)
+    .select('state').eq('code', _displayCode).maybeSingle();
+  if (error) { if (status) status.textContent = 'RECONNECTING\u2026'; return; }
+  if (!data) { if (status) status.textContent = 'SESSION NOT FOUND'; return; }
+  if (status) status.textContent = '';
+  applyRemoteState(data.state);
+}
 
 window.addEventListener('DOMContentLoaded', () => {
+  _displayCode = new URLSearchParams(location.search).get('display');
+  if (_displayCode) document.body.classList.add('display-mode');
+
   const ecgArea = document.getElementById('ecgArea');
   const monitor = document.querySelector('.monitor');
   if (monitor && !ecgArea.clientWidth) {
@@ -181,6 +369,24 @@ window.addEventListener('DOMContentLoaded', () => {
     theme: 'monitor',
     showControls: false,
   });
+
+  if (_displayCode) {
+    const status = document.createElement('div');
+    status.id = 'ssStatus';
+    status.textContent = 'CONNECTING\u2026';
+    document.body.appendChild(status);
+    setTimeout(() => { pollDisplay(); setInterval(pollDisplay, SS_POLL_MS); }, 150);
+    // The engine sizes its canvases from the container width once, at init.
+    // On a viewing device that is rotated mid-session the only reliable fix
+    // is a fresh load — the state lives in the row, so nothing is lost.
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => location.reload(), 400);
+    });
+    return;
+  }
+
   // Short delay to ensure engine _pub is fully initialised before syncing UI
   setTimeout(() => setRhythm('nsr'), 100);
 });
@@ -190,7 +396,11 @@ function setRhythm(key) {
   _currentKey = key;
   const r = _ecg._pub && _ecg._pub.rhythms && _ecg._pub.rhythms[key];
   const bpm = r ? r.defaultBpm : 72;
+  _currentBpm = bpm;
   _ecg.setRhythm(key, bpm, _currentBBB);
+  // setRhythm resumes a captured (frozen) trace, so the shared flag must
+  // follow it or the display screen would freeze on the wrong rhythm.
+  _captureOn = false;
 
   // Update slider
   const slider = document.getElementById('hrSlider');
@@ -203,24 +413,27 @@ function setRhythm(key) {
     sliderBpm.textContent = bpm + ' BPM';
   } else {
     slider.disabled = true;
-    sliderBpm.textContent = '— BPM';
+    sliderBpm.textContent = '\u2014 BPM';
   }
 
   document.getElementById('sliderNote').textContent = r ? (r.sliderNote || '') : '';
   document.getElementById('rhythmName').textContent = r ? r.label : '';
-  document.getElementById('hrValue').textContent = (r && r.sliderMin !== null) ? bpm : '—';
+  document.getElementById('hrValue').textContent = (r && r.sliderMin !== null) ? bpm : '\u2014';
 
   document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('btn-' + key);
   if (btn) btn.classList.add('active');
+  publishState();
 }
 
 function onSlider(val) {
   if (!_ecg) return;
   const bpm = parseInt(val);
+  _currentBpm = bpm;
   _ecg.onSlider(bpm);
   document.getElementById('sliderBpm').textContent = bpm + ' BPM';
   document.getElementById('hrValue').textContent = bpm;
+  publishState();
 }
 
 function setBBB(mode) {
@@ -230,19 +443,24 @@ function setBBB(mode) {
   document.querySelectorAll('[id^="bbb-"]').forEach(b => b.classList.remove('active'));
   const el = document.getElementById('bbb-' + mode);
   if (el) el.classList.add('active');
+  publishState();
 }
 
 function setTheme(name) {
   if (!_ecg) return;
+  _currentTheme = name;
   _ecg.setTheme(name);
   document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
   const el = document.getElementById('theme-' + name);
   if (el) el.classList.add('active');
+  publishState();
 }
 
 function toggleCapture() {
   if (!_ecg) return;
   _ecg.toggleCapture();
+  _captureOn = !_captureOn;
+  publishState();
 }
 </script>
 </body>
