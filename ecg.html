@@ -90,6 +90,36 @@
   body.display-mode .theme-row{display:none!important;}
   body.display-mode #ssStatus{position:fixed;bottom:6px;left:8px;font-size:9px;letter-spacing:1px;color:var(--text-dimmer,#005522);opacity:.6;}
 
+  /* ── Mobile remote-control mode ────────────────────────────────
+     On a phone the trace is too small to read anyway, so the page becomes
+     the remote instead: controls plus the second-screen link, with the ECG
+     itself parked off-screen. Off-screen rather than display:none because
+     the engine still owns the rhythm catalogue the controls read, and its
+     own IntersectionObserver pauses the drawing loop while it is out of
+     view — so this costs nothing to keep alive. */
+  body.mobile-mode .monitor{width:100%;max-width:520px;display:flex;flex-direction:column;padding:12px;}
+  /* !important because the engine sets position:relative inline on its own
+     container at init — without it the parked trace stays in flow and
+     leaves a screen-high gap above the controls. */
+  body.mobile-mode .ecg-area{position:absolute!important;left:-10000px!important;top:0;width:1100px!important;height:420px;pointer-events:none;}
+  body.mobile-mode #secondScreenRow{order:-1;margin:0 0 10px;flex-wrap:wrap;}
+  body.mobile-mode #secondScreenBtn,
+  body.mobile-mode #captureBtn{flex:1 1 100%;padding:11px 4px;font-size:11px;}
+  body.mobile-mode .footer{display:none;}
+  body.mobile-mode .rhythm-grid .btn{flex:1 1 calc(33.33% - 4px);max-width:none;min-width:0;padding:9px 3px;font-size:9px;}
+  body.mobile-mode .bbb-row .btn,body.mobile-mode .theme-row .btn{padding:9px 4px;}
+  body.mobile-mode .theme-row{flex-wrap:wrap;}
+  /* The desktop layout ellipsises long labels to keep the button grid on
+     one line. There is far less width here, so wrap instead — a remote
+     whose buttons read 'RANDOM …' and 'STEMI — ANTERI…' is worse than a
+     slightly taller grid. */
+  body.mobile-mode .btn{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.3;}
+  body.mobile-mode .slider-note{display:none;}
+  body.mobile-mode .hr-value{font-size:26px;}
+  #ssCodeBadge{display:none;font-size:9px;letter-spacing:2px;color:var(--text-mid,#00cc66);opacity:.8;margin-top:6px;width:100%;text-align:center;}
+  #ssCodeBadge.on{display:block;}
+  .ss-code{font-family:'Orbitron',monospace;font-size:20px;letter-spacing:4px;color:var(--text-bright,#00ff88);margin-top:12px;}
+
   /* ── Second-screen QR modal ───────────────────────────────────────── */
   .ss-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
   .ss-backdrop.open{display:flex;}
@@ -189,6 +219,7 @@
       style="flex:1;letter-spacing:2px;text-transform:uppercase;font-size:10px;">
       📺 SECOND SCREEN
     </button>
+    <div id="ssCodeBadge"></div>
   </div>
   <div id="captureFlash" style="position:fixed;inset:0;background:white;opacity:0;pointer-events:none;z-index:9999;transition:opacity 0.15s;"></div>
   <div class="footer">
@@ -199,8 +230,9 @@
 <div class="ss-backdrop" id="ssModal" onclick="if(event.target===this)closeSecondScreen()">
   <div class="ss-card">
     <h3>SECOND SCREEN</h3>
-    <p id="ssHint">Scan on the viewing device. It shows this trace only &mdash; no
-      controls, no rhythm name &mdash; and follows every change you make here.</p>
+    <p id="ssHint">Scan on the viewing device, or open the link below on it. It
+      shows this trace only &mdash; no controls, no rhythm name &mdash; and follows
+      every change you make here.</p>
     <div id="ssQr"></div>
     <div class="ss-url" id="ssUrl"></div>
     <button class="btn" onclick="closeSecondScreen()" style="margin-top:14px;width:100%;">CLOSE</button>
@@ -216,7 +248,13 @@ let _currentKey = 'nsr';
 let _currentBBB = 'none';
 let _currentTheme = 'monitor';
 let _currentBpm = 72;
-let _captureOn = false;
+let _isMobile = false;
+// The engine's capture button is a three-state cycle (arm -> freeze at the
+// next lead boundary -> resume), not a toggle, and the freeze lands wherever
+// each screen's own sweep happens to be. So what travels to the second
+// screen is the PRESS, as a counter, not a derived on/off state: both ends
+// then run the same sequence of presses through the same state machine.
+let _captureSeq = 0;
 
 // ── Second-screen sync ──────────────────────────────────────────────────
 // A viewing device loads this same file as ecg.html?display=<code> and
@@ -252,7 +290,7 @@ function ssNewCode() {
 
 function ssState() {
   return { key: _currentKey, bpm: _currentBpm, bbb: _currentBBB,
-           theme: _currentTheme, capture: _captureOn };
+           theme: _currentTheme, captureSeq: _captureSeq };
 }
 
 // The rate slider fires continuously while dragged, so writes are coalesced
@@ -292,7 +330,10 @@ async function openSecondScreen() {
 
   const url = location.origin + location.pathname + '?display=' + _ssCode;
   const urlEl = document.getElementById('ssUrl');
-  urlEl.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+  urlEl.innerHTML = '<div class="ss-code">' + _ssCode.toUpperCase() + '</div>'
+    + '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+  const badge = document.getElementById('ssCodeBadge');
+  if (badge) { badge.textContent = 'SECOND SCREEN \u2192 ' + _ssCode.toUpperCase(); badge.classList.add('on'); }
 
   // The QR is a convenience over the link, not the only way in — if the
   // generator script did not load, the URL above still works.
@@ -332,14 +373,15 @@ function applyRemoteState(st) {
     const r = _ecg._pub && _ecg._pub.rhythms && _ecg._pub.rhythms[_currentKey];
     document.getElementById('hrValue').textContent =
       (r && r.sliderMin !== null && r.sliderMin !== undefined) ? _currentBpm : '\u2014';
-    // A rhythm change resumes the trace, so the capture flag has to be
-    // re-applied below rather than assumed to still hold.
-    _captureOn = false;
   }
-  const wantCapture = !!st.capture;
-  if (wantCapture !== _captureOn) {
+  // Replay presses rather than compare states. Polling can coalesce a rapid
+  // arm-then-cancel into a single observed jump, so the seq is clamped to one
+  // press per poll — and a rhythm change resets both ends anyway, so any
+  // drift is self-healing.
+  const seq = st.captureSeq || 0;
+  if (seq !== _captureSeq) {
+    _captureSeq = seq;
     _ecg.toggleCapture();
-    _captureOn = wantCapture;
   }
 }
 
@@ -356,8 +398,16 @@ async function pollDisplay() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  _displayCode = new URLSearchParams(location.search).get('display');
+  const params = new URLSearchParams(location.search);
+  _displayCode = params.get('display');
   if (_displayCode) document.body.classList.add('display-mode');
+
+  // A phone drives the second screen rather than trying to be one. ?remote=1
+  // forces it on a larger screen, which is also how it gets tested.
+  _isMobile = !_displayCode
+    && (params.get('remote') === '1'
+        || window.matchMedia('(max-width:700px)').matches);
+  if (_isMobile) document.body.classList.add('mobile-mode');
 
   const ecgArea = document.getElementById('ecgArea');
   const monitor = document.querySelector('.monitor');
@@ -398,9 +448,6 @@ function setRhythm(key) {
   const bpm = r ? r.defaultBpm : 72;
   _currentBpm = bpm;
   _ecg.setRhythm(key, bpm, _currentBBB);
-  // setRhythm resumes a captured (frozen) trace, so the shared flag must
-  // follow it or the display screen would freeze on the wrong rhythm.
-  _captureOn = false;
 
   // Update slider
   const slider = document.getElementById('hrSlider');
@@ -458,8 +505,17 @@ function setTheme(name) {
 
 function toggleCapture() {
   if (!_ecg) return;
-  _ecg.toggleCapture();
-  _captureOn = !_captureOn;
+  _captureSeq++;
+  if (_isMobile) {
+    // The trace is parked off-screen here and the engine has auto-paused it,
+    // so driving its capture state machine locally would only desynchronise
+    // the button's own label. The press is published; the second screen is
+    // what actually freezes.
+    const btn = document.getElementById('captureBtn');
+    if (btn) btn.textContent = (_captureSeq % 2) ? '\u25b6 RESUME' : '\u23f8 CAPTURE';
+  } else {
+    _ecg.toggleCapture();
+  }
   publishState();
 }
 </script>
