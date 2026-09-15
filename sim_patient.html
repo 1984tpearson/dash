@@ -30,6 +30,14 @@ body { display: flex; flex-direction: column; }
    flex-column body, so hiding #topbar just lets it fill the freed
    space. */
 body.embed #topbar { display: none; }
+/* sim_selftest.html pairs this page automatically the moment it creates the
+   session, so its 6-digit-code gate is a dead end there — the student has no
+   code to type and no other session to join. ?nogate=1 hides it and the
+   parent page covers the pre-pairing view with its own "pick a case" panel
+   instead. !important because the gate carries an inline display:flex (it
+   is shown by default and only ever hidden, at connect); nothing re-shows
+   it, so this can't fight with anything later. */
+body.nogate #session-gate { display: none !important; }
 #topbar .title { font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #ffffff; text-transform: uppercase; }
 #topbar-right { display: flex; align-items: center; gap: 14px; }
 #instant-mode-label { font-size: 10px; display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,0.85); cursor: pointer; user-select: none; }
@@ -368,7 +376,9 @@ body.mode-avatar #monitor-col { display: none !important; }
 </div>
 <script>
   // See the body.embed CSS rule above this topbar for why.
-  if (new URLSearchParams(location.search).get('embed') === '1') document.body.classList.add('embed');
+  const _qs = new URLSearchParams(location.search);
+  if (_qs.get('embed') === '1') document.body.classList.add('embed');
+  if (_qs.get('nogate') === '1') document.body.classList.add('nogate');
 </script>
 <div id="session-gate" style="position:fixed;inset:0;background:rgba(20,30,45,0.92);z-index:100;display:flex;align-items:center;justify-content:center;">
   <div class="panel" style="width:280px;text-align:center;">

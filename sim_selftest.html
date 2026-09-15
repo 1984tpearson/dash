@@ -44,7 +44,16 @@
   #st-instant-indicator.on { color: rgba(255,255,255,0.85); font-weight: 400; }
   #st-scenario-timer { font-weight: 700; color: #4ade80; }
 
-  #st-body { flex: 1; min-height: 0; display: flex; }
+  /* Covers the patient frame until a case is paired. sim_patient.html's own
+     6-digit-code gate is suppressed here (?nogate=1 — see that file): there
+     is no code for the student to type, this page pairs the frame itself the
+     moment the session exists. */
+  #st-body { flex: 1; min-height: 0; display: flex; position: relative; }
+  #st-waiting { position: absolute; inset: 0; z-index: 40; background: rgba(20,30,45,0.92); display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+  #st-waiting.hidden { display: none; }
+  #st-waiting .card { background: #fff; border-radius: 10px; padding: 18px 20px; max-width: 320px; }
+  #st-waiting h2 { font-size: 15px; margin: 0 0 8px; color: #1c2f45; }
+  #st-waiting p { font-size: 12px; line-height: 1.5; color: #6b8299; margin: 0; }
   iframe { border: none; background: #14243a; }
   #patient-frame { flex: 1; width: 100%; height: 100%; }
 
@@ -89,6 +98,12 @@
 <div id="st-body">
   <!-- The student-facing view, and the only thing normally visible. -->
   <iframe id="patient-frame" title="Sim Patient" allow="microphone; autoplay"></iframe>
+  <div id="st-waiting">
+    <div class="card">
+      <h2 id="st-waiting-title">Pick a case to begin</h2>
+      <p id="st-waiting-text">Choose a case in the bar above and press Load Case. Everything after that is yours to run — assess, treat and talk to the patient as you normally would.</p>
+    </div>
+  </div>
 </div>
 
 <!-- The assessor page, mounted at zero size and never shown except for its
@@ -109,7 +124,7 @@
 // would happily serve a stale cached copy of either page after a push.
 const CACHE_BUST = Date.now();
 document.getElementById('control-frame').src = 'sim_control.html?embed=1&v=' + CACHE_BUST;
-document.getElementById('patient-frame').src = 'sim_patient.html?embed=1&v=' + CACHE_BUST;
+document.getElementById('patient-frame').src = 'sim_patient.html?embed=1&nogate=1&v=' + CACHE_BUST;
 
 let _scenarios = [];
 let _sessionCode = null;
@@ -119,6 +134,18 @@ function ctrlWin() { return document.getElementById('control-frame').contentWind
 function ctrlDoc() { return document.getElementById('control-frame').contentDocument; }
 function patWin() { return document.getElementById('patient-frame').contentWindow; }
 function patDoc() { return document.getElementById('patient-frame').contentDocument; }
+
+// The waiting panel doubles as the page's error surface while nothing is
+// running — before a case is loaded the frame behind it is a blank monitor,
+// so a failure that only wrote to the thin topbar status line would be easy
+// to miss entirely.
+function setWaiting(title, text) {
+  const el = document.getElementById('st-waiting');
+  if (title === null) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  document.getElementById('st-waiting-title').textContent = title;
+  document.getElementById('st-waiting-text').textContent = text;
+}
 
 function setStatus(text, isError) {
   const el = document.getElementById('st-status');
@@ -146,6 +173,7 @@ async function waitForControlFrame() {
       const href = d && d.location ? d.location.href : '';
       if (href && href !== 'about:blank' && !/sim_control\.html/.test(href)) {
         setStatus('Sign in first — the self-test needs an instructor-side session to run the case. Opening the login page…', true);
+        setWaiting('Sign in to run a case', 'The self-test needs a signed-in account to load cases. Taking you to the login page…');
         setTimeout(() => { location.href = 'login.html?redirect=sim_selftest.html'; }, 2500);
         return false;
       }
@@ -154,6 +182,7 @@ async function waitForControlFrame() {
     await new Promise(r => setTimeout(r, 250));
   }
   setStatus('Could not start the scenario engine — reload the page.', true);
+  setWaiting('Could not start up', 'The scenario engine did not come up. Reload the page to try again.');
   return false;
 }
 
@@ -200,6 +229,7 @@ async function loadCase() {
   document.getElementById('st-search').disabled = true;
   document.getElementById('st-scenario-select').disabled = true;
   setStatus('Preparing the case (this can take a few seconds the first time it is used)…');
+  setWaiting('Preparing the case…', 'Building the patient\u2019s course from the case notes. This can take a few seconds the first time a case is used.');
 
   // Drive the control page's own scenario <select>, splicing the chosen
   // case in if it isn't among the 10 that page loads for itself — the
@@ -218,6 +248,7 @@ async function loadCase() {
     await ctrlWin().createSession();
   } catch (e) {
     setStatus('Could not prepare the case: ' + e.message, true);
+    setWaiting('Could not load that case', e.message + ' — pick a case and try again.');
     resetSetupControls();
     return;
   }
@@ -230,11 +261,13 @@ async function loadCase() {
     let why = '';
     try { why = ctrlDoc().getElementById('create-status').textContent || ''; } catch (e) {}
     setStatus(why || 'Could not create the session — try again.', true);
+    setWaiting('Could not start that case', why || 'The session could not be created — try again.');
     resetSetupControls();
     return;
   }
 
   pairPatientFrame(_sessionCode);
+  setWaiting(null);
   btn.style.display = 'none';
   document.getElementById('st-start-btn').style.display = '';
   document.getElementById('st-new-btn').style.display = '';
@@ -272,7 +305,7 @@ function pairPatientFrame(code) {
   try {
     const w = patWin();
     if (w && typeof w.connectSession === 'function') w.connectSession(code);
-    else document.getElementById('patient-frame').src = 'sim_patient.html?embed=1&v=' + CACHE_BUST + '&code=' + encodeURIComponent(code);
+    else document.getElementById('patient-frame').src = 'sim_patient.html?embed=1&nogate=1&v=' + CACHE_BUST + '&code=' + encodeURIComponent(code);
   } catch (e) {
     setStatus('Could not connect the patient view (' + e.message + ') — reload the page.', true);
   }
