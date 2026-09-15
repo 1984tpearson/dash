@@ -247,10 +247,22 @@ async function waitForControlFrame() {
 // Supabase URL/key here — one fewer copy of a credential to keep in step.
 async function loadScenarioList() {
   try {
-    // id,title only — the subtitle is the answer (see renderScenarioOptions),
-    // so this page never fetches it rather than fetching and remembering not
-    // to render it.
-    _scenarios = await ctrlWin().sbFetch('scenarios?order=created_at.desc&limit=200&select=id,title', { method: 'GET' });
+    const rows = await ctrlWin().sbFetch(
+      'scenarios?order=created_at.desc&limit=200&select=id,title,subtitle,patient_meta', { method: 'GET' });
+    // The subtitle IS the answer (see renderScenarioOptions), and the only
+    // part of it this page may ever show is the "35yo Male" its format puts
+    // before the em dash. So it is reduced to that here, at the fetch, and
+    // the rest is dropped on the floor — nothing downstream holds a
+    // scenario's diagnosis, so no later edit can render it by reaching for
+    // a field that happens to be sitting there. subtitleDemographics()
+    // returns '' for anything that doesn't match the demographic shape
+    // exactly, which is the safe direction to fail.
+    _scenarios = rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      patient_meta: r.patient_meta,
+      demog: subtitleDemographics(r.subtitle)
+    }));
   } catch (e) {
     document.getElementById('st-scenario-select').innerHTML = '<option value="">Could not load cases</option>';
     setStatus('Could not load the case list: ' + e.message, true);
@@ -273,12 +285,45 @@ function renderScenarioOptions() {
   // would have off the dispatch screen, and the right amount to choose from.
   // The filter matches titles only for the same reason: searching text the
   // list doesn't show would leak the answer through which cases came back.
-  const matches = _scenarios.filter(r => !q || (r.title || '').toLowerCase().includes(q));
+  const matches = _scenarios.filter(r => !q || caseLabel(r).toLowerCase().includes(q));
   sel.innerHTML = matches.length
-    ? matches.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.title || 'Untitled')}</option>`).join('')
+    ? matches.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(caseLabel(r))}</option>`).join('')
     : '<option value="">No cases match that filter</option>';
   if (matches.some(r => r.id === keep)) sel.value = keep;
   document.getElementById('st-load-btn').disabled = !sel.value;
+}
+
+// "Found unresponsive at party — 35yo Male": the dispatch-screen amount of
+// information. Demographics are appended from patient_meta rather than read
+// out of the title, which no longer carries them — and older scenarios whose
+// titles still end in "35yo Male" get nothing appended, so they read the same
+// as before instead of saying it twice.
+// The head of a subtitle, and ONLY when the whole of it is a demographic
+// token — "35yo Male", "9 months Female". Anything else (a subtitle that
+// never followed the format, or one with no em dash, where split() hands
+// back the entire clinical description) fails the test and returns ''.
+// Deliberately strict in that direction: a miss costs a label its age, a
+// false match would print the diagnosis.
+function subtitleDemographics(subtitle) {
+  const head = String(subtitle || '').split('—')[0].trim();
+  return /^(newborn|\d+(\.\d+)?\s*(yo|mo|months?|years?))\s+(male|female|boy|girl)$/i.test(head) ? head : '';
+}
+
+function caseLabel(r) {
+  const title = r.title || 'Untitled';
+  if (/\d\s*(yo|mo|year|month)/i.test(title)) return title; // older titles already carry it
+  const meta = r.patient_meta || {};
+  const bits = [];
+  // age is a plain number of years, a "N months" string, or "newborn" — see
+  // the patient_meta.age note in CLAUDE.md.
+  if (meta.age != null && meta.age !== '') {
+    const n = /^\d+(\.\d+)?$/.test(String(meta.age)) ? parseFloat(meta.age) : null;
+    // Under a year reads as months — "0.5yo" is not how anyone says it.
+    bits.push(n === null ? String(meta.age) : (n < 1 ? Math.round(n * 12) + 'mo' : n + 'yo'));
+  }
+  if (meta.gender) bits.push(String(meta.gender).charAt(0).toUpperCase() + String(meta.gender).slice(1));
+  const demog = bits.length ? bits.join(' ') : r.demog;
+  return demog ? title + ' — ' + demog : title;
 }
 
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -309,7 +354,7 @@ async function loadCase() {
       const row = _scenarios.find(r => r.id === id) || { id, title: 'Selected case' };
       const opt = d.createElement('option');
       opt.value = row.id;
-      opt.textContent = row.title || 'Selected case';
+      opt.textContent = caseLabel(row);
       csel.prepend(opt);
     }
     csel.value = id;

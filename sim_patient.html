@@ -1594,9 +1594,14 @@ async function connectSession(code) {
           const meta = scen.patient_meta || {};
           let gender = (meta.gender || '').toLowerCase() || null;
           if (!gender) {
-            const title = scen.title || '';
-            if (/\bfemale\b/i.test(title)) gender = 'female';
-            else if (/\bmale\b/i.test(title)) gender = 'male';
+            // Titles stopped carrying age/gender (generator.html writes the
+            // presentation alone now — it read as a duplicate next to the
+            // subtitle, which has always carried both), so scan the subtitle
+            // too. Scenarios generated since Aug 2026 have patient_meta.gender
+            // and never reach this; older ones still have it in their title.
+            const text = (scen.title || '') + ' ' + (scen.subtitle || '');
+            if (/\bfemale\b/i.test(text)) gender = 'female';
+            else if (/\bmale\b/i.test(text)) gender = 'male';
           }
           if (gender === 'male' || gender === 'female') patientGender = gender;
           const age = meta.age != null ? meta.age : SimEngine.parseAgeFromScenario(scen);
