@@ -29,7 +29,10 @@ body { display: flex; flex-direction: column; }
 /* sim_combo.html hides this page's own topbar and surfaces the same
    controls (mode switch, AI indicators, join button) in its own single
    shared topbar instead, proxying clicks/values across the iframe
-   boundary — see that file. Gated on an explicit ?embed=1 query param
+   boundary — see that file. sim_selftest.html embeds this page the same
+   way but never shows it at all (bar its debrief overlay): it drives
+   createSession/toggleRun/endScenario programmatically so a student can
+   run a case solo without seeing the assessor side. Gated on an explicit ?embed=1 query param
    rather than window.self!==window.top so an incidental iframe embed
    elsewhere doesn't silently hide navigation with no way back. #main is
    already flex:1 in a flex-column body, so hiding #topbar just lets it

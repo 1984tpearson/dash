@@ -23,10 +23,10 @@
 html, body { height: 100%; height: 100dvh; overflow: hidden; background: linear-gradient(135deg, #2C4F7C 0%, #4E7FAE 55%, #6FA0CC 100%); color: #1e2a36; font-family: 'Courier New', monospace; }
 body { display: flex; flex-direction: column; }
 #topbar { flex-shrink: 0; background: var(--navy); box-shadow: 0 2px 8px rgba(0,0,0,0.25); padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-/* sim_combo.html hides this page's own topbar and surfaces the same
-   controls (pause/instant-mode status, display mode, voice toggles,
-   timer) in its own single shared topbar instead — see that file and
-   the matching rule in sim_control.html. #main is already flex:1 in a
+/* sim_combo.html and sim_selftest.html hide this page's own topbar and
+   surface the same controls (pause/instant-mode status, display mode,
+   voice toggles, timer) in their own single shared topbar instead — see
+   those files and the matching rule in sim_control.html. #main is already flex:1 in a
    flex-column body, so hiding #topbar just lets it fill the freed
    space. */
 body.embed #topbar { display: none; }
