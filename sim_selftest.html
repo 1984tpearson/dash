@@ -247,7 +247,10 @@ async function waitForControlFrame() {
 // Supabase URL/key here — one fewer copy of a credential to keep in step.
 async function loadScenarioList() {
   try {
-    _scenarios = await ctrlWin().sbFetch('scenarios?order=created_at.desc&limit=200&select=id,title,subtitle', { method: 'GET' });
+    // id,title only — the subtitle is the answer (see renderScenarioOptions),
+    // so this page never fetches it rather than fetching and remembering not
+    // to render it.
+    _scenarios = await ctrlWin().sbFetch('scenarios?order=created_at.desc&limit=200&select=id,title', { method: 'GET' });
   } catch (e) {
     document.getElementById('st-scenario-select').innerHTML = '<option value="">Could not load cases</option>';
     setStatus('Could not load the case list: ' + e.message, true);
@@ -262,10 +265,17 @@ function renderScenarioOptions() {
   const q = document.getElementById('st-search').value.trim().toLowerCase();
   const sel = document.getElementById('st-scenario-select');
   const keep = sel.value;
-  const matches = _scenarios.filter(r =>
-    !q || (r.title || '').toLowerCase().includes(q) || (r.subtitle || '').toLowerCase().includes(q));
+  // TITLE ONLY, deliberately — do not put the subtitle back. A scenario's
+  // subtitle is its provisional diagnosis ("Suspected ruptured abdominal
+  // aortic aneurysm", "Acute asthma, audible wheeze"), which is the thing
+  // the student is here to work out. The title is the presenting complaint
+  // plus age/gender ("Found unresponsive at party 35yo Male") — what a crew
+  // would have off the dispatch screen, and the right amount to choose from.
+  // The filter matches titles only for the same reason: searching text the
+  // list doesn't show would leak the answer through which cases came back.
+  const matches = _scenarios.filter(r => !q || (r.title || '').toLowerCase().includes(q));
   sel.innerHTML = matches.length
-    ? matches.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.title || 'Untitled')}${r.subtitle ? ' — ' + escapeHtml(r.subtitle) : ''}</option>`).join('')
+    ? matches.map(r => `<option value="${escapeAttr(r.id)}">${escapeHtml(r.title || 'Untitled')}</option>`).join('')
     : '<option value="">No cases match that filter</option>';
   if (matches.some(r => r.id === keep)) sel.value = keep;
   document.getElementById('st-load-btn').disabled = !sel.value;
@@ -299,7 +309,7 @@ async function loadCase() {
       const row = _scenarios.find(r => r.id === id) || { id, title: 'Selected case' };
       const opt = d.createElement('option');
       opt.value = row.id;
-      opt.textContent = row.title + (row.subtitle ? ' — ' + row.subtitle : '');
+      opt.textContent = row.title || 'Selected case';
       csel.prepend(opt);
     }
     csel.value = id;
