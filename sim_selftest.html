@@ -20,9 +20,17 @@
   #st-setup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
   #st-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
   #st-picker.hidden { display: none; }
-  #st-picker input[type="search"] { font-family: inherit; font-size: 11px; padding: 4px 7px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; width: 150px; }
+  #st-picker input[type="search"] { font-family: inherit; font-size: 11px; padding: 4px 7px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; width: 150px; min-width: 0; }
   #st-picker input[type="search"]::placeholder { color: rgba(255,255,255,0.5); }
-  #st-picker select { font-family: inherit; font-size: 11px; padding: 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; flex: 1; min-width: 160px; max-width: 420px; }
+  /* min-width:0 on both, not just a small floor: a flex item's automatic
+     minimum is its own content size, and for a <select> that is its LONGEST
+     OPTION — case titles here run to a full sentence, so the control forced
+     the whole picker wider than the viewport and pushed Load Case off the
+     right edge. Same trap as #head-wrap's in sim_patient.html (see the
+     CLAUDE.md gotcha): max-width alone can't cap an element whose implicit
+     minimum is bigger. The option text just clips instead; the filter box
+     above it is how you narrow a long list. */
+  #st-picker select { font-family: inherit; font-size: 11px; padding: 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; flex: 1 1 160px; min-width: 0; max-width: 420px; }
   #st-picker select option { background: #1c2f45; color: #fff; }
   .st-btn { font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #fff; background: #27833A; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
   .st-btn:disabled { opacity: 0.5; cursor: default; }
@@ -69,16 +77,21 @@
     #st-topbar { padding: 4px 6px; gap: 2px; flex-direction: row; flex-wrap: wrap; align-items: center; }
     .topbar-row, #st-live-row, #st-live-row.has-content { display: contents; }
     #st-live-row:not(.has-content) #st-live { display: none; }
-    #st-setup { flex: 0 0 auto; }
+    /* 0 1 auto, not 0 0 auto: it must still SHRINK. flex-shrink:0 let it take
+       its max-content width (the picker's longest case title) and the only
+       reason that didn't scroll the page is body's overflow:hidden — it
+       clipped Load Case off the right edge instead. */
+    #st-setup { flex: 0 1 auto; min-width: 0; max-width: 100%; }
     #st-live { flex: 1; min-width: 0; }
     #st-topbar .title { display: none; }
     #st-status { display: none; }
     #st-status.error { display: block; flex-basis: 100%; }
-    #st-picker input[type="search"] { flex: 1; min-width: 90px; width: auto; }
+    #st-picker input[type="search"] { flex: 1 1 90px; min-width: 0; width: auto; }
     /* The case list gets the full width and, ordered first, its own line —
        which lets the filter and Load Case share the line below it instead
        of taking one each. */
     #st-picker select { order: -1; flex-basis: 100%; max-width: none; }
+    .st-btn { flex-shrink: 0; }
     #st-live { gap: 8px; width: 100%; }
     #st-live label span { display: none; }
     #st-instant-indicator.on { font-size: 9px; }
