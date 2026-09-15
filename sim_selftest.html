@@ -12,26 +12,14 @@
   .topbar-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   #st-topbar .title { font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #fff; text-transform: uppercase; white-space: nowrap; }
 
-  /* --- Setup row: the only controls this page adds of its own ---------
-     Everything else in the topbar mirrors the patient pane's own hidden
-     topbar (see body.embed in sim_patient.html) exactly as sim_combo.html
-     does it — same syncProxyState/forward-to-the-frame's-own-function
-     approach, no reimplemented logic. */
+  /* --- The setup row holds only the run controls now (Start / End / New
+     Case). The case picker lives inside the waiting panel over the patient
+     view instead — see #st-picker below. Everything else in this bar
+     mirrors the patient pane's own hidden topbar (see body.embed in
+     sim_patient.html) exactly as sim_combo.html does it: same
+     forward-to-the-frame's-own-function approach, no reimplemented
+     logic. */
   #st-setup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
-  #st-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
-  #st-picker.hidden { display: none; }
-  #st-picker input[type="search"] { font-family: inherit; font-size: 11px; padding: 4px 7px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; width: 150px; min-width: 0; }
-  #st-picker input[type="search"]::placeholder { color: rgba(255,255,255,0.5); }
-  /* min-width:0 on both, not just a small floor: a flex item's automatic
-     minimum is its own content size, and for a <select> that is its LONGEST
-     OPTION — case titles here run to a full sentence, so the control forced
-     the whole picker wider than the viewport and pushed Load Case off the
-     right edge. Same trap as #head-wrap's in sim_patient.html (see the
-     CLAUDE.md gotcha): max-width alone can't cap an element whose implicit
-     minimum is bigger. The option text just clips instead; the filter box
-     above it is how you narrow a long list. */
-  #st-picker select { font-family: inherit; font-size: 11px; padding: 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.12); color: #fff; flex: 1 1 160px; min-width: 0; max-width: 420px; }
-  #st-picker select option { background: #1c2f45; color: #fff; }
   .st-btn { font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #fff; background: #27833A; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
   .st-btn:disabled { opacity: 0.5; cursor: default; }
   .st-btn.secondary { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
@@ -86,11 +74,6 @@
     #st-topbar .title { display: none; }
     #st-status { display: none; }
     #st-status.error { display: block; flex-basis: 100%; }
-    #st-picker input[type="search"] { flex: 1 1 90px; min-width: 0; width: auto; }
-    /* The case list gets the full width and, ordered first, its own line —
-       which lets the filter and Load Case share the line below it instead
-       of taking one each. */
-    #st-picker select { order: -1; flex-basis: 100%; max-width: none; }
     .st-btn { flex-shrink: 0; }
     #st-live { gap: 8px; width: 100%; }
     #st-live label span { display: none; }
@@ -99,12 +82,36 @@
     .st-btn { padding: 5px 9px; }
   }
 
+  /* Nothing in the bar applies before a case is loaded — the picker moved
+     into the panel and every failure writes to the panel as well as the
+     status line — so the whole bar goes rather than sitting there as an
+     empty strip. */
+  body.setup #st-topbar { display: none; }
+
   #st-body { flex: 1; min-height: 0; display: flex; position: relative; }
   #st-waiting { position: absolute; inset: 0; z-index: 40; background: rgba(20,30,45,0.92); display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; }
   #st-waiting.hidden { display: none; }
-  #st-waiting .card { background: #fff; border-radius: 10px; padding: 18px 20px; max-width: 320px; }
+  #st-waiting .card { background: #fff; border-radius: 10px; padding: 18px 20px; width: 340px; max-width: 100%; }
+  #st-waiting .brand { font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: #9bb0c4; margin-bottom: 6px; }
   #st-waiting h2 { font-size: 15px; margin: 0 0 8px; color: #1c2f45; }
   #st-waiting p { font-size: 12px; line-height: 1.5; color: #6b8299; margin: 0; }
+
+  /* The picker itself. It sits in the panel rather than the topbar because
+     picking a case is the only thing this page asks for before a run, and
+     splitting it across a cramped bar while a panel explained it in the
+     middle of the screen made you look in two places to do one thing. One
+     consequence worth keeping: it is inside the element setWaiting(null)
+     hides, so loading a case removes it with no separate bookkeeping.
+     min-width:0 on the select is load-bearing — a flex item's automatic
+     minimum is its content size, and a <select>'s content is its LONGEST
+     OPTION, which here is a full-sentence case title. Same trap as
+     #head-wrap's in sim_patient.html (see the CLAUDE.md gotcha): max-width
+     alone cannot cap an element whose implicit minimum is bigger. */
+  #st-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; text-align: left; }
+  #st-picker.hidden { display: none; }
+  #st-picker select, #st-picker input[type="search"] { font-family: inherit; font-size: 12px; padding: 7px 8px; border-radius: 7px; border: 1px solid #d7dee6; background: #fff; color: #1e2a36; width: 100%; min-width: 0; box-sizing: border-box; }
+  #st-picker input[type="search"]::placeholder { color: #9bb0c4; }
+  #st-picker .st-btn { width: 100%; padding: 9px 12px; font-size: 12px; }
   iframe { border: none; background: #14243a; }
   #patient-frame { flex: 1; width: 100%; height: 100%; }
 
@@ -115,21 +122,12 @@
   body.show-debrief #control-frame { width: 100%; height: 100%; opacity: 1; pointer-events: auto; }
 </style>
 </head>
-<body>
+<body class="setup">
 
 <div id="st-topbar">
   <div class="topbar-row">
     <div class="title">Sim — Self Test</div>
     <div id="st-setup">
-      <!-- The picker is only ever used once, before a case is running, so it
-           leaves the bar entirely at that point rather than sitting there
-           disabled — on a phone it was most of the topbar's height. New Case
-           reloads the page and brings it back. -->
-      <div id="st-picker">
-        <input type="search" id="st-search" placeholder="Filter cases…" oninput="renderScenarioOptions()" aria-label="Filter cases">
-        <select id="st-scenario-select" aria-label="Case"><option value="">Loading cases…</option></select>
-        <button class="st-btn" id="st-load-btn" onclick="loadCase()" disabled>Load Case</button>
-      </div>
       <button class="st-btn" id="st-start-btn" onclick="startScenario()" style="display:none;" title="Optional — the scenario also starts by itself the moment you do anything on the patient screen">Start</button>
       <button class="st-btn danger" id="st-end-btn" onclick="endScenario()" style="display:none;">End &amp; Debrief</button>
       <button class="st-btn secondary" id="st-new-btn" onclick="location.reload()" style="display:none;">New Case</button>
@@ -157,8 +155,14 @@
   <iframe id="patient-frame" title="Sim Patient" allow="microphone; autoplay"></iframe>
   <div id="st-waiting">
     <div class="card">
+      <div class="brand">Sim — Self Test</div>
       <h2 id="st-waiting-title">Pick a case to begin</h2>
-      <p id="st-waiting-text">Choose a case in the bar above and press Load Case. Everything after that is yours to run — assess, treat and talk to the patient as you normally would.</p>
+      <p id="st-waiting-text">Everything after that is yours to run — assess, treat and talk to the patient as you normally would.</p>
+      <div id="st-picker">
+        <select id="st-scenario-select" aria-label="Case"><option value="">Loading cases…</option></select>
+        <input type="search" id="st-search" placeholder="Filter cases…" oninput="renderScenarioOptions()" aria-label="Filter cases">
+        <button class="st-btn" id="st-load-btn" onclick="loadCase()" disabled>Load Case</button>
+      </div>
     </div>
   </div>
 </div>
@@ -231,6 +235,7 @@ async function waitForControlFrame() {
       if (href && href !== 'about:blank' && !/sim_control\.html/.test(href)) {
         setStatus('Sign in first — the self-test needs an instructor-side session to run the case. Opening the login page…', true);
         setWaiting('Sign in to run a case', 'The self-test needs a signed-in account to load cases. Taking you to the login page…');
+        document.getElementById('st-picker').classList.add('hidden');
         setTimeout(() => { location.href = 'login.html?redirect=sim_selftest.html'; }, 2500);
         return false;
       }
@@ -240,6 +245,7 @@ async function waitForControlFrame() {
   }
   setStatus('Could not start the scenario engine — reload the page.', true);
   setWaiting('Could not start up', 'The scenario engine did not come up. Reload the page to try again.');
+  document.getElementById('st-picker').classList.add('hidden');
   return false;
 }
 
@@ -266,6 +272,8 @@ async function loadScenarioList() {
   } catch (e) {
     document.getElementById('st-scenario-select').innerHTML = '<option value="">Could not load cases</option>';
     setStatus('Could not load the case list: ' + e.message, true);
+    setWaiting('Could not load the case list', e.message + ' — reload the page to try again.');
+    document.getElementById('st-picker').classList.add('hidden');
     return;
   }
   renderScenarioOptions();
@@ -340,6 +348,8 @@ async function loadCase() {
   btn.disabled = true;
   document.getElementById('st-search').disabled = true;
   document.getElementById('st-scenario-select').disabled = true;
+  // The picker hides while the case builds — leaving it up invites a second
+  // pick that the in-flight createSession() would ignore.
   document.getElementById('st-picker').classList.add('hidden');
   setStatus('Preparing the case (this can take a few seconds the first time it is used)…');
   setWaiting('Preparing the case…', 'Building the patient\u2019s course from the case notes. This can take a few seconds the first time a case is used.');
@@ -382,6 +392,7 @@ async function loadCase() {
   pairPatientFrame(_sessionCode);
   armAutoStart();
   setWaiting(null);
+  document.body.classList.remove('setup'); // the bar (Start / End / New Case) is meaningful from here on
   document.getElementById('st-start-btn').style.display = '';
   document.getElementById('st-new-btn').style.display = '';
   setStatus('Case ready — start assessing, or press Start.');
@@ -405,7 +416,11 @@ async function readSessionCode() {
   return null;
 }
 
+// Every failure path before a run calls this: the panel stays up, the picker
+// comes back enabled, and the topbar stays hidden — so a failed load leaves
+// the student exactly where they started rather than on a dead screen.
 function resetSetupControls() {
+  document.body.classList.add('setup');
   document.getElementById('st-picker').classList.remove('hidden');
   document.getElementById('st-load-btn').disabled = false;
   document.getElementById('st-search').disabled = false;
