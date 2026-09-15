@@ -73,7 +73,7 @@
       <input type="search" id="st-search" placeholder="Filter cases…" oninput="renderScenarioOptions()" aria-label="Filter cases">
       <select id="st-scenario-select" aria-label="Case"><option value="">Loading cases…</option></select>
       <button class="st-btn" id="st-load-btn" onclick="loadCase()" disabled>Load Case</button>
-      <button class="st-btn" id="st-start-btn" onclick="startScenario()" style="display:none;">Start</button>
+      <button class="st-btn" id="st-start-btn" onclick="startScenario()" style="display:none;" title="Optional — the scenario also starts by itself the moment you do anything on the patient screen">Start</button>
       <button class="st-btn danger" id="st-end-btn" onclick="endScenario()" style="display:none;">End &amp; Debrief</button>
       <button class="st-btn secondary" id="st-new-btn" onclick="location.reload()" style="display:none;">New Case</button>
     </div>
@@ -267,11 +267,12 @@ async function loadCase() {
   }
 
   pairPatientFrame(_sessionCode);
+  armAutoStart();
   setWaiting(null);
   btn.style.display = 'none';
   document.getElementById('st-start-btn').style.display = '';
   document.getElementById('st-new-btn').style.display = '';
-  setStatus('Case ready — press Start when you are.');
+  setStatus('Case ready — start assessing, or press Start.');
 }
 
 // The control page's session code lives in a top-level `let sessionCode`,
@@ -311,7 +312,38 @@ function pairPatientFrame(code) {
   }
 }
 
+// Auto-start: the student shouldn't have to press Start, so the first thing
+// they actually DO starts the clock. One capture-phase listener on the
+// patient document rather than wrapping its action functions individually
+// — there are a dozen entry points already (the three fabs, vital taps, the
+// BP/one-off cards, Apply ECG / apply-all, the three defib buttons, typed
+// send) and wrapping them by name means anything added later silently stops
+// counting as "performing something".
+//
+// Gated on the tap landing on something interactive, so a stray tap on the
+// monitor's background doesn't start a run the student isn't ready for.
+// Capture phase and non-cancelling: this observes the tap on its way down
+// and lets it proceed to its own handler untouched — the action itself
+// never waits on the PATCH that starts the clock.
+let _autoStartDoc = null;
+function armAutoStart() {
+  let d;
+  try { d = patDoc(); } catch (e) { return; }
+  if (!d || d === _autoStartDoc) return;
+  _autoStartDoc = d;
+  d.addEventListener('pointerdown', (ev) => {
+    if (_hasStarted || _starting || !_sessionCode) return;
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('button, select, input, textarea, [onclick], [role="button"]')) return;
+    startScenario();
+  }, true);
+}
+
+let _starting = false;
 async function startScenario() {
+  if (_hasStarted || _starting) return;
+  _starting = true;
   const btn = document.getElementById('st-start-btn');
   btn.disabled = true;
   try {
@@ -319,6 +351,7 @@ async function startScenario() {
   } catch (e) {
     setStatus('Could not start the scenario: ' + e.message, true);
     btn.disabled = false;
+    _starting = false;
     return;
   }
   _hasStarted = true;
@@ -349,6 +382,7 @@ function mirrorVisibility(srcEl, dstEl) {
 
 function syncLiveState() {
   document.getElementById('st-live-row').classList.toggle('has-content', !!_sessionCode);
+  if (_sessionCode && !_hasStarted) armAutoStart(); // re-arms if the frame was re-navigated (see pairPatientFrame's src fallback)
   try {
     const d = patDoc();
     if (d) {
