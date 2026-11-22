@@ -779,10 +779,10 @@ async function saveAndNavigate(scenario){
   await _attachOriginAndOverlay(scenario);
   await sbFetch('scenarios',{method:'POST',prefer:'return=minimal',body:JSON.stringify(toRow(scenario))});
   const id=encodeURIComponent(String(scenario.id));
-  // Live Scenario is admin-only (same gate as index.html's scenarioLinkClick
-  // popover) — non-admins have nothing to choose between, so go straight to
-  // the verbal view as before.
-  if(!isAdmin()){window.location.href=`index.html?id=${id}`;return;}
+  // Live Scenario needs a real signed-in account (same gate as index.html's
+  // canRunLive(); sim_control.html bounces guests to login anyway) — guests
+  // have nothing to choose between, so go straight to the verbal view.
+  if(!_authSession){window.location.href=`index.html?id=${id}`;return;}
   // Scenario is already saved at this point, so the chooser deliberately has
   // no dismiss/cancel — closing it would strand the user on the generator.
   const m=document.getElementById('open-mode-modal');
