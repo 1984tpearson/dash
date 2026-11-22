@@ -253,6 +253,16 @@ textarea{resize:vertical;min-height:72px;line-height:1.5}
 .ss-row-label{font-size:12px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.4px}
 .ss-abnormal-toggle{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid var(--border);background:white;color:var(--grey);cursor:pointer;user-select:none}
 .ss-abnormal-toggle.on{background:var(--red);border-color:var(--red);color:white}
+#open-mode-modal{display:none;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,0.45);align-items:center;justify-content:center;padding:16px}
+#open-mode-modal.open{display:flex}
+#open-mode-modal .omm-card{background:var(--white);color:var(--text);border-radius:14px;box-shadow:0 10px 32px rgba(0,0,0,0.3);width:320px;max-width:100%;overflow:hidden}
+#open-mode-modal .omm-title{padding:16px 16px 4px;font-size:16px;font-weight:700}
+#open-mode-modal .omm-sub{padding:0 16px 12px;font-size:12px;color:var(--grey)}
+#open-mode-modal .omm-option{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;min-height:var(--tap);border:0;border-top:1px solid var(--border);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+#open-mode-modal .omm-option:hover,#open-mode-modal .omm-option:active{background:var(--light)}
+#open-mode-modal .omm-icon{font-size:22px;flex-shrink:0}
+#open-mode-modal .omm-label{font-size:14px;font-weight:700}
+#open-mode-modal .omm-desc{font-size:11.5px;color:var(--grey);margin-top:2px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -768,7 +778,17 @@ async function _attachOriginAndOverlay(scenario){
 async function saveAndNavigate(scenario){
   await _attachOriginAndOverlay(scenario);
   await sbFetch('scenarios',{method:'POST',prefer:'return=minimal',body:JSON.stringify(toRow(scenario))});
-  window.location.href=`index.html?id=${encodeURIComponent(String(scenario.id))}`;
+  const id=encodeURIComponent(String(scenario.id));
+  // Live Scenario is admin-only (same gate as index.html's scenarioLinkClick
+  // popover) — non-admins have nothing to choose between, so go straight to
+  // the verbal view as before.
+  if(!isAdmin()){window.location.href=`index.html?id=${id}`;return;}
+  // Scenario is already saved at this point, so the chooser deliberately has
+  // no dismiss/cancel — closing it would strand the user on the generator.
+  const m=document.getElementById('open-mode-modal');
+  document.getElementById('omm-verbal').onclick=()=>{window.location.href=`index.html?id=${id}`;};
+  document.getElementById('omm-live').onclick=()=>{window.location.href=`sim_control.html?scenario=${id}`;};
+  m.classList.add('open');
 }
 function showStatus(elId,type,msg){
   const el=document.getElementById(elId);if(!el)return;
@@ -1590,8 +1610,8 @@ ${SCENARIO_JSON_TEMPLATE.replace('CAT', category).replace('SUB', subcategory)}`;
     if (_snapTrack) _ambSetTarget(100, _snapTrack.offsetWidth || 300);
     await new Promise(r=>setTimeout(r,600));
     const demoWarningSuffix = demographicsMismatch ? ' — ⚠️ demographics mismatch, check patient_meta vs. title/dispatch before use' : '';
-    showStatus('quick-status','success',`✅ Saved${demoWarningSuffix} — loading scenario…`);
-    showStatus('custom-status','success',`✅ Saved${demoWarningSuffix} — loading scenario…`);
+    showStatus('quick-status','success',`✅ Saved${demoWarningSuffix}`);
+    showStatus('custom-status','success',`✅ Saved${demoWarningSuffix}`);
     await saveAndNavigate(scenario);
   } catch(e) {
     showStatus('quick-status','error','✕ Error: '+e.message);
@@ -2619,5 +2639,13 @@ addManualKQBlock(); addManualKQBlock();
   </select>
 </div>
 <script src="nav.js"></script>
+<div id="open-mode-modal" role="dialog" aria-modal="true" aria-labelledby="omm-title">
+  <div class="omm-card">
+    <div class="omm-title" id="omm-title">Scenario saved ✅</div>
+    <div class="omm-sub">How would you like to run it?</div>
+    <button type="button" class="omm-option" id="omm-verbal"><span class="omm-icon">📋</span><span><div class="omm-label">Verbal Scenario</div><div class="omm-desc">Assessment view</div></span></button>
+    <button type="button" class="omm-option" id="omm-live"><span class="omm-icon">📡</span><span><div class="omm-label">Live Scenario</div><div class="omm-desc">Real-time sim control panel</div></span></button>
+  </div>
+</div>
 </body>
 </html>
