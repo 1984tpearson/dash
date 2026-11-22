@@ -14,6 +14,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   BLURB_MODEL,
+  blurbCostUsd,
   SCENARIO_SELECT,
   generateAndStoreImage,
   generateBlurb,
@@ -153,6 +154,10 @@ Deno.serve(async (req: Request) => {
       model: BLURB_MODEL,
       input_tokens: (aiUsage?.input_tokens ?? 0) + (briefUsage?.input_tokens ?? 0),
       output_tokens: (aiUsage?.output_tokens ?? 0) + (briefUsage?.output_tokens ?? 0),
+      cost_usd: blurbCostUsd(
+        (aiUsage?.input_tokens ?? 0) + (briefUsage?.input_tokens ?? 0),
+        (aiUsage?.output_tokens ?? 0) + (briefUsage?.output_tokens ?? 0)
+      ),
       label: `Popular scenario ${imageOnly ? "image regen" : "blurb"}${imageUrl ? " + image" : ""} (${isManual ? "manual" : "auto"}) — ${s.title || s.id}`
     });
 

@@ -86,11 +86,17 @@
   // nav.js is present and must not start now. Keep in step with nav.js — a
   // model that thinks by default will spend max_tokens reasoning and can come
   // back with no text at all.
-  var MODEL_SONNET = 'claude-sonnet-5';
-  var MODEL_HAIKU = 'claude-haiku-4-5';
-  var THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+  // A table because the off-switch differs by model: Sonnet 5.5 400s on
+  // {type:'disabled'} and takes {type:'between_tools'}.
+  var MODEL_SONNET = 'claude-sonnet-5-5';
+  var MODEL_HAIKU = 'claude-haiku-5-5';
+  var THINKING_OFF = {
+    'claude-sonnet-5-5': { type: 'between_tools' },
+    'claude-haiku-5-5': { type: 'disabled' },
+    'claude-sonnet-5': { type: 'disabled' }
+  };
   function _thinkingFor(model) {
-    return THINKING_ON_BY_DEFAULT.indexOf(model) === -1 ? {} : { thinking: { type: 'disabled' } };
+    return THINKING_OFF[model] ? { thinking: THINKING_OFF[model] } : {};
   }
 
   async function _callClaude(model, maxTokens, systemPrompt, userPrompt, label) {
@@ -105,6 +111,10 @@
     if (!response.ok) { var e = await response.json().catch(function () { return {}; }); throw new Error((e.error && e.error.message) || ('API error ' + response.status)); }
     var data = await response.json();
     _logUsage(model, data.usage, label);
+    if (data.stop_reason === 'refusal') {
+      var cat = data.stop_details && data.stop_details.category;
+      throw new Error('The AI declined this request' + (cat ? ' (' + cat + ')' : '') + '.');
+    }
     var text = (data.content || []).map(function (b) { return b.text || ''; }).join('');
     return _parseFirstJSON(text);
   }

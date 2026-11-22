@@ -1119,14 +1119,28 @@ function parseFirstJSON(raw) {
 // The model ids and the thinking rule are mirrored from nav.js for the same
 // reason. Keep them in step with it: leaving thinking on for a model that
 // defaults to it spends max_tokens on reasoning and can return no text at all.
-const MODEL_SONNET = 'claude-sonnet-5';
-const MODEL_HAIKU = 'claude-haiku-4-5';
-const THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+// THINKING_OFF is a table because the off-switch differs by model: Sonnet 5.5
+// 400s on {type:'disabled'} and takes {type:'between_tools'}.
+const MODEL_SONNET = 'claude-sonnet-5-5';
+const MODEL_HAIKU = 'claude-haiku-5-5';
+const THINKING_OFF = {
+  'claude-sonnet-5-5': { type: 'between_tools' },
+  'claude-haiku-5-5': { type: 'disabled' },
+  'claude-sonnet-5': { type: 'disabled' }
+};
 function thinkingFor(model) {
-  return THINKING_ON_BY_DEFAULT.includes(model) ? { thinking: { type: 'disabled' } } : {};
+  return THINKING_OFF[model] ? { thinking: THINKING_OFF[model] } : {};
+}
+// Mirrors AVNav.declineReason.
+function declineReason(data) {
+  if (!data || data.stop_reason !== 'refusal') return null;
+  const cat = data.stop_details && data.stop_details.category;
+  return 'The AI declined this request' + (cat ? ' (' + cat + ')' : '') + '.';
 }
 const MODEL_PRICING = {
-  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.10 },
+  'claude-haiku-5-5': { input: 0.10, output: 0.50 },
+  'claude-sonnet-5': { input: 2, output: 10 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5': { input: 1, output: 5 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 }
@@ -1247,6 +1261,7 @@ async function runNotesExtraction(key) {
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
     if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Add to Notes: ' + (DATA[key].title || key) });
+    if (declineReason(data)) throw new Error(declineReason(data));
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const extracted = parseFirstJSON(rawText);
 
@@ -1350,6 +1365,7 @@ async function generateTestQuestions(key) {
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
     if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Test Questions: ' + (DATA[key].title || key) });
+    if (declineReason(data)) throw new Error(declineReason(data));
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const parsed = parseFirstJSON(rawText);
     const qs = Array.isArray(parsed.questions) ? parsed.questions : [];
@@ -1458,6 +1474,7 @@ async function runExtraction() {
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
     if (data.usage) logAIUsage({ model: MODEL_SONNET, input_tokens: data.usage.input_tokens, output_tokens: data.usage.output_tokens, label: 'Extract from Document' });
+    if (declineReason(data)) throw new Error(declineReason(data));
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const extracted = parseFirstJSON(rawText);
     finalizeExtractedPackage(extracted);

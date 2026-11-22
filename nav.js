@@ -23,35 +23,60 @@
 
   // The two models the whole suite runs on. Referenced by name rather than
   // written as literals at each call site so a future move is one edit here.
-  var MODEL_SONNET = 'claude-sonnet-5';
-  var MODEL_HAIKU = 'claude-haiku-4-5';
+  var MODEL_SONNET = 'claude-sonnet-5-5';
+  var MODEL_HAIKU = 'claude-haiku-5-5';
 
   // Per-million-token USD pricing for AI usage cost tracking.
   // Add a new entry here whenever a new model is used anywhere in the suite.
-  // Sonnet 5 is listed at its standard rate, not the introductory one that
-  // expires 2026-08-31. The dated Haiku id is kept alongside the bare one so a
-  // still-open older tab keeps pricing correctly after the id was shortened.
+  // Retired-from-use ids are kept so a still-open older tab keeps pricing
+  // correctly after a model move. Haiku 5.5's rate is the <=100K-token-prompt
+  // tier ($0.50/$2.50 above that) — nothing in this suite comes close.
+  // cacheRead overrides the default 0.1x-of-input cache-read rate where a
+  // model's differs (Sonnet 5.5 reads cache at $0.10, i.e. 0.05x).
   var MODEL_PRICING = {
-    'claude-sonnet-5': { input: 3, output: 15 },
+    'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.10 },
+    'claude-haiku-5-5': { input: 0.10, output: 0.50 },
+    'claude-sonnet-5': { input: 2, output: 10 },
     'claude-sonnet-4-6': { input: 3, output: 15 },
     'claude-haiku-4-5': { input: 1, output: 5 },
     'claude-haiku-4-5-20251001': { input: 1, output: 5 }
   };
+  var CACHE_WRITE_MULTIPLIER = 1.25; // 5-minute ephemeral cache write
+  var CACHE_READ_MULTIPLIER = 0.1;
 
-  // Models that think by default when no 'thinking' parameter is sent. Every
-  // call in this suite asks for a bounded JSON or prose answer with no tool
-  // use and nothing to reason about, so thinking is pure cost — and because
-  // thinking tokens are spent against max_tokens, leaving it on can consume
-  // the entire budget before any visible text is produced. That is not
-  // theoretical: it broke scenario generation outright the day Sonnet 5
-  // landed (4000 max_tokens, 4000 spent thinking, empty response).
-  // Sent only for models that accept the parameter — Haiku 4.5 predates it
-  // and returns a 400 — so spread this rather than hardcoding it.
-  var THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+  // The 'thinking' value that turns thinking OFF, per model. Every call in
+  // this suite asks for a bounded JSON or prose answer with no tool use and
+  // nothing to reason about, so thinking is pure cost — and because thinking
+  // tokens are spent against max_tokens, leaving it on can consume the entire
+  // budget before any visible text is produced. That is not theoretical: it
+  // broke scenario generation outright the day Sonnet 5 landed (4000
+  // max_tokens, 4000 spent thinking, empty response). Haiku 5.5 thinks by
+  // default too, and on the voice path's 120-300 token caps it would do the
+  // same thing.
+  // The value differs by model, which is why this is a table, not a list:
+  // Sonnet 5.5 REJECTS {type:'disabled'} with a 400 and takes
+  // {type:'between_tools'} instead (valid at the default 'high' effort or
+  // below; no other field may sit beside it). Haiku 4.5 predates the
+  // parameter and 400s on it, so it is absent. Spread this, never hardcode it.
+  var THINKING_OFF = {
+    'claude-sonnet-5-5': { type: 'between_tools' },
+    'claude-haiku-5-5': { type: 'disabled' },
+    'claude-sonnet-5': { type: 'disabled' }
+  };
   function thinkingFor(model) {
-    return THINKING_ON_BY_DEFAULT.indexOf(model) === -1
-      ? {}
-      : { thinking: { type: 'disabled' } };
+    return THINKING_OFF[model] ? { thinking: THINKING_OFF[model] } : {};
+  }
+
+  // A safety-classifier decline is an HTTP 200 with stop_reason 'refusal' and
+  // little or no text — so without this check it surfaces downstream as a
+  // misleading "No JSON object found". Returns a readable reason, or null.
+  // Sonnet 5.5 / Haiku 5.5 classifiers include 'general_harms', which the
+  // scripted-agitation voice content (SAT +3) is the likeliest thing here to
+  // trip.
+  function declineReason(data) {
+    if (!data || data.stop_reason !== 'refusal') return null;
+    var cat = data.stop_details && data.stop_details.category;
+    return 'The AI declined this request' + (cat ? ' (' + cat + ')' : '') + '.';
   }
   var SEARCH_COST = 0.01; // per web_search call
 
@@ -256,8 +281,9 @@
 
   // Shared AI usage/cost logger. Call after any Anthropic API call from any
   // tool in the suite. Fire-and-forget: never throws, never blocks the caller.
-  //   AVNav.logAIUsage({ source: 'generator', model: 'claude-sonnet-4-6',
-  //     input_tokens, output_tokens, search_count, label: 'optional context' })
+  //   AVNav.logAIUsage({ source: 'generator', model: AVNav.MODEL_SONNET,
+  //     input_tokens, output_tokens, search_count, label: 'optional context',
+  //     cache_creation_input_tokens, cache_read_input_tokens })  // cache: optional
   async function logAIUsage(opts) {
     try {
       opts = opts || {};
@@ -272,7 +298,14 @@
       var inTok = opts.input_tokens || 0;
       var outTok = opts.output_tokens || 0;
       var searches = opts.search_count || 0;
-      var cost = (inTok / 1e6 * pricing.input) + (outTok / 1e6 * pricing.output) + (searches * SEARCH_COST);
+      // Prompt-cache tokens (the sim pages cache their system prompts). The
+      // table has no columns for them, so they are priced into cost_usd only;
+      // input_tokens stays the uncached count, as it always was.
+      var cacheWrite = opts.cache_creation_input_tokens || 0;
+      var cacheRead = opts.cache_read_input_tokens || 0;
+      var cacheReadRate = pricing.cacheRead != null ? pricing.cacheRead : pricing.input * CACHE_READ_MULTIPLIER;
+      var cost = (inTok / 1e6 * pricing.input) + (outTok / 1e6 * pricing.output) + (searches * SEARCH_COST)
+        + (cacheWrite / 1e6 * pricing.input * CACHE_WRITE_MULTIPLIER) + (cacheRead / 1e6 * cacheReadRate);
       await sbFetch('ai_usage_log', {
         method: 'POST',
         prefer: 'return=minimal',
@@ -1176,6 +1209,8 @@
     MODEL_SONNET: MODEL_SONNET,
     MODEL_HAIKU: MODEL_HAIKU,
     thinkingFor: thinkingFor,
+    declineReason: declineReason,
+    MODEL_PRICING: MODEL_PRICING,
     toggle: toggle,
     close: close,
     openSettings: openSettings,

@@ -12,7 +12,29 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 export type SupabaseClient = ReturnType<typeof createClient>;
 
-export const BLURB_MODEL = "claude-haiku-4-5-20251001";
+export const BLURB_MODEL = "claude-haiku-5-5";
+
+// Haiku 5.5 thinks by default and its thinking tokens come out of max_tokens
+// (300/200 here), so left on it can spend the whole budget and return no text.
+// Mirrors AVNav.thinkingFor in nav.js — the web pages' copy of this rule.
+const THINKING_OFF = { thinking: { type: "disabled" } };
+
+// USD per million tokens, for the ai_usage_log row. Both functions used to
+// insert without cost_usd, so every blurb/image-brief call logged as $0.00.
+// Keep in step with nav.js's MODEL_PRICING. Image (Wiro) cost is not included.
+const BLURB_PRICING = { input: 0.10, output: 0.50 };
+export function blurbCostUsd(inputTokens: number, outputTokens: number) {
+  return Number((inputTokens / 1e6 * BLURB_PRICING.input + outputTokens / 1e6 * BLURB_PRICING.output).toFixed(5));
+}
+
+// A safety-classifier decline is HTTP 200 with stop_reason "refusal" and no
+// usable text; name it instead of reporting an empty brief/blurb.
+function throwIfDeclined(data: { stop_reason?: string; stop_details?: { category?: string } }) {
+  if (data?.stop_reason === "refusal") {
+    const cat = data.stop_details?.category;
+    throw new Error(`The AI declined this request${cat ? ` (${cat})` : ""}`);
+  }
+}
 
 export type Scenario = {
   id?: string;
@@ -114,6 +136,7 @@ export async function buildImageBrief(s: Scenario, anthropicKey: string) {
     },
     body: JSON.stringify({
       model: BLURB_MODEL,
+      ...THINKING_OFF,
       max_tokens: 300,
       system: IMAGE_BRIEF_PROMPT,
       messages: [{ role: "user", content: `${briefSourceFor(s)}\n\nWrite the photograph brief now.` }]
@@ -124,6 +147,7 @@ export async function buildImageBrief(s: Scenario, anthropicKey: string) {
     throw new Error(e.error?.message || `Anthropic API error ${res.status}`);
   }
   const data = await res.json();
+  throwIfDeclined(data);
   const text = (data.content || [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)
@@ -376,6 +400,7 @@ export async function generateBlurb(
     },
     body: JSON.stringify({
       model: BLURB_MODEL,
+      ...THINKING_OFF,
       max_tokens: 200,
       system:
         `You write a short, punchy teaser (2 sentences), shown on a homepage "${cardName}" card for clinical instructors and educators browsing the scenario library. ` +
@@ -398,6 +423,7 @@ export async function generateBlurb(
     throw new Error(e.error?.message || `Anthropic API error ${res.status}`);
   }
   const data = await res.json();
+  throwIfDeclined(data);
   const blurb = (data.content || [])
     .filter((b: { type: string }) => b.type === "text")
     .map((b: { text: string }) => b.text)

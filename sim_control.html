@@ -683,10 +683,24 @@ let currentScenario = null; // set on session creation — provides context for 
 // load, but only at the very bottom, after this script has already run. Keep in
 // step with nav.js: leaving thinking on for a model that defaults to it spends
 // max_tokens on reasoning and can return no visible text at all.
-const MODEL_SONNET = 'claude-sonnet-5';
-const THINKING_ON_BY_DEFAULT = ['claude-sonnet-5'];
+// THINKING_OFF is a table, not a list, because the off-switch differs by model:
+// Sonnet 5.5 400s on {type:'disabled'} and takes {type:'between_tools'}.
+const MODEL_SONNET = 'claude-sonnet-5-5';
+const MODEL_HAIKU = 'claude-haiku-5-5';
+const THINKING_OFF = {
+  'claude-sonnet-5-5': { type: 'between_tools' },
+  'claude-haiku-5-5': { type: 'disabled' },
+  'claude-sonnet-5': { type: 'disabled' }
+};
 function thinkingFor(model) {
-  return THINKING_ON_BY_DEFAULT.includes(model) ? { thinking: { type: 'disabled' } } : {};
+  return THINKING_OFF[model] ? { thinking: THINKING_OFF[model] } : {};
+}
+// Mirrors AVNav.declineReason — a classifier decline is an HTTP 200 with
+// stop_reason 'refusal' and no usable text.
+function declineReason(data) {
+  if (!data || data.stop_reason !== 'refusal') return null;
+  const cat = data.stop_details && data.stop_details.category;
+  return 'The AI declined this request' + (cat ? ' (' + cat + ')' : '') + '.';
 }
 // Physiological reasoning is Sonnet-only and deliberately not switchable — see
 // CLAUDE.md on why the Haiku option was removed from this path.
@@ -697,7 +711,9 @@ let promptCachingEnabled = true; // switchable via the Cache toggle in the topba
 // persisted). Mirrors nav.js's MODEL_PRICING rates; keep in sync if pricing
 // changes there.
 const MODEL_PRICING = {
-  'claude-sonnet-5': { input: 3, output: 15 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.10 },
+  'claude-haiku-5-5': { input: 0.10, output: 0.50 },
+  'claude-sonnet-5': { input: 2, output: 10 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5': { input: 1, output: 5 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 }
@@ -729,8 +745,20 @@ function endAiWork() {
   }
 }
 
-function addAiCost(model, usage) {
+// Also the one place this page's calls reach the shared ai_usage_log — every
+// call site already funnels its usage through here for the topbar counter.
+// AVNav is loaded at the bottom of the page, but these run long after load;
+// guarded anyway so a missing nav.js costs the log row, never the reply.
+function addAiCost(model, usage, label) {
   if (!usage) return;
+  if (window.AVNav && AVNav.logAIUsage) {
+    AVNav.logAIUsage({
+      source: 'sim_control', model, label: label || null,
+      input_tokens: usage.input_tokens, output_tokens: usage.output_tokens,
+      cache_creation_input_tokens: usage.cache_creation_input_tokens,
+      cache_read_input_tokens: usage.cache_read_input_tokens
+    });
+  }
   let pricing = MODEL_PRICING[model];
   if (!pricing) {
     console.warn('addAiCost: no MODEL_PRICING entry for "' + model + '" — cost counted as $0.');
@@ -742,7 +770,7 @@ function addAiCost(model, usage) {
   const outTok = usage.output_tokens || 0;
   const cost = (freshIn / 1e6 * pricing.input)
     + (cacheWriteIn / 1e6 * pricing.input * CACHE_WRITE_MULTIPLIER)
-    + (cacheReadIn / 1e6 * pricing.input * CACHE_READ_MULTIPLIER)
+    + (cacheReadIn / 1e6 * (pricing.cacheRead != null ? pricing.cacheRead : pricing.input * CACHE_READ_MULTIPLIER))
     + (outTok / 1e6 * pricing.output);
   sessionAiCostUsd += cost;
   const el = document.getElementById('ai-cost-indicator');
@@ -1274,7 +1302,8 @@ Project the deterioration/progression from these starting vitals assuming no tre
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();
-  addAiCost(aiModel, data.usage);
+  addAiCost(aiModel, data.usage, 'baseline timeline');
+  if (declineReason(data)) throw new Error(declineReason(data));
   const text = (data.content || []).map(b => b.text || '').join('');
   let parsed;
   try {
@@ -1363,11 +1392,12 @@ Decide this patient's fixed disorientation picture.`;
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 400, system: ORIENTATION_PROFILE_PROMPT, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: MODEL_HAIKU, ...thinkingFor(MODEL_HAIKU), max_tokens: 400, system: ORIENTATION_PROFILE_PROMPT, messages: [{ role: 'user', content: userPrompt }] })
     });
     if (!res.ok) return {};
     const data = await res.json();
-    addAiCost('claude-haiku-4-5', data.usage);
+    addAiCost(MODEL_HAIKU, data.usage, 'orientation profile');
+    if (declineReason(data)) throw new Error(declineReason(data));
     const text = (data.content || []).map(b => b.text || '').join('').trim();
     const parsed = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim());
     return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
@@ -3964,11 +3994,12 @@ async function classifyTreatmentWithHaiku(actionText) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 400, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+    body: JSON.stringify({ model: MODEL_HAIKU, ...thinkingFor(MODEL_HAIKU), max_tokens: 400, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
   });
   if (!response.ok) throw new Error(`Router call failed (${response.status})`);
   const data = await response.json();
-  addAiCost('claude-haiku-4-5', data.usage);
+  addAiCost(MODEL_HAIKU, data.usage, 'treatment router');
+  if (declineReason(data)) throw new Error(declineReason(data));
   const text = (data.content || []).map(b => b.text || '').join('');
   const parsed = extractJsonObject(text);
   const items = Array.isArray(parsed.items) ? parsed.items : [];
@@ -4270,11 +4301,12 @@ async function callPatientAI(question, v, gcsV) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
+      body: JSON.stringify({ model: MODEL_HAIKU, ...thinkingFor(MODEL_HAIKU), max_tokens: 300, system: systemPrompt, messages: PatientVoice.buildMessages({ history, userPrompt }) })
     });
     if (response.ok) {
       const data = await response.json();
-      addAiCost('claude-haiku-4-5', data.usage);
+      addAiCost(MODEL_HAIKU, data.usage, 'patient voice');
+      if (declineReason(data)) console.warn('Patient voice: ' + declineReason(data) + ' Using the default reply.');
       replyText = (data.content || []).map(b => b.text || '').join('').trim() || replyText;
       recordVoiceExchange(question, replyText);
     }
@@ -4373,11 +4405,12 @@ Report the finding.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 300, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
+      body: JSON.stringify({ model: MODEL_HAIKU, ...thinkingFor(MODEL_HAIKU), max_tokens: 300, system: systemPrompt, messages: [{ role: 'user', content: userPrompt }] })
     });
     if (response.ok) {
       const data = await response.json();
-      addAiCost('claude-haiku-4-5', data.usage);
+      addAiCost(MODEL_HAIKU, data.usage, 'exam finding');
+      if (declineReason(data)) console.warn('Patient voice: ' + declineReason(data) + ' Using the default reply.');
       replyText = (data.content || []).map(b => b.text || '').join('').trim() || replyText;
     }
   } catch (e) { /* fall through with the apologetic default reply */ }
@@ -4911,7 +4944,8 @@ Project how this patient's vitals change from here, given this specific action.`
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();
-  addAiCost(aiModel, data.usage);
+  addAiCost(aiModel, data.usage, 'treatment effect');
+  if (declineReason(data)) throw new Error(declineReason(data));
   const text = (data.content || []).map(b => b.text || '').join('');
   let parsed;
   try {
@@ -5091,7 +5125,8 @@ Project how this patient's vitals change from here, given this command.`;
   });
   if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || `Anthropic API error ${response.status}`); }
   const data = await response.json();
-  addAiCost(aiModel, data.usage);
+  addAiCost(aiModel, data.usage, 'scripted event');
+  if (declineReason(data)) throw new Error(declineReason(data));
   const text = (data.content || []).map(b => b.text || '').join('');
   let parsed;
   try {

@@ -4205,8 +4205,14 @@ async function generateRealtimePatientReply(question, onSegment) {
     // so from turn two on this cuts both time-to-first-token and cost.
     // Likely the larger of the two latency wins here — see the streaming
     // comment below.
+    //
+    // Thinking is switched off explicitly: Haiku 5.5 thinks by default, and
+    // thinking tokens come out of this 120-token cap — left on, it can spend
+    // the whole budget reasoning and speak nothing. Haiku 4.5 never thought,
+    // so this line is new with the move, not a behaviour change.
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: PATIENT_VOICE_MODEL,
+      thinking: { type: 'disabled' },
       max_tokens: 120,
       stream: true,
       system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
@@ -4214,9 +4220,30 @@ async function generateRealtimePatientReply(question, onSegment) {
     })
   });
   if (!response.ok) throw new Error(`Anthropic call failed (${response.status})`);
-  const text = await readAnthropicTextStream(response, onSegment);
+  const meta = {};
+  let text;
+  try {
+    text = await readAnthropicTextStream(response, onSegment, meta);
+  } finally {
+    // Logged even if the stream broke part-way — tokens already generated
+    // are billed regardless. AVNav loads at the bottom of the page; by the
+    // time a reply is requested it is long since there.
+    if (meta.usage && window.AVNav && AVNav.logAIUsage) {
+      AVNav.logAIUsage({
+        source: 'sim_patient', model: PATIENT_VOICE_MODEL, label: 'patient voice (realtime)',
+        input_tokens: meta.usage.input_tokens, output_tokens: meta.usage.output_tokens,
+        cache_creation_input_tokens: meta.usage.cache_creation_input_tokens,
+        cache_read_input_tokens: meta.usage.cache_read_input_tokens
+      });
+    }
+  }
+  if (meta.stopReason === 'refusal') console.warn('Patient voice: the AI declined this reply' + (meta.refusalCategory ? ' (' + meta.refusalCategory + ')' : '') + '.');
   return text || "...sorry, I didn't catch that.";
 }
+// Haiku 5.5's minimum cacheable prompt is 512 tokens, down from 4,096 on
+// Haiku 4.5 — so the cache_control above now actually engages on a typical
+// patient prompt, where on 4.5 it was most likely silently below the floor.
+const PATIENT_VOICE_MODEL = 'claude-haiku-5-5';
 
 // Reads an SSE completion, handing the caller a first speakable chunk as
 // soon as one sentence has landed rather than at the end of the completion.
@@ -4230,7 +4257,12 @@ async function generateRealtimePatientReply(question, onSegment) {
 // no early boundary is found), this behaves exactly like the old
 // non-streamed call: one string, returned when the completion finishes.
 const MIN_SEGMENT_CHARS = 30;
-async function readAnthropicTextStream(response, onSegment) {
+// `meta` (optional) is filled in as the stream goes: `usage` (input and cache
+// counts arrive in message_start, output in message_delta) and `stopReason` /
+// `refusalCategory` — a classifier decline is a normal stream ending in
+// stop_reason 'refusal', not an error event.
+async function readAnthropicTextStream(response, onSegment, meta) {
+  meta = meta || {};
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffered = '';   // raw SSE bytes not yet split into lines
@@ -4274,6 +4306,12 @@ async function readAnthropicTextStream(response, onSegment) {
         if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
           full += evt.delta.text;
           tryEmitHead();
+        } else if (evt.type === 'message_start' && evt.message && evt.message.usage) {
+          meta.usage = Object.assign({}, evt.message.usage);
+        } else if (evt.type === 'message_delta') {
+          if (evt.usage) meta.usage = Object.assign(meta.usage || {}, evt.usage);
+          if (evt.delta && evt.delta.stop_reason) meta.stopReason = evt.delta.stop_reason;
+          if (evt.delta && evt.delta.stop_details) meta.refusalCategory = evt.delta.stop_details.category;
         } else if (evt.type === 'error') {
           throw new Error(`Anthropic stream error: ${(evt.error && evt.error.message) || 'unknown'}`);
         }

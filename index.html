@@ -4856,6 +4856,8 @@ The answer should be short and direct, not a paragraph. Respond with valid JSON 
     });
     if (!response.ok) { const e = await response.json().catch(() => ({})); throw new Error(e.error?.message || ('API error ' + response.status)); }
     const data = await response.json();
+    const _declined = AVNav.declineReason && AVNav.declineReason(data);
+    if (_declined) throw new Error(_declined);
     const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const cleaned = rawText.replace(/```json|```/g, '').trim();
     const replacement = JSON.parse(cleaned);

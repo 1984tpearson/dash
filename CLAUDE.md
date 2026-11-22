@@ -1415,6 +1415,15 @@ so their docs can't be fetched from there. Paste the model's
 
 ## Open TODOs
 
+- **Delete the orphaned `hume_evi_config_id` row from `app_config`.** Left
+  behind when EVI was removed (see "EVI — evaluated and rejected"); nothing
+  reads it any more. Harmless, flagged Nov 2026, deliberately parked by Tim —
+  just tidy it up next time you're in there. If EVI is ever revisited it would
+  be recreated anyway.
+- **Generator has no model picker any more, deliberately.** The admin-only
+  Sonnet 4.6 / Haiku 4.5 options were removed in Nov 2026 at Tim's request
+  ("happy with how things are"); generation always uses `AVNav.MODEL_SONNET`.
+  Not a TODO — listed here so it isn't "restored" as a missing feature.
 - **Split `index.html` into `index.html` + `index.js` + `index.css`.**
   Agreed with Tim as the right next step, deliberately deferred — not
   urgent, do it when there's a reason to be in the file anyway. The file is
@@ -1612,19 +1621,50 @@ so their docs can't be fetched from there. Paste the model's
   empty response, and a misleading "No JSON object found" from the parser
   rather than anything naming the real cause. Every Anthropic call here asks
   for a bounded JSON or prose answer with nothing to reason about, so all of
-  them pass `...thinkingFor(model)`, which yields `{thinking:{type:'disabled'}}`
-  only for models that both default it on and accept the parameter — Haiku
-  4.5 predates it and 400s. **Anything new that calls the Messages API must
-  spread it too.** The rule is mirrored in four places for load-order reasons
-  that are each commented at the site: `nav.js` is the source; `cpg_editor.html`
-  does not load nav.js at all; `sim_control.html` loads it after the inline
-  script runs; and `pack_overlay.js` guards every other AVNav use behind
-  `window.AVNav &&`, so it must not start assuming it.
+  them pass `...thinkingFor(model)`, which reads the `THINKING_OFF` table.
+  **It is a table, not a list, because the off-switch differs by model**:
+  since Nov 2026 the suite runs on **Sonnet 5.5 / Haiku 5.5**, and Sonnet 5.5
+  *rejects* `{type:'disabled'}` with a 400 — it takes `{type:'between_tools'}`
+  instead (valid at the default `high` effort or below; nothing else may sit
+  beside it in `thinking`). Haiku 5.5 takes `{type:'disabled'}`. A model absent
+  from the table gets no `thinking` field at all (Haiku 4.5 400s on it).
+  **Anything new that calls the Messages API must spread it too**, and a new
+  model needs its own row — check whether it defaults thinking on, and what its
+  off value is, rather than assuming either. The table is mirrored in four
+  places for load-order reasons that are each commented at the site: `nav.js`
+  is the source; `cpg_editor.html` does not load nav.js at all;
+  `sim_control.html` loads it after the inline script runs; and
+  `pack_overlay.js` guards every other AVNav use behind `window.AVNav &&`, so
+  it must not start assuming it. Two more places set it without the table:
+  `sim_patient.html`'s streamed voice call (`PATIENT_VOICE_MODEL`) and the edge
+  functions' `_shared/scenario_image.ts`.
+- **A safety-classifier decline is an HTTP 200, not an error.** The 5.5 models
+  can return `stop_reason: 'refusal'` (with `stop_details.category`) and
+  little or no text — which, unchecked, surfaces as the same misleading "No
+  JSON object found" as the thinking bug above. `AVNav.declineReason(data)`
+  (mirrored as `declineReason` in `sim_control.html` / `cpg_editor.html`)
+  turns it into a readable error; JSON-producing calls throw on it, the
+  patient-voice calls log a warning and fall back to their canned reply. The
+  likeliest trigger here is `general_harms` on scripted agitation (SAT +3).
+  Server-side `fallbacks` were deliberately not added: they only retry `cyber`
+  / `frontier_llm` declines, neither of which this content produces.
 - **`MODEL_PRICING` prices an unknown model at $0 rather than throwing**, so a
   model added without a pricing row logs real spend as $0.00 and nothing says
   so. That is not hypothetical — it happened the day Sonnet 5 landed. All three
   copies (`nav.js`, `sim_control.html`, `cpg_editor.html`) now `console.warn`
-  on a miss, but the row still has to be added by hand in each.
+  on a miss, but the row still has to be added by hand in each — plus
+  `BLURB_PRICING` in `_shared/scenario_image.ts` for the edge functions, which
+  until Nov 2026 inserted no `cost_usd` at all (every featured/popular row
+  logged $0.00). An optional `cacheRead` on a row overrides the default 0.1x
+  cache-read rate (Sonnet 5.5's is 0.05x).
+- **Every AI call in the suite writes to `ai_usage_log`**, including the sim
+  pages since Nov 2026: `sim_control.html` logs from `addAiCost()` (the one
+  funnel all seven of its calls already used for the topbar counter, now with
+  a per-call label), `sim_patient.html` from `generateRealtimePatientReply()`
+  (usage read off the SSE stream's `message_start`/`message_delta`). Both
+  pass prompt-cache token counts, which `logAIUsage` prices into `cost_usd`
+  only — the table has no cache columns, so `input_tokens` stays the uncached
+  count. Hume/Deepgram/Wiro spend is not in this table.
 - **Backticks inside a prompt string break the JS parse.** The AI system
   prompts are themselves JS template literals (backtick-delimited) — never
   use `` ` `` for markdown-style emphasis inside that text (use single
